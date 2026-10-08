@@ -1,0 +1,16 @@
+# TD 构建产物
+td_project/colorshading_runs_*/
+td_project/camera_to_dsi_display_Runs/
+td_project/*.db
+td_project/*.bit
+td_project/*.rpt
+td_project/*.qor
+td_project/*.log
+td_project/*.logw
+td_project/log/
+*.log *.logw
+# 仿真工作库
+sim/msim*/ sim/work*/ sim/work_*/
+# 备份与临时
+*.bak *~ ._*
+__pycache__/
