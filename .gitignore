@@ -14,3 +14,5 @@ sim/msim*/ sim/work*/ sim/work_*/
 # 备份与临时
 *.bak *~ ._*
 __pycache__/
+# AI会话原始数据仅本地留档, 不入库
+docs/ai-sessions/
