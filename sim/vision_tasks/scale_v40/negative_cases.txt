@@ -1,0 +1,4 @@
+stripe_ambiguity_seed 1 1 32 24 0 0 255
+stripe_ambiguity 0 0 32 24 0 0 0
+constant_occlusion_seed 1 1 32 24 0 0 255
+constant_occlusion 0 0 32 24 3983 3983 0

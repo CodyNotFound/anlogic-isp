@@ -28,10 +28,10 @@ module tb_pixel_algorithm_ref_modes;
   if(captured[3]!==24'h000000)$fatal(1,"mode3 binary %h",captured[3]);
   if(captured[4]!==24'h304050)$fatal(1,"mode4 bright %h",captured[4]);
   if(captured[5]!==24'h202020)$fatal(1,"mode5 sharpen %h",captured[5]);
-  if(captured[6]!==24'h242424)$fatal(1,"mode6 blur %h",captured[6]);
+  if(captured[6]!==24'h202020)$fatal(1,"mode6 DC-preserving blur %h",captured[6]);
   if(captured[7]!==24'h000000)$fatal(1,"mode7 edge %h",captured[7]);
   if(captured[8]!==24'h808080)$fatal(1,"mode8 emboss %h",captured[8]);
-  if(captured[9]!==24'h161811)$fatal(1,"mode9 sepia %h",captured[9]);
+  if(captured[9]!==24'h102030)$fatal(1,"mode9 cel flat color %h",captured[9]);
   if(captured[10]!==24'h301020)$fatal(1,"mode10 swap %h",captured[10]);
   $display("PASS tb_pixel_algorithm_ref_modes outputs 0..10");$finish;
  end

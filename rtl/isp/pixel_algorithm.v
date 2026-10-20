@@ -1,8 +1,8 @@
 // Streaming pixel algorithms in the HDMI pixel clock domain.
 // ref-compatible scalar modes: 0 color restore (ISP chain passed through untouched),
 // then the legacy ladder: 1 gray, 2 invert, 3 fixed binary, 4 bright, 5 sharpen,
-// 6 blur, 7 edge, 8 emboss, 9 sepia, 10 RGB rotation. (原"原图旁路"模式已删除,
-// 改由 K3 ISP 分步演示承载, 见 mode_ctrl.)
+// 6 blur, 7 edge, 8 emboss, 9 cel cartoon, 10 RGB rotation.
+// All modes have four registered clocks of latency; qualifiers must match.
 module pixel_algorithm #(
     parameter integer IMG_WIDTH = 1280,
     parameter integer IMG_HEIGHT = 720,
@@ -18,12 +18,12 @@ module pixel_algorithm #(
     input  wire       line_end,
     input  wire       de,
     input  wire [23:0] pixel_in,
-    output reg  [23:0] pixel_out
+    output wire [23:0] pixel_out
 );
     reg [10:0] x;
     reg [10:0] y;
-    (* ram_style = "block" *) reg [7:0] line1 [0:IMG_WIDTH-1];
-    (* ram_style = "block" *) reg [7:0] line2 [0:IMG_WIDTH-1];
+    (* ram_style = "bram" *) reg [7:0] line1 [0:IMG_WIDTH-1];
+    (* ram_style = "bram" *) reg [7:0] line2 [0:IMG_WIDTH-1];
     reg [7:0] top_prev2, top_prev1, mid_prev2, mid_prev1, bot_prev2, bot_prev1;
     reg [31:0] binary_luma_sum;
     reg [21:0] binary_pixel_count;
@@ -42,7 +42,7 @@ module pixel_algorithm #(
     localparam [7:0] BINARY_TH_MIN = 8'd24;
     localparam [7:0] BINARY_TH_MAX = 8'd224;
 
-    // ref pixel_fx gray approximation: R/4 + G/2 + B/4 (maximum 223).
+    // R/4 + G/2 + B/4 (maximum 253 after per-channel truncation).
 
 
     wire [7:0] gray = {2'b0,pixel_in[23:18]} + {1'b0,pixel_in[15:9]} + {2'b0,pixel_in[7:2]};
@@ -52,7 +52,8 @@ module pixel_algorithm #(
                          ({8'd0,binary_luma_sum} << 7) +
                          ({8'd0,binary_luma_sum} << 4) +
                          ({8'd0,binary_luma_sum} << 1);
-    wire [8:0] binary_avg_calc = binary_avg_product[35:27];
+    wire [8:0] binary_avg_calc = (IMG_WIDTH==1280 && IMG_HEIGHT==720) ?
+        binary_avg_product[35:27] : binary_luma_sum/(IMG_WIDTH*IMG_HEIGHT);
 
     function [7:0] make_binary_threshold;
         input [8:0] average;
@@ -72,8 +73,17 @@ module pixel_algorithm #(
                          make_binary_threshold(binary_avg_calc);
     wire [7:0] binary_threshold_used = ADAPTIVE_BINARY ?
                                         binary_threshold : BINARY_TH;
-    wire [7:0] top_now = line2[x];
-    wire [7:0] mid_now = line1[x];
+    wire [10:0] spatial_x=frame_start_reg?11'd0:x;
+    wire [10:0] spatial_y=frame_start_reg?11'd0:y;
+    // Prefetch the address that spatial_x will take after this clock.
+    // The synchronous RAM output then belongs to the new gray_reg sample.
+    wire [10:0] next_read_x=frame_start?11'd0:
+        frame_start_reg?(de_reg&&!line_end_reg?11'd1:11'd0):
+        de_reg?(line_end_reg||x==IMG_WIDTH-1?11'd0:x+1'b1):x;
+    reg [7:0] top_q,mid_q;
+    always @(posedge clk)begin top_q<=line2[next_read_x];mid_q<=line1[next_read_x];end
+    wire [7:0] top_now = top_q;
+    wire [7:0] mid_now = mid_q;
     wire [7:0] bot_now = gray_reg;
     // ref Scharr kernel, expressed as shifts to avoid multipliers.
     wire signed [8:0] sch_gx_d0 = $signed({1'b0,top_now}) - $signed({1'b0,top_prev2});
@@ -96,7 +106,7 @@ module pixel_algorithm #(
     wire [12:0] abs_sch_gy = sch_gy[12] ? (~sch_gy + 13'd1) : sch_gy;
     wire [13:0] magnitude = {1'b0,abs_sch_gx} + {1'b0,abs_sch_gy};
     wire [12:0] scharr_scaled = magnitude[13:4];
-    wire edge_valid = de_reg && (y >= 11'd2) && (x >= 11'd2);
+    wire edge_valid = de_reg && (spatial_y >= 11'd2) && (spatial_x >= 11'd2);
     wire [11:0] window_sum9 = {4'd0,top_prev2}+{4'd0,top_prev1}+{4'd0,top_now}+
                                {4'd0,mid_prev2}+{4'd0,mid_now}+{4'd0,mid_prev1}+
                                {4'd0,bot_prev2}+{4'd0,bot_prev1}+{4'd0,bot_now};
@@ -124,10 +134,16 @@ module pixel_algorithm #(
     endfunction
     // [2026-10-14] 模式0改名"色彩还原": 增色(1.5x饱和度sat_boost8)逻辑按用户指示移除,
     // 模式0与模式1同为直通, 区别只在ISP链是否被bypass(见vision_pipeline/isp_top)。
-    wire [7:0] blur_value=edge_valid?clip9({1'b0,window_sum9[11:3]}):gray_reg;
+    // Separable [1 2 1]^T[1 2 1]/16 Gaussian. Balanced sums avoid a
+    // constant-divide chain on the 75MHz pixel path and preserve DC exactly.
+    wire [8:0] gc0={1'b0,top_prev2}+{1'b0,top_now},gc1={1'b0,bot_prev2}+{1'b0,bot_now};
+    wire [8:0] ge0={1'b0,top_prev1}+{1'b0,mid_prev2},ge1={1'b0,mid_now}+{1'b0,bot_prev1};
+    wire [9:0] corners={1'b0,gc0}+{1'b0,gc1},sides={1'b0,ge0}+{1'b0,ge1};
+    wire [11:0] gaussian_sum={2'd0,corners}+{1'b0,sides,1'b0}+{2'd0,mid_prev1,2'd0}+12'd8;
+    wire [7:0] blur_value=edge_valid?gaussian_sum[11:4]:gray_reg;
     wire [7:0] sharpen_value8=edge_valid?clip_signed12(sharpen_value):gray_reg;
     wire [7:0] emboss_value8=edge_valid?clip_signed12(emboss_value):gray_reg;
-    wire [23:0] binary_pixel = (gray_reg >= BINARY_TH) ? 24'hffffff : 24'h000000;
+    wire [23:0] binary_pixel = (gray_reg >= binary_threshold_used) ? 24'hffffff : 24'h000000;
     wire [23:0] gray_pixel = {gray_reg,gray_reg,gray_reg};
     wire [23:0] invert_pixel = {~pixel_in_reg[23:16],~pixel_in_reg[15:8],~pixel_in_reg[7:0]};
     wire [23:0] bright_pixel = {bright8(pixel_in_reg[23:16]),bright8(pixel_in_reg[15:8]),bright8(pixel_in_reg[7:0])};
@@ -135,29 +151,44 @@ module pixel_algorithm #(
     wire [23:0] blur_pixel={blur_value,blur_value,blur_value};
     wire [23:0] edge_pixel = (edge_valid && scharr_scaled >= EDGE_TH) ? 24'hffffff : 24'h000000;
     wire [23:0] emboss_pixel={emboss_value8,emboss_value8,emboss_value8};
-    wire [23:0] sepia_pixel={{1'b0,pixel_in_reg[23:17]}+{2'd0,pixel_in_reg[15:10]}+{3'd0,pixel_in_reg[7:3]},
-                             {3'd0,pixel_in_reg[23:19]}+{1'b0,pixel_in_reg[15:9]}+{3'd0,pixel_in_reg[7:3]},
-                             {4'd0,pixel_in_reg[23:20]}+{3'd0,pixel_in_reg[15:11]}+{2'd0,pixel_in_reg[7:2]}};
     wire [23:0] rgb_swap_pixel={pixel_in_reg[7:0],pixel_in_reg[23:16],pixel_in_reg[15:8]};
 
+    reg [23:0] legacy_pixel,pixel_d2,pixel_d3,pixel_d4;
+    reg [3:0] mode_d2,mode_d3,mode_d4;
+    wire [23:0] cartoon_pixel,cartoon_edge;wire cartoon_de;
+    pixel_cartoon #(.IMG_WIDTH(IMG_WIDTH),.IMG_HEIGHT(IMG_HEIGHT)) u_cartoon(
+        .clk(clk),.rst_n(rst_n),.frame_start(frame_start),.line_end(line_end),.de(de),
+        .pixel_in(pixel_in),.pixel_out(cartoon_pixel),.out_de(cartoon_de),.out_sof(),.out_eol(),.edge_out(cartoon_edge));
+    // Match the legacy single-clock effects to the four-clock cartoon path.
+    // This preserves the pixel/qualifier relationship across live mode changes.
+    assign pixel_out=!cartoon_de?24'd0:mode_d4==9?cartoon_pixel:mode_d4==7?cartoon_edge:pixel_d4;
+    always @(posedge clk or negedge rst_n)begin
+        if(!rst_n)begin pixel_d2<=0;pixel_d3<=0;pixel_d4<=0;mode_d2<=0;mode_d3<=0;mode_d4<=0;end
+        else begin pixel_d2<=legacy_pixel;pixel_d3<=pixel_d2;pixel_d4<=pixel_d3;
+            mode_d2<=mode_reg;mode_d3<=mode_d2;mode_d4<=mode_d3;end
+    end
     always @* begin
         case (mode_reg)
-            4'd0: pixel_out=pixel_in_reg;   // 色彩还原: ISP链输出直通
-            4'd1: pixel_out=gray_pixel;
-            4'd2: pixel_out=invert_pixel;
-            4'd3: pixel_out=binary_pixel;
-            4'd4: pixel_out=bright_pixel;
-            4'd5: pixel_out=sharpen_pixel;
-            4'd6: pixel_out=blur_pixel;
-            4'd7: pixel_out=edge_pixel;
-            4'd8: pixel_out=emboss_pixel;
-            4'd9: pixel_out=sepia_pixel;
-            4'd10: pixel_out=rgb_swap_pixel;
-            default: pixel_out=pixel_in_reg;
+            4'd0: legacy_pixel=pixel_in_reg;   // 色彩还原: ISP链输出直通
+            4'd1: legacy_pixel=gray_pixel;
+            4'd2: legacy_pixel=invert_pixel;
+            4'd3: legacy_pixel=binary_pixel;
+            4'd4: legacy_pixel=bright_pixel;
+            4'd5: legacy_pixel=sharpen_pixel;
+            4'd6: legacy_pixel=blur_pixel;
+            4'd7: legacy_pixel=24'd0; // shared RGB/Y gradient output selected above
+            4'd8: legacy_pixel=emboss_pixel;
+            4'd9: legacy_pixel=pixel_in_reg; // renderer selected after matching pipelines
+            4'd10: legacy_pixel=rgb_swap_pixel;
+            default: legacy_pixel=pixel_in_reg;
         endcase
-        if (!de_reg) pixel_out = 24'd0;
+        if (!de_reg) legacy_pixel = 24'd0;
     end
 
+    // One explicit write port per line RAM, including coincident SOF+DE.
+    always @(posedge clk)begin
+        if(de_reg)begin line2[spatial_x]<=mid_now;line1[spatial_x]<=bot_now;end
+    end
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             x <= 0; y <= 0;
@@ -183,8 +214,8 @@ module pixel_algorithm #(
             mode_reg        <= mode;
 
             if (frame_start_reg) begin
-            x <= 0; y <= 0;
-            top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= 0;
+            x <= de_reg && !line_end_reg ? 11'd1 : 11'd0; y <= de_reg && line_end_reg ? 11'd1 : 11'd0;
+            top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= de_reg?gray_reg:8'd0;
             if (binary_pixel_count != 0) begin
                 // Limit movement to eight levels per frame so illumination
                 // changes do not flip the whole binary image immediately.
@@ -208,8 +239,6 @@ module pixel_algorithm #(
             binary_luma_sum <= binary_luma_sum + gray_reg;
             if (binary_pixel_count != 22'h3fffff)
                 binary_pixel_count <= binary_pixel_count + 1'b1;
-            line2[x] <= mid_now;
-            line1[x] <= bot_now;
             top_prev2 <= top_prev1; top_prev1 <= top_now;
             mid_prev2 <= mid_prev1; mid_prev1 <= mid_now;
             bot_prev2 <= bot_prev1; bot_prev1 <= bot_now;
