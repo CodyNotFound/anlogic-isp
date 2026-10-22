@@ -6,8 +6,8 @@
 //            大量组合 LUT 搬进 1 个 20K ERAM，综合后显著节省 LUT 资源。
 // 数据来源 : user_source/hdl_source/osd_font_rom.mif
 //            WIDTH=16, DEPTH=2048；前 1888 字有效（118 字符 x 16 行，
-//            ASCII 40 + 中文 78），每字符 16 行、每行 1 个 16bit 字，
-//            bit15 = 字模最左像素。索引 0~117（地址 0~1887），其余填充。
+//            ASCII 40 + 中文 79），每字符 16 行、每行 1 个 16bit 字，
+//            bit15 = 字模最左像素。索引 0~118（地址 0~1903），其余填充。
 // 时序     : 纯 1 拍同步读 —— I_clk 上升沿采样 I_char/I_row，
 //            O_row_bits 在下一时钟周期稳定有效（REGMODE="NOREG"）。
 //            无复位：ROM 无状态，配置加载 mif 后输出即有效。
@@ -62,15 +62,15 @@ module osd_font_bram (
             char_idx = 7'd37;                    // '-' -> 37
         end else if (I_char == 8'h2E) begin
             char_idx = 7'd38;                    // '.' -> 38
-        end else if ((I_char >= 8'h80) && (I_char <= 8'hCD)) begin
-            char_idx = {1'b0, I_char[6:0]} + 7'd40; // 中文 -> 40~117(78字,31省+彩还)
+        end else if ((I_char >= 8'h80) && (I_char <= 8'hCE)) begin
+            char_idx = {1'b0, I_char[6:0]} + 7'd40; // 中文 -> 40~118(79字,+区)
         end else begin
             char_idx = 7'd39;                    // 空格/未知码兜底（全 0 字模）
         end
     end
 
     // ROM 读地址 = 索引*16 + 行号，即 7bit 索引拼接 4bit 行号（11bit，最大 1887）
-    wire [10:0] rom_addr = {char_idx, I_row};   // 索引*16+行, 最大117*16+15=1887
+    wire [10:0] rom_addr = {char_idx, I_row};   // 索引*16+行, 最大118*16+15=1903
 
     //-------------------------------------------------------------------------
     // ERAM 例化连线（信号名沿用 vendor 网表模板，便于与模板逐字对照）

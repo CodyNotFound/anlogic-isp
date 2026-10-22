@@ -4,7 +4,8 @@ module hdmi_mixer #(
     parameter IMG_WIDTH = 1280,
     parameter IMG_HEIGHT = 720,
     parameter integer DEBUG_MODE = 0,
-    parameter integer ENABLE_OSD = 1
+    parameter integer ENABLE_OSD = 1,
+    parameter integer ENABLE_SWITCH_OSD = 1
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -18,7 +19,7 @@ module hdmi_mixer #(
     input wire[3:0]   I_debug_status,
     input wire        I_cam_frame_tog,   //摄像头帧脉冲toggle电平（csi时钟域）
     input wire[7:0]   I_latency_frames,  //兼容接口；延迟显示已移除
-    input wire[3:0]   I_mode,            //算法模式(0=色彩还原, 1..10=效果), HDMI像素域
+    input wire[3:0]   I_mode,            //0=色彩还原,1..10=效果,11=FACE人脸定位
     input wire[3:0]   I_isp_demo,        //{active, step[2:0]} ISP分步演示状态, 底栏切"ISP:N 名称"
     input wire[3:0]   I_feature_enable,  //AE/AWB/HE/AB, HDMI像素域
 
@@ -342,8 +343,12 @@ module hdmi_mixer #(
                 4'd6: case (I_idx) 4'd0: F_mode_name_char=8'h82; 4'd1: F_mode_name_char=8'ha3; default: F_mode_name_char=8'h00; endcase // 模糊
                 4'd7: case (I_idx) 4'd0: F_mode_name_char=8'ha4; 4'd1: F_mode_name_char=8'ha5; default: F_mode_name_char=8'h00; endcase // 边缘
                 4'd8: case (I_idx) 4'd0: F_mode_name_char=8'ha6; 4'd1: F_mode_name_char=8'ha7; default: F_mode_name_char=8'h00; endcase // 浮雕
-                4'd9: case (I_idx) 4'd0: F_mode_name_char=8'ha8; 4'd1: F_mode_name_char=8'ha9; default: F_mode_name_char=8'h00; endcase // 复古
+                4'd9: case (I_idx) 4'd0: F_mode_name_char="T"; 4'd1: F_mode_name_char="O"; 4'd2: F_mode_name_char="O"; 4'd3: F_mode_name_char="N"; default: F_mode_name_char=8'h00; endcase // Cel cartoon
                 4'd10: case (I_idx) 4'd0: F_mode_name_char=8'haa; 4'd1: F_mode_name_char=8'h9c; default: F_mode_name_char=8'h00; endcase // 换色
+                4'd11: case (I_idx) 4'd0: F_mode_name_char="F"; 4'd1: F_mode_name_char="A"; 4'd2: F_mode_name_char="C"; 4'd3: F_mode_name_char="E"; default: F_mode_name_char=8'h00; endcase // 人脸
+                4'd12: case (I_idx) 4'd0: F_mode_name_char=8'h8c; 4'd1: F_mode_name_char=8'h8d; default: F_mode_name_char=8'h00; endcase // 跟踪
+                4'd13: case (I_idx) 4'd0: F_mode_name_char=8'h88; 4'd1: F_mode_name_char=8'h89; default: F_mode_name_char=8'h00; endcase // 均衡
+                4'd14: case (I_idx) 4'd0: F_mode_name_char=8'h9c; 4'd1: F_mode_name_char=8'hce; default: F_mode_name_char=8'h00; endcase // 色区
                 default: case (I_idx) 4'd0: F_mode_name_char=8'h00; 4'd1: F_mode_name_char=8'h00; default: F_mode_name_char=8'h00; endcase // 空白
             endcase
         end
@@ -500,7 +505,7 @@ module hdmi_mixer #(
                     end
                 end
             end
-            else if ((S_x_1d >= SW_OSD_X) && (S_x_1d < (SW_OSD_X + SW_OSD_W)) &&
+            else if (ENABLE_SWITCH_OSD && (S_x_1d >= SW_OSD_X) && (S_x_1d < (SW_OSD_X + SW_OSD_W)) &&
                      (S_y_1d >= BAN_Y + BAN_TEXT_DY) && (S_y_1d < (BAN_Y + BAN_TEXT_DY + 12'd16))) begin
                 // Right-bottom compact switch state: AE AWB HE AB.
                 v_region = 3'd6;
