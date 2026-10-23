@@ -16,6 +16,9 @@ module design_top_wrapper (
     inout  wire [3:0] I_button,
     input  wire [3:0] I_switch,
     output wire       O_screen_pwm,
+    output wire       O_servo_h, O_servo_v,
+    output wire [3:0] O_led,
+    output wire [7:0] O_seg, O_sel,
     output wire       O_buzz,               // 板载蜂鸣器(C12), 按键哔一声反馈
     output wire       O_tmds_ch0_p,
     output wire       O_tmds_ch1_p,
@@ -65,8 +68,8 @@ module design_top_wrapper (
         .I_sys_clk(I_sys_clk), .I_rst_n(I_rst_n),
         .O_cam_scl(O_cam_scl), .IO_cam_sda(IO_cam_sda),
         .O_cam_24m(O_cam_24m), .O_cam_rst(O_cam_rst),
-        .I_ae_enable(~I_switch[0]),
-        .I_awb_enable(~I_switch[1]),
+        .I_ae_enable(O_led[1]),
+        .I_awb_enable(1'b1),
         .I_isp_demo(isp_demo_sel),
         .I_ae_stat_y(hdmi_ae_stat_y),
         .I_ae_stat_toggle(hdmi_ae_stat_toggle),
@@ -110,7 +113,9 @@ module design_top_wrapper (
         .pixel_out       (hdmi_out_data),
         .frame_stat_y    (hdmi_ae_stat_y),
         .frame_stat_toggle(hdmi_ae_stat_toggle),
-        .isp_demo_sel(isp_demo_sel)
+        .isp_demo_sel(isp_demo_sel),
+        .servo_pwm_h(O_servo_h),.servo_pwm_v(O_servo_v),
+        .panel_leds(O_led),.panel_segments(O_seg),.panel_selects(O_sel)
     );
 
     // 板载蜂鸣器: 任意K1-K4按下沿哔~30ms@2.7kHz (板上SW5为物理使能开关, 低有效无源)

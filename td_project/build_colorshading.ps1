@@ -5,9 +5,11 @@ param(
     [switch]$AllowGateTimingExploration,
   [switch]$DisableFsmInference,
   [int]$MinControlSet = -1,
-  [int]$MinRippleLength = -1
+  [int]$MinRippleLength = -1,
+  [switch]$RouteOnly
 )
 $ErrorActionPreference = 'Stop'
+if($RouteOnly -and $Stage -ne 'Implementation'){throw 'RouteOnly requires Implementation'}
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if ($RunName -notmatch '^colorshading_runs_[A-Za-z0-9_]+$') { throw 'Invalid isolated run name.' }
 $runRoot = Join-Path $PSScriptRoot $RunName
@@ -30,6 +32,11 @@ $sources = foreach ($match in [regex]::Matches($alText,'<File Path="([^"]+)"')) 
     $resolved
 }
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/isp') -Filter 'colorshading_*.vh' | ForEach-Object { $_.FullName }
+$sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/config') -Filter '*.vh' | ForEach-Object { $_.FullName }
+$sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'user_source/hdl_source') -Filter '*.mif' | ForEach-Object { $_.FullName }
+# Face ROM contents are synthesis inputs, even though they are not Verilog files.
+$faceRomRoot=Join-Path $projectRoot 'rtl/analytics/face_lbp'
+$sources += @('weak.hex','stage.hex','geometry.hex','human_weak.hex','human_stage.hex','human_geometry.hex') | ForEach-Object {Join-Path $faceRomRoot $_}
 New-Item -ItemType Directory -Force -Path $synDir,$phyDir | Out-Null
 $manifest = foreach ($source in ($sources | Sort-Object -Unique)) {
     $hash = Get-FileHash -LiteralPath $source -Algorithm SHA256
@@ -92,8 +99,15 @@ switch ($Stage) {
         if ([double]::Parse($gateSlack.Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture) -lt 0 -and -not $AllowGateTimingExploration) {
             throw 'Gate setup timing is negative; use AllowGateTimingExploration only when a reviewed routed comparison justifies a placement probe.'
         }
-        $dir=$phyDir; $start='opt_place'; $end='bitgen'; $kind='phy'
+        if($RouteOnly -and (-not(Test-Path -LiteralPath (Join-Path $phyDir ($name+'_place.db'))) -or
+                            -not(Test-Path -LiteralPath (Join-Path $phyDir '.opt_place.end.f')))){
+            throw 'RouteOnly requires a validated placed checkpoint'
+        }
+        $dir=$phyDir; $start=if($RouteOnly){'opt_route'}else{'opt_place'}; $end='bitgen'; $kind='phy'
         $extra="set parent ../syn`nset arr_filter false`nset drHoldFix on"
+        # DefaultFlow normally keeps the checkpoint's cached constraints. Its
+        # documented 'sp' path clears/reloads user SDC after importing the DB.
+        if($RouteOnly){$extra+="`nset sp 1"}
     }
 }
 $settings += "`nset run_type $kind`nset start_step $start`nset end_step $end`n$extra`n"
@@ -112,6 +126,12 @@ Push-Location $dir
 try {
     & $tdTool 'run_checked.tcl' 2>&1 | Tee-Object -FilePath ($Stage.ToLower()+'.log') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "TD $Stage failed with exit $LASTEXITCODE" }
+    if($Stage -eq 'Check'){
+        $checkText=[IO.File]::ReadAllText((Join-Path $dir 'check.log'))
+        if($checkText -match 'HDL-5105[^\r\n]*(weak|stage|geometry)\.hex'){
+            throw 'Face model ROM not loaded; refuse synthesis with uninitialized weights.'
+        }
+    }
     if (-not (Test-Path -LiteralPath ('.'+$end+'.end.f'))) { throw "TD $end success marker missing." }
 } finally { Pop-Location }
 

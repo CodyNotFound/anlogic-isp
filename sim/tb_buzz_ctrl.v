@@ -1,48 +1,85 @@
 `timescale 1ns/1ps
 module tb_buzz_ctrl;
- reg clk=0,rst_n=0;reg [3:0] keys=4'b0000;wire buzz;
- integer ticks=0, flips=0;
- // boot_st 转移时刻(拍): 0静默1s 1=D5 2=gap 3=A5 4=gap 5=D6尾音 6=完成
- integer t_st[0:6];reg [2:0] last_st=0;
- integer t_expect;
- buzz_ctrl #(.CLK_HZ(75000)) dut(.I_clk(clk),.I_rst_n(rst_n),.I_keys(keys),.I_strobe(1'b0),.O_buzz(buzz));
- always #6666 clk=~clk;  // 1拍=1等效ms (CLK_HZ缩频1000x自洽)
- always @(posedge clk)begin
-  ticks=ticks+1;
-  if(rst_n)begin
-   if(buzz)flips=flips+1;
-   if(dut.boot_st!=last_st)begin t_st[dut.boot_st]=ticks;last_st=dut.boot_st;end
+ reg clk=0,rst_n=0; reg [3:0] keys=0; reg strobe=0; wire buzz;
+ integer cycle=0, last_boot=0, last_beep=0, tones=0, starts=0;
+ integer entered[0:6]; integer n, keyno, before_count;
+ buzz_ctrl #(.CLK_HZ(75000)) dut(clk,rst_n,keys,strobe,buzz);
+ always #5 clk=~clk;
+ always @(negedge clk) if(rst_n) begin
+  cycle=cycle+1;
+  if(dut.boot_st!=last_boot)begin entered[dut.boot_st]=cycle;last_boot=dut.boot_st;end
+  if(dut.beep_seq!=last_beep)begin
+   if(dut.beep_seq==1 || dut.beep_seq==3)tones=tones+1;
+   if(dut.beep_seq==1)starts=starts+1;
+   last_beep=dut.beep_seq;
   end
+  if(dut.boot_st==6 && dut.beep_seq==0 && buzz!==1'b1)
+   $fatal(1,"active-low buzzer must idle high");
  end
+ task wait_cycles; input integer count;
+ begin repeat(count)@(posedge clk);#1;end endtask
+ task key_bounce; input integer idx;
+ begin
+  // 8ms press chatter, stable press, 8ms release chatter; includes >30ms hold.
+  for(n=0;n<8;n=n+1)begin keys[idx]=~keys[idx];wait_cycles(75);end
+  keys[idx]=1;wait_cycles(9000);
+  for(n=0;n<8;n=n+1)begin keys[idx]=~keys[idx];wait_cycles(75);end
+  keys[idx]=0;wait_cycles(6000);
+ end endtask
  initial begin
-  repeat(10)@(negedge clk);rst_n=1;
-  repeat(115000)@(negedge clk);   // 静默75000 + 旋律~37000拍 + 余量
-  // C1: 转移时刻 (静默1000ms, D5 220ms, gap 70ms, A5 220ms, gap 70ms, D6 450ms)
-  t_expect=75000;
-  if(t_st[1]>t_expect+300||t_st[1]<t_expect-300)$fatal(1,"D5=%0d exp~%0d",t_st[1],t_expect);
-  t_expect=t_expect+16500;
-  if(t_st[2]>t_expect+200||t_st[2]<t_expect-200)$fatal(1,"gap1=%0d exp~%0d",t_st[2],t_expect);
-  t_expect=t_expect+5250;
-  if(t_st[3]>t_expect+200||t_st[3]<t_expect-200)$fatal(1,"A5=%0d exp~%0d",t_st[3],t_expect);
-  t_expect=t_expect+16500;
-  if(t_st[4]>t_expect+200||t_st[4]<t_expect-200)$fatal(1,"gap2=%0d exp~%0d",t_st[4],t_expect);
-  t_expect=t_expect+5250;
-  if(t_st[5]>t_expect+200||t_st[5]<t_expect-200)$fatal(1,"D6=%0d exp~%0d",t_st[5],t_expect);
-  t_expect=t_expect+33750;
-  if(t_st[6]>t_expect+500||t_st[6]<t_expect-300)$fatal(1,"done=%0d exp~%0d",t_st[6],t_expect);
-  $display("** C1 PASS: boot melody D5(220ms)-gap(70)-A5(220ms)-gap(70)-D6(450ms)");
-  // C2: 旋律期间有方波, 完成后静止
-  if(flips<200)$fatal(1,"melody flips=%0d",flips);
-  flips=0;
-  repeat(3000)@(negedge clk);
-  if(flips!=0)$fatal(1,"flips after done=%0d",flips);
-  $display("** C2 PASS: square wave + silent after");
-  // C3: 按键哔
-  keys=4'b0100;repeat(4)@(negedge clk);keys=4'b0000;
-  repeat(3000)@(negedge clk);
-  if(dut.beep_seq!=3'd0)$fatal(1,"key beep not finished");
-  $display("** C3 PASS: key beep");
-  $display("** TB_BUZZ PASS **");$finish;
+  for(n=0;n<7;n=n+1)entered[n]=-1;
+  wait_cycles(5);rst_n=1;
+  wait_cycles(160000);
+  if(dut.boot_st!==6)$fatal(1,"boot did not complete");
+  if(entered[1]<74999 || entered[1]>75002)$fatal(1,"boot silence %0d",entered[1]);
+  if(entered[2]-entered[1]!=16500 || entered[3]-entered[2]!=5250 ||
+     entered[4]-entered[3]!=16500 || entered[5]-entered[4]!=5250 ||
+     entered[6]-entered[5]!=33750)$fatal(1,"wrong note/gap lengths");
+  $display("PASS boot silence 1000ms, notes 220/220/450ms, gaps 70ms");
+  // Narrow spikes are ignored, and not just swallowed while a beep is busy.
+  keys=1;wait_cycles(1400);keys=0;wait_cycles(6000);
+  if(starts!=0)$fatal(1,"short glitch beeped");
+  for(keyno=0;keyno<4;keyno=keyno+1) begin
+   before_count=starts;key_bounce(keyno);
+   if(starts!=before_count+1)$fatal(1,"key %0d bounce generated %0d beeps",keyno,starts-before_count);
+  end
+  $display("PASS four keys: press/release chatter produces one beep each");
+  before_count=starts;keys=15;wait_cycles(15000);
+  if(starts!=before_count+1)$fatal(1,"simultaneous keys/long hold repeated");
+  keys=0;wait_cycles(6000);
+  keys=1;wait_cycles(3000);keys=0;wait_cycles(3000);
+  keys=1;wait_cycles(3000);keys=0;wait_cycles(6000);
+  if(starts!=before_count+3)$fatal(1,"separate deliberate presses lost");
+  $display("PASS simultaneous press, long hold, release rearm, repeated deliberate presses");
+  before_count=tones;strobe=1;wait_cycles(12000);strobe=0;wait_cycles(3000);
+  if(tones!=before_count+2)$fatal(1,"event must generate exactly two tones, got %0d",tones-before_count);
+  if(dut.beep_seq!==0 || buzz!==1)$fatal(1,"must end silent");
+  $display("PASS strobe still gives exactly two tones; idle output high");
+  $display("TB_BUZZ_PASS");$finish;
  end
- initial begin #2000000000;$fatal(1,"timeout");end
+ initial begin #4000000;$fatal(1,"timeout");end
+endmodule
+
+// Production-clock arithmetic boundary checks, without simulating 150M clocks.
+module tb_buzz_production;
+ reg clk=0,rst_n=0;wire buzz;
+ buzz_ctrl dut(clk,rst_n,4'b0,1'b0,buzz);
+ always #5 clk=~clk;
+ initial begin
+  repeat(4)@(negedge clk);rst_n=1;
+  @(negedge clk);
+  if(dut.note_len(1)!==32'd16500000 || dut.note_len(5)!==32'd33750000)
+   $fatal(1,"75MHz note arithmetic truncated");
+  if(dut.DB_CYCLES!=1500000)$fatal(1,"20ms debounce at 75MHz");
+  dut.boot_cnt=74999998;
+  @(negedge clk);
+  if(dut.boot_st!==0 || dut.boot_cnt!==74999999)$fatal(1,"1s count truncated");
+  @(negedge clk);
+  if(dut.boot_st!==1 || dut.boot_cnt!==0)$fatal(1,"1s boundary");
+  dut.boot_cnt=16499999;
+  @(negedge clk);
+  if(dut.boot_st!==2)$fatal(1,"220ms boundary");
+  $display("TB_BUZZ_PRODUCTION_PASS: 75MHz counter boundaries and debounce");$finish;
+ end
+ initial begin #10000;$fatal(1,"timeout");end
 endmodule

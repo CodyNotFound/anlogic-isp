@@ -38,6 +38,10 @@ set_false_path -hold   -to [get_regs -nowarn {*u_video_in/S_camera_frame_start_e
 set_false_path -setup -to [get_regs -nowarn {*u_video_out/S_video_vsync_*}]
 set_false_path -hold   -to [get_regs -nowarn {*u_video_out/S_video_vsync_*}]
 
+# v37 application fixes ISP demo select to zero (K3 is a manual down key).
+# There is no runtime HDMI-to-sys50 demo bus. Remove its former first-stage
+# exception and keep ordinary timing checks on any remaining destination logic.
+
 # Async reset assertion/deassertion into each domain's reset synchronizer.
 set_false_path -to [get_regs -nowarn {*u_video_out/pixel_reset_sync*}]
 set_false_path -to [get_regs -nowarn {*u_video_in/U_w128_d512_fifo/*/asy_w_rst1*}]

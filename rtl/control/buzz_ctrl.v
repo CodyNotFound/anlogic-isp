@@ -5,7 +5,8 @@
 module buzz_ctrl #(
     parameter integer CLK_HZ    = 75_000_000,
     parameter integer TONE_HZ   = 2700,
-    parameter integer BEEP_MS   = 30          // 单哔时长
+    parameter integer BEEP_MS   = 30,         // 单哔时长
+    parameter integer DEBOUNCE_MS = 20       // 连续稳定后才确认按下/松开
 )(
     input  wire       I_clk,
     input  wire       I_rst_n,
@@ -29,17 +30,17 @@ module buzz_ctrl #(
             endcase
         end
     endfunction
-    function [22:0] note_len; input [2:0] idx;
+    function [31:0] note_len; input [2:0] idx;
         begin
             case (idx)
-                3'd1, 3'd3: note_len = MS[22:0] * 23'd220;   // 两个主音各220ms
-                3'd2, 3'd4: note_len = MS[22:0] * 23'd70;    // 音符间隔70ms
-                default:     note_len = MS[22:0] * 23'd450;  // 尾音450ms
+                3'd1, 3'd3: note_len = MS * 220;
+                3'd2, 3'd4: note_len = MS * 70;
+                default:     note_len = MS * 450;
             endcase
         end
     endfunction
     reg [2:0]  boot_st;                        // 0=静默 1/3/5=音符 2/4=间隔 6+=完成
-    reg [22:0] boot_cnt;                       // 复用计数: 静默/音符时长/间隔
+    reg [31:0] boot_cnt;                       // 75MHz的1秒需要27位，不能用23位
     reg [22:0] boot_tone_cnt;
     reg        boot_ph;
     wire       boot_active = (boot_st == 3'd1) || (boot_st == 3'd3) || (boot_st == 3'd5);
@@ -61,13 +62,13 @@ module buzz_ctrl #(
 
             case (boot_st)
                 3'd0: begin                                   // 上电静默1s
-                    if (boot_cnt >= MS[22:0] * 23'd1000) begin
+                    if (boot_cnt >= MS * 1000 - 1) begin
                         boot_cnt <= 23'd0; boot_st <= 3'd1;
                     end
                     else boot_cnt <= boot_cnt + 23'd1;
                 end
                 3'd1, 3'd2, 3'd3, 3'd4, 3'd5: begin           // 音符/间隔时长
-                    if (boot_cnt >= note_len(boot_st)) begin
+                    if (boot_cnt >= note_len(boot_st) - 1) begin
                         boot_cnt <= 23'd0;
                         boot_st <= boot_st + 3'd1;            // 5→6=完成
                     end
@@ -79,12 +80,33 @@ module buzz_ctrl #(
     end
 
     // ================= 按键哔 =================
-    // ---- 按键按下沿检测(两级同步+边沿) ----
-    reg [3:0] k_d1, k_d2;
-    wire [3:0] k_press = k_d1 & ~k_d2;
+    // 同步不等于防抖。每路独立确认按下和松开，释放抖动不能重新武装。
+    localparam integer DB_CYCLES = (MS * DEBOUNCE_MS < 1) ? 1 : MS * DEBOUNCE_MS;
+    localparam integer DB_W = (DB_CYCLES < 2) ? 1 : $clog2(DB_CYCLES);
+    reg [3:0] k_meta, k_sync, k_stable, k_previous;
+    wire [3:0] k_press = k_stable & ~k_previous;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            k_meta <= 0; k_sync <= 0; k_previous <= 0;
+        end else begin
+            k_meta <= I_keys; k_sync <= k_meta; k_previous <= k_stable;
+        end
+    end
+    genvar key_index;
+    generate for (key_index=0; key_index<4; key_index=key_index+1) begin: g_debounce
+        reg [DB_W-1:0] count;
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if (!I_rst_n) begin
+                count <= 0; k_stable[key_index] <= 0;
+            end else if (k_sync[key_index] == k_stable[key_index]) count <= 0;
+            else if (count == DB_CYCLES-1) begin
+                count <= 0; k_stable[key_index] <= k_sync[key_index];
+            end else count <= count + 1'b1;
+        end
+    end endgenerate
 
     reg [22:0] tone_cnt;
-    reg [22:0] len_cnt;
+    reg [31:0] len_cnt;
     reg        tone_ph;
     reg [2:0]  beep_seq;                      // 0=闲 1=第一声 2=间歇 3=第二声
     reg        strobe_d;
@@ -92,12 +114,12 @@ module buzz_ctrl #(
 
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
-            k_d1 <= 4'd0; k_d2 <= 4'd0; strobe_d <= 1'b0; r_double <= 1'b0;
+            strobe_d <= 1'b0; r_double <= 1'b0;
             tone_cnt <= 23'd0; len_cnt <= 23'd0; tone_ph <= 1'b0;
             beep_seq <= 3'd0;
         end
         else begin
-            k_d1 <= I_keys; k_d2 <= k_d1; strobe_d <= I_strobe;
+            strobe_d <= I_strobe;
 
             // 音调方波(只在发声期驱动输出)
             if (tone_cnt >= HALF - 1) begin
@@ -109,8 +131,8 @@ module buzz_ctrl #(
             // 状态推进
             case (beep_seq)
                 3'd0: begin                                   // 空闲: 等触发
-                    if (|k_press) begin beep_seq <= 3'd1; len_cnt <= LEN[22:0]; r_double <= 1'b0; end
-                    else if (I_strobe && !strobe_d) begin beep_seq <= 3'd1; len_cnt <= LEN[22:0]; r_double <= 1'b1; end
+                    if (|k_press) begin beep_seq <= 3'd1; len_cnt <= LEN; r_double <= 1'b0; end
+                    else if (I_strobe && !strobe_d) begin beep_seq <= 3'd1; len_cnt <= LEN; r_double <= 1'b1; end
                 end
                 3'd1: begin                                   // 第一声
                     if (len_cnt == 23'd1) begin
@@ -120,8 +142,8 @@ module buzz_ctrl #(
                     else len_cnt <= len_cnt - 23'd1;
                 end
                 3'd2: begin                                   // 40ms间歇→第二声
-                    if (len_cnt >= MS[22:0] * 23'd40) begin
-                        len_cnt  <= LEN[22:0];
+                    if (len_cnt >= MS * 40 - 1) begin
+                        len_cnt  <= LEN;
                         beep_seq <= 3'd3;
                     end
                     else len_cnt <= len_cnt + 23'd1;
@@ -138,7 +160,8 @@ module buzz_ctrl #(
     end
 
     // 输出仲裁: 开机旋律期间旋律优先, 之后按键哔
-    assign O_buzz = boot_active                     ? boot_ph
-                  : (((beep_seq == 3'd1) || (beep_seq == 3'd3)) ? tone_ph : 1'b0);
+    // 板上PNP驱动低有效，空闲必须输出1，不能持续给蜂鸣器通电。
+    assign O_buzz = boot_active                     ? ~boot_ph
+                  : (((beep_seq == 3'd1) || (beep_seq == 3'd3)) ? ~tone_ph : 1'b1);
 
 endmodule

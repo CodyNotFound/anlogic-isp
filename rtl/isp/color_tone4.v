@@ -52,12 +52,18 @@ module color_tone4 #(
  function [23:0] saturation_pixel;
  input [23:0] pixel;
  reg [7:0] r,g,b,y,max_rgb,min_rgb;reg signed [10:0] dr,dg,db;
+ reg [8:0] shadow_r,shadow_g,shadow_b;
  reg signed [20:0] dr_ext,dg_ext,db_ext,r_scaled,g_scaled,b_scaled,r_out,g_out,b_out;
  begin
   r=pixel[23:16];g=pixel[15:8];b=pixel[7:0];y=pixel_luma(pixel);
+  shadow_r={1'b0,r}+{1'b0,y};shadow_g={1'b0,g}+{1'b0,y};shadow_b={1'b0,b}+{1'b0,y};
   max_rgb=r;if(g>max_rgb)max_rgb=g;if(b>max_rgb)max_rgb=b;
   min_rgb=r;if(g<min_rgb)min_rgb=g;if(b<min_rgb)min_rgb=b;
-  if(max_rgb-min_rgb<8||y<12)saturation_pixel=pixel;
+  // Suppress poorly conditioned shadow chroma before gamma lifts black noise.
+  // Bright/color reference pixels retain the established saturation mapping.
+  if(y<8)saturation_pixel={y,y,y};
+  else if(y<16)saturation_pixel={shadow_r[8:1],shadow_g[8:1],shadow_b[8:1]};
+  else if(max_rgb-min_rgb<8||y<24)saturation_pixel=pixel;
   else begin
    dr=$signed({1'b0,r})-$signed({1'b0,y});
    dg=$signed({1'b0,g})-$signed({1'b0,y});
