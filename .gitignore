@@ -19,9 +19,10 @@ Thumbs.db
 !reports/**/
 !reports/**/.gitkeep
 
-# Isolated Tang Dynasty build runs; retained useful bitstreams live under releases/.
+# Isolated Tang Dynasty build runs; bitstreams and reports are archived outside git.
 td_project/colorshading_runs_*/
 # Standalone face detector probes; small verified evidence is in reports/face_lbp.
 td_project/face_lbp_probe_*/
 td_project/object_classifier_probe_*/
 sim/vision_tasks_work/
+releases/
