@@ -1,18 +1,27 @@
-# TD 构建产物
-td_project/colorshading_runs_*/
-td_project/camera_to_dsi_display_Runs/
-td_project/*.db
-td_project/*.bit
-td_project/*.rpt
-td_project/*.qor
+# Tang Dynasty generated output
+td_project/*_Runs/
+td_project/log/
 td_project/*.log
 td_project/*.logw
-td_project/log/
-*.log *.logw
-# 仿真工作库
-sim/msim*/ sim/work*/ sim/work_*/
-# 备份与临时
-*.bak *~ ._*
-__pycache__/
-# AI会话原始数据仅本地留档, 不入库
-docs/ai-sessions/
+td_project/.lock.f
+*.jou
+*.wlf
+*.vcd
+*.do
+
+# Local tool state
+*.recent_user_depot.ini
+*.swp
+*.tmp
+Thumbs.db
+
+# Keep empty report directories
+!reports/**/
+!reports/**/.gitkeep
+
+# Isolated Tang Dynasty build runs; retained useful bitstreams live under releases/.
+td_project/colorshading_runs_*/
+# Standalone face detector probes; small verified evidence is in reports/face_lbp.
+td_project/face_lbp_probe_*/
+td_project/object_classifier_probe_*/
+sim/vision_tasks_work/
