@@ -23,13 +23,15 @@ module servo_gimbal_ctrl #(
  reg seen,pending,valid_d;
  reg [11:0] desired_h,desired_v;
  reg [11:0] capture_h,capture_v;reg capture_good;
- reg [4:0] slow_left;
+ reg [4:0] slow_left;reg slow_short;
  reg [7:0] slow_mag_h,slow_mag_v;
  reg slow_neg_h,slow_neg_v;
  reg [3:0] fraction_h,fraction_v;
  wire slow=slow_source===1'b1;
  wire [8:0] ramp_h={5'd0,fraction_h}+{1'b0,slow_mag_h};
  wire [8:0] ramp_v={5'd0,fraction_v}+{1'b0,slow_mag_v};
+ wire[5:0] slow_step_h=slow_short?ramp_h[8:3]:{1'b0,ramp_h[8:4]};
+ wire[5:0] slow_step_v=slow_short?ramp_v[8:3]:{1'b0,ramp_v[8:4]};
  wire plan_active=age_us<AUTO_PLAN_US;
  reg [3:0] held_frames,held_keys;
  wire tick_us=divider==DIV-1;
@@ -92,7 +94,7 @@ module servo_gimbal_ctrl #(
    divider<=0;phase_us<=0;pwm_h<=0;pwm_v<=0;
    pulse_h_us<=CENTER_US;pulse_v_us<=CENTER_US;
    age_us<=0;seen<=0;pending<=0;valid_d<=0;desired_h<=CENTER_US;desired_v<=CENTER_US;
-   held_frames<=0;held_keys<=0;capture_h<=CENTER_US;capture_v<=CENTER_US;capture_good<=0;slow_left<=0;slow_mag_h<=0;slow_mag_v<=0;slow_neg_h<=0;slow_neg_v<=0;fraction_h<=0;fraction_v<=0;
+   held_frames<=0;held_keys<=0;capture_h<=CENTER_US;capture_v<=CENTER_US;capture_good<=0;slow_left<=0;slow_short<=0;slow_mag_h<=0;slow_mag_v<=0;slow_neg_h<=0;slow_neg_v<=0;fraction_h<=0;fraction_v<=0;
   end else begin
    valid_d<=result_valid;
    if(capture_valid===1'b1 && enable && !manual_mode)begin capture_good<=1;capture_h<=pulse_h_us;capture_v<=pulse_v_us;end
@@ -111,9 +113,9 @@ module servo_gimbal_ctrl #(
       // Loss holds the last pulse indefinitely. Only a fresh accepted target
       // or an explicit manual command may move the axes; timeout never homes.
       if(slow && slow_left!=0 && found && age_us<SLOW_TIMEOUT_US)begin
-       pulse_h_us<=goal_clamp($signed({2'b0,pulse_h_us})+(slow_neg_h?-$signed({1'b0,ramp_h[8:4]}):$signed({1'b0,ramp_h[8:4]})),H_MIN_US,H_MAX_US);
-       pulse_v_us<=goal_clamp($signed({2'b0,pulse_v_us})+(slow_neg_v?-$signed({1'b0,ramp_v[8:4]}):$signed({1'b0,ramp_v[8:4]})),V_MIN_US,V_MAX_US);
-       fraction_h<=ramp_h[3:0];fraction_v<=ramp_v[3:0];slow_left<=slow_left-1'b1;
+       pulse_h_us<=goal_clamp($signed({2'b0,pulse_h_us})+(slow_neg_h?-$signed({1'b0,slow_step_h}):$signed({1'b0,slow_step_h})),H_MIN_US,H_MAX_US);
+       pulse_v_us<=goal_clamp($signed({2'b0,pulse_v_us})+(slow_neg_v?-$signed({1'b0,slow_step_v}):$signed({1'b0,slow_step_v})),V_MIN_US,V_MAX_US);
+       fraction_h<=slow_short?{1'b0,ramp_h[2:0]}:ramp_h[3:0];fraction_v<=slow_short?{1'b0,ramp_v[2:0]}:ramp_v[3:0];slow_left<=slow_left-1'b1;
       end else if(!slow && plan_active && pending && found)begin
        pulse_h_us<=approach(pulse_h_us,desired_h);
        pulse_v_us<=approach(pulse_v_us,desired_v);
@@ -133,7 +135,8 @@ module servo_gimbal_ctrl #(
    else if(fresh && found && (!slow||capture_good) && cx<IMG_W && cy<IMG_H)begin
     seen<=1;age_us<=0;pending<=!slow;
     if(slow)begin
-     slow_left<=16;fraction_h<=0;fraction_v<=0;
+     slow_short<=delta_h>=-64&&delta_h<=64&&delta_v>=-64&&delta_v<=64;
+     slow_left<=(delta_h>=-64&&delta_h<=64&&delta_v>=-64&&delta_v<=64)?8:16;fraction_h<=0;fraction_v<=0;
      slow_mag_h<=delta_h<0?-delta_h:delta_h;slow_neg_h<=delta_h<0;
      slow_mag_v<=delta_v<0?-delta_v:delta_v;slow_neg_v<=delta_v<0;
     end else slow_left<=0;

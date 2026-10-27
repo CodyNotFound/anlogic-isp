@@ -42,23 +42,24 @@ module pixel_cartoon #(
  wire [31:0] t1=s1_x==0?tn:th1,m1=s1_x==0?mn:mh1,b1=s1_x==0?bn:bh1;
  wire [31:0] t2=s1_x<2?t1:th2,m2=s1_x<2?m1:mh2,b2=s1_x<2?b1:bh2;
  // All spatial modes use this existing RGB/Y window. Only strong blur
- // needs one additional scalar row for its vertical recursive state.
+ // needs one additional RGB row for its vertical recursive state.
  wire[9:0] ytop={2'd0,t2[31:24]}+{2'd0,t1[31:24]}+{2'd0,tn[31:24]};
  wire[9:0] ymid={2'd0,m2[31:24]}+{2'd0,m1[31:24]}+{2'd0,mn[31:24]};
  wire[9:0] ybot={2'd0,b2[31:24]}+{2'd0,b1[31:24]}+{2'd0,bn[31:24]};
  wire[11:0] ysum={2'd0,ytop}+{2'd0,ymid}+{2'd0,ybot};
  wire[11:0] neighbor_y=(ysum-{4'd0,m1[31:24]})>>3;
  wire signed[11:0] detail_y=$signed({4'd0,m1[31:24]})-$signed(neighbor_y);
- wire signed[11:0] sharpen_y=$signed({4'd0,m1[31:24]})+((detail_y>6||detail_y< -6)?(detail_y<<<2):12'sd0);
+ wire signed[11:0] sharp_delta=(detail_y>6||detail_y< -6)?(detail_y<<<2):12'sd0;
  wire signed[11:0] emboss_d=$signed({4'd0,m1[31:24]})-$signed({4'd0,t2[31:24]});
  wire signed[11:0] emboss_y=12'sd128+((emboss_d>6||emboss_d< -6)?emboss_d:12'sd0);
  function[7:0] clip_y;input signed[11:0] value;begin clip_y=value<0?0:value>255?255:value[7:0];end endfunction
- (* ram_style="bram" *) reg[7:0] blur_row[0:IMG_WIDTH-1];
- reg[7:0] blur_q,blur_horizontal,blur_h1,sharp2,sharp3,emboss2,emboss3,blur2,blur3;
- wire[9:0] hsum={2'd0,raw_y}+{2'd0,blur_horizontal}+{1'b0,blur_horizontal,1'b0}+10'd2;
- wire[7:0] blur_h=rx==0?raw_y:hsum[9:2];
- wire[9:0] vsum={2'd0,blur_h1}+{2'd0,blur_q}+{1'b0,blur_q,1'b0}+10'd2;
- wire[7:0] blur_v=s1_y==0?blur_h1:vsum[9:2];
+ (* ram_style="bram" *) reg[23:0] blur_row[0:IMG_WIDTH-1];
+ reg[23:0] blur_q,blur_horizontal,blur_h1,sharp2,sharp3,blur2,blur3;
+ reg[7:0]emboss2,emboss3;
+ function[7:0] iir8;input[7:0]current,previous;reg[9:0]sum;
+ begin sum={2'd0,current}+{2'd0,previous}+{1'd0,previous,1'd0}+10'd2;iir8=sum[9:2];end endfunction
+ wire[23:0] blur_h=rx==0?filtered:{iir8(filtered[23:16],blur_horizontal[23:16]),iir8(filtered[15:8],blur_horizontal[15:8]),iir8(filtered[7:0],blur_horizontal[7:0])};
+ wire[23:0] blur_v=s1_y==0?blur_h1:{iir8(blur_h1[23:16],blur_q[23:16]),iir8(blur_h1[15:8],blur_q[15:8]),iir8(blur_h1[7:0],blur_q[7:0])};
  always @(posedge clk)if(EXTRA_EFFECTS)begin
   blur_q<=blur_row[rx];if(d1)blur_row[s1_x]<=blur_v;
  end
@@ -135,7 +136,7 @@ module pixel_cartoon #(
    end
    d2<=d1;f2<=f1;l2<=l1;
    if(d1)begin
-    if(EXTRA_EFFECTS)begin sharp2<=clip_y(sharpen_y);emboss2<=clip_y(emboss_y);blur2<=blur_v;end
+    if(EXTRA_EFFECTS)begin sharp2<={clip_y($signed({4'd0,m1[23:16]})+sharp_delta),clip_y($signed({4'd0,m1[15:8]})+sharp_delta),clip_y($signed({4'd0,m1[7:0]})+sharp_delta)};emboss2<=clip_y(emboss_y);blur2<=blur_v;end
     r2<=gauss(t2[23:16],t1[23:16],tn[23:16],m2[23:16],m1[23:16],mn[23:16],b2[23:16],b1[23:16],bn[23:16]);
     g2<=gauss(t2[15:8],t1[15:8],tn[15:8],m2[15:8],m1[15:8],mn[15:8],b2[15:8],b1[15:8],bn[15:8]);
     b2sum<=gauss(t2[7:0],t1[7:0],tn[7:0],m2[7:0],m1[7:0],mn[7:0],b2[7:0],b1[7:0],bn[7:0]);
@@ -149,9 +150,9 @@ module pixel_cartoon #(
     strength3<=strength;color3<=strength<=SMOOTH_TH?{r2[11:4],g2[11:4],b2sum[11:4]}:center2;
    end
    out_de<=d3;out_sof<=f3;out_eol<=l3;
-   sharpen_out<=EXTRA_EFFECTS&&d3?{sharp3,sharp3,sharp3}:24'd0;
+   sharpen_out<=EXTRA_EFFECTS&&d3?sharp3:24'd0;
    emboss_out<=EXTRA_EFFECTS&&d3?{emboss3,emboss3,emboss3}:24'd0;
-   blur_out<=EXTRA_EFFECTS&&d3?{blur3,blur3,blur3}:24'd0;
+   blur_out<=EXTRA_EFFECTS&&d3?blur3:24'd0;
    edge_out<=d3?{edge_level,edge_level,edge_level}:24'd0;
    if(!d3)pixel_out<=0;
    else if(strength3>=INK_SOLID_TH+ink_noise_allowance)pixel_out<=24'h101018;

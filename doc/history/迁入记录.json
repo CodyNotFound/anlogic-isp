@@ -147,6 +147,13 @@
       "source_commit": "563247c5d7d42c0db8307b81ec9a566a586bd1c9",
       "message": "fix: 串口状态查询——保留屏幕刷新窗口",
       "changed_files": 4,
+      "removed_files": 0,
+      "destination_commit": "453021d6c9981945d3ad4c11c86cc14d91659846"
+    },
+    {
+      "source_commit": "0b5eb886eb86ecba1ba8c41180f65cc84083e954",
+      "message": "fix: 字模与彩色特效——保留原生像素并缩短小幅人脸修正",
+      "changed_files": 13,
       "removed_files": 0
     }
   ]
