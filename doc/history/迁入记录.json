@@ -105,6 +105,13 @@
       "source_commit": "76a0784e69a439bbdc0b7743f2057d665936084c",
       "message": "feat: 图像效果与共享存储——改善暗部轮廓并保留彩色细节",
       "changed_files": 12,
+      "removed_files": 0,
+      "destination_commit": "3717d97bcab66a3d239cfe68808733c2937025ba"
+    },
+    {
+      "source_commit": "526bd75648548666de2985defce60c20717ebd4f",
+      "message": "feat: 定位遥测——显示目标坐标与算法计算耗时",
+      "changed_files": 10,
       "removed_files": 0
     }
   ]

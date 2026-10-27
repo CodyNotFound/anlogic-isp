@@ -9,7 +9,7 @@ module face_video_cnn #(
  output reg position_valid,found,output reg [11:0] box_x,box_y,box_size,center_x,center_y,
  output wire busy,output wire stream_error,output reg [31:0] completed_frames,
  input wire shared_enable,shared_write_en,input wire [14:0] shared_write_address,shared_read_address,
- input wire [7:0] shared_write_data,output wire [7:0] shared_read_data,output wire [31:0] shared_read_word);
+ input wire [7:0] shared_write_data,output wire [7:0] shared_read_data,output wire [31:0] shared_read_word,output wire [31:0] inference_cycles);
  wire nn_ready,nn_busy,result,nn_found,capturing,load,start;
  wire [16:0] address;wire [7:0] data;wire [11:0] x,y,size,cx,cy;
  wire [13:0] score;wire [31:0] cycles,accepted;
@@ -17,6 +17,7 @@ module face_video_cnn #(
  wire active_reset=rst_n&&enable;
  wire shared_owner=SHARED_TRACK_FRAME&&shared_enable&&!enable;
  assign busy=nn_busy||capturing;
+ assign inference_cycles=cycles;
  yunet_rgb_snapshot #(.WIDTH(WIDTH),.HEIGHT(HEIGHT)) sampler(.clk(clk),.rst_n(active_reset),.enable(enable),.network_busy(nn_busy),
   .sof(sof),.eol(eol),.de(de),.rgb(rgb),.load_valid(load),.load_address(address),.load_data(data),
   .start_network(start),.capturing(capturing),.stream_error(stream_error),.accepted_frames(accepted));

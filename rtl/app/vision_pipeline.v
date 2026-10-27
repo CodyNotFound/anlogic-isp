@@ -54,6 +54,7 @@ module vision_pipeline #(
     wire [11:0] pulse_h,pulse_v,display_h,display_v;
     wire [1:0] gimbal_state;
     wire [23:0] h_digits,v_digits;
+    wire [31:0] face_compute_cycles,task_compute_cycles;
     wire track_valid,track_found;wire [7:0] track_x,track_y;
     wire mix_vsync,mix_hsync,mix_de;
     gimbal_button_router u_button_router(.clk(clk),.rst_n(rst_n),.manual_mode(manual_mode),
@@ -326,11 +327,11 @@ module vision_pipeline #(
             .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
             .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==14)),.shared_write_en(shared_track_write),
             .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
-            .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word));
+            .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.inference_cycles(face_compute_cycles));
     end else begin: lbp_mode
         assign face_position_valid=lbp_valid;assign face_found=lbp_found;
         assign face_x=lbp_x;assign face_y=lbp_y;assign face_size=lbp_size;assign face_center_x=lbp_cx;assign face_center_y=lbp_cy;
-        assign shared_track_rdata=8'd0;assign shared_track_word=32'd0;
+        assign shared_track_rdata=8'd0;assign shared_track_word=32'd0;assign face_compute_cycles=32'd0;
     end endgenerate
     face_position_overlay u_face_overlay(
         .clk(clk),.rst_n(rst_n),.enable(face_enable && info_enabled_f),
@@ -347,7 +348,31 @@ module vision_pipeline #(
         .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode),
         .osd_enable(info_enabled_f),.hud_status(task_hud_status),
         .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
-        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word));
+        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles));
+
+    wire tracking_mode=mode==11||mode==12||mode==14;
+    wire coordinate_found=tracking_mode&&(face_enable?face_found:track_found);
+    wire [11:0] coordinate_x=face_enable?face_center_x:{1'b0,track_x,3'b0};
+    wire [11:0] coordinate_y=face_enable?face_center_y:{1'b0,track_y,3'b0};
+    reg [31:0] completed_compute_cycles;reg compute_seen;reg [3:0] compute_mode;
+    always @(posedge clk or negedge rst_n)begin
+     if(!rst_n)begin completed_compute_cycles<=0;compute_seen<=0;compute_mode<=0;end
+     else begin
+      compute_mode<=mode;
+      if(mode!=compute_mode||!tracking_mode)compute_seen<=0;
+      else if(face_enable?face_position_valid:track_valid)begin
+       completed_compute_cycles<=face_enable?face_compute_cycles:task_compute_cycles;
+       compute_seen<=!face_enable||FACE_CNN_ENABLE;
+      end
+     end
+    end
+    wire [3:0] telemetry_mode;wire telemetry_found,telemetry_compute_valid;
+    wire [15:0] target_x_digits,target_y_digits,compute_ms_digits;
+    vision_telemetry #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT)) u_telemetry(
+     .clk(clk),.rst_n(rst_n),.mode(mode),.found(coordinate_found),.compute_valid(compute_seen),
+     .x(coordinate_x),.y(coordinate_y),.compute_cycles(completed_compute_cycles),
+     .packet_mode(telemetry_mode),.packet_found(telemetry_found),.packet_compute_valid(telemetry_compute_valid),.packet_tick(),
+     .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(compute_ms_digits));
 
     // Existing OSD remains last; analytics never process their own overlays.
     // Its three-stage internal pipeline keeps RGB and HDMI timing aligned.
@@ -358,7 +383,7 @@ module vision_pipeline #(
         .IMG_HEIGHT (IMG_HEIGHT),
         .DEBUG_MODE (DEBUG_MODE),
         .ENABLE_OSD (ENABLE_OSD),
-        .ENABLE_SWITCH_OSD(0),.COMPACT_OSD(1)
+        .ENABLE_SWITCH_OSD(0),.COMPACT_OSD(1),.TARGET_TELEMETRY(1)
     ) u_hdmi_mixer (
         .I_clk            (clk),
         .I_rst_n          (rst_n),
@@ -375,6 +400,9 @@ module vision_pipeline #(
         .I_feature_enable (4'b0),
         .I_info_enable(info_enabled_f),.I_panel_features(feature_requested),
         .I_ctl_state(gimbal_state),.I_task_status(task_hud_status),
+        .I_target_found(telemetry_found&&telemetry_mode==mode&&coordinate_found),
+        .I_compute_valid(telemetry_compute_valid&&telemetry_mode==mode),
+        .I_target_x_digits(target_x_digits),.I_target_y_digits(target_y_digits),.I_compute_ms_digits(compute_ms_digits),
         .I_pulse_h(display_h),.I_pulse_v(display_v),.I_h_digits(h_digits),.I_v_digits(v_digits),
         .O_video_rd_en    (),
         .I_video_rd_data  (task_pixel),

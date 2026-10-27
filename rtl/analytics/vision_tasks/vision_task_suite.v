@@ -12,7 +12,7 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     input wire manual_mode,osd_enable,
     output wire [3:0] hud_status,
     output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
-    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word
+    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word,output wire [31:0] target_compute_cycles
 );
     wire tracking=enabled && mode==12,region=enabled && mode==14;
     wire fs,sv,fe,abort;
@@ -21,7 +21,8 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     vision_rgb_sampler #(.WIDTH(WIDTH),.HEIGHT(HEIGHT)) sampler(
         .clk(clk),.rst_n(rst_n),.enable(tracking||region),.sof(source_sof),.eol(source_eol),.de(source_de),.rgb(source_rgb),
         .frame_start(fs),.sample_valid(sv),.frame_end(fe),.frame_error(abort),.sample_x(sx),.sample_y(sy),.sample_rgb(srgb),.sample_gray(gray));
-    wire tv,tf,rv,rf,rc,ro,picking;
+    wire tv,tf,rv,rf,rc,ro,picking;wire [31:0] tracker_cycles,region_cycles;
+    assign target_compute_cycles=tracking?tracker_cycles:region?region_cycles:32'd0;
     wire [7:0] tx,ty,tq,rx,ry,rw,rh,rcx,rcy;
     wire [14:0] ra;
     wire [1:0] t_lost;
@@ -33,13 +34,13 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     assign shared_write_data=tracking?twdata:rwdata;
     vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3),.EXTERNAL_FRAME(SHARED_TRACK_FRAME),.EXTERNAL_TEMPLATES(SHARED_TRACK_FRAME),.EXTERNAL_SCORES(SHARED_TRACK_FRAME)) tracker(
         .clk(clk),.rst_n(rst_n&&tracking&&!abort),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.gray(gray),
-        .result_valid(tv),.found(tf),.center_x(tx),.center_y(ty),.quality(tq),.best_sad(),.second_sad(),.busy(),.compute_cycles(),
+        .result_valid(tv),.found(tf),.center_x(tx),.center_y(ty),.quality(tq),.best_sad(),.second_sad(),.busy(),.compute_cycles(tracker_cycles),
         .lost_stage(t_lost),.shared_write_en(twrite),.shared_write_addr(twaddr),
         .shared_read_addr(traddr),.shared_write_data(twdata),.shared_read_data(shared_read_data),.shared_read_word(shared_read_word));
     vision_color_region #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.EXTERNAL_QUEUE(SHARED_TRACK_FRAME)) segmenter(
         .clk(clk),.rst_n(rst_n&&region),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.frame_abort(abort),
         .sample_x(sx),.sample_y(sy),.rgb(srgb),.result_valid(rv),.calibrated(rc),.found(rf),.overflow(ro),
-        .box_x(rx),.box_y(ry),.box_w(rw),.box_h(rh),.center_x(rcx),.center_y(rcy),.area(ra),.busy(),.compute_cycles(),.pick_pending(picking),
+        .box_x(rx),.box_y(ry),.box_w(rw),.box_h(rh),.center_x(rcx),.center_y(rcy),.area(ra),.busy(),.compute_cycles(region_cycles),.pick_pending(picking),
         .shared_write_en(rwrite),.shared_write_addr(rwaddr),.shared_read_addr(rraddr),.shared_write_data(rwdata),.shared_read_data(shared_read_data));
     reg [23:0] age;
     always @(posedge clk or negedge rst_n)begin

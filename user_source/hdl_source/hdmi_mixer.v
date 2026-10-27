@@ -6,7 +6,8 @@ module hdmi_mixer #(
     parameter integer DEBUG_MODE = 0,
     parameter integer ENABLE_OSD = 1,
     parameter integer ENABLE_SWITCH_OSD = 1,
-    parameter integer COMPACT_OSD = 0
+    parameter integer COMPACT_OSD = 0,
+    parameter integer TARGET_TELEMETRY = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -38,7 +39,9 @@ module hdmi_mixer #(
     output reg        O_hdmi_hsync,
     output reg        O_hdmi_de,
     output reg[23:0]  O_hdmi_data,
-    output reg        O_hdmi_sof
+    output reg        O_hdmi_sof,
+    input wire I_target_found,I_compute_valid,
+    input wire [15:0] I_target_x_digits,I_target_y_digits,I_compute_ms_digits
 );
 
     reg        S_video_user_1d;
@@ -120,7 +123,9 @@ module hdmi_mixer #(
     reg [3:0]  v_idx;
     reg v_blend;
     reg [23:0] v_compact_color,r1_compact_color;
-    reg info_f;
+    reg info_f;reg target_found_f,compute_valid_f;
+    reg [15:0] target_x_f,target_y_f,compute_ms_f;
+    function [7:0] bcd_ascii;input [3:0] d;begin bcd_ascii=d<10?8'd48+{4'd0,d}:8'h2d;end endfunction
     reg [3:0] panel_f,mode_f,task_f;
     reg [1:0] state_f;
     reg [11:0] ph_f,pv_f;
@@ -132,10 +137,11 @@ module hdmi_mixer #(
     reg [191:0] c_text;
     always @(posedge I_clk or negedge I_rst_n)begin
         if(!I_rst_n)begin
-            info_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;
+            info_f<=0;target_found_f<=0;compute_valid_f<=0;target_x_f<=0;target_y_f<=0;compute_ms_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;
             ph_f<=1500;pv_f<=1500;hd_f<=24'h001500;vd_f<=24'h001500;
         end else if(I_video_user)begin
-            info_f<=I_info_enable;panel_f<=I_panel_features;mode_f<=I_mode;
+            info_f<=I_info_enable;target_found_f<=I_target_found;compute_valid_f<=I_compute_valid;
+            target_x_f<=I_target_x_digits;target_y_f<=I_target_y_digits;compute_ms_f<=I_compute_ms_digits;panel_f<=I_panel_features;mode_f<=I_mode;
             task_f<=I_task_status;state_f<=I_ctl_state;
             ph_f<=I_pulse_h;pv_f<=I_pulse_v;hd_f<=I_h_digits;vd_f<=I_v_digits;
         end
@@ -459,6 +465,23 @@ module hdmi_mixer #(
                             default:begin end
                         endcase
                         if(!panel_f[2])c_text="AUTO OFF K4 PICK        ";
+                    end
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14) && S_x_1d>=192 && S_x_1d<392 && S_y_1d>=72 && S_y_1d<112)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-74;
+                    if(S_y_1d<92)begin
+                     c_text="X:---- Y:----           ";
+                     if(target_found_f)begin
+                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);
+                      c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
+                      c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);
+                      c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
+                     end
+                    end else begin
+                     c_y=c_y-20;c_text="PROC ---- MS            ";
+                     if(compute_valid_f)begin
+                      c_text[151:144]=bcd_ascii(compute_ms_f[15:12]);c_text[143:136]=bcd_ascii(compute_ms_f[11:8]);
+                      c_text[135:128]=bcd_ascii(compute_ms_f[7:4]);c_text[127:120]=bcd_ascii(compute_ms_f[3:0]);
+                     end
                     end
                 end else if(S_x_1d>=CPX && S_x_1d<CPX+384 && S_y_1d>=CPY && S_y_1d<CPY+36)begin
                     v_blend=1;v_region=6;
