@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$TrackerSource='')
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$TrackerSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage)
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -40,6 +40,17 @@ module vision_tracker_probe(input wire clk,rst_n,reseed,frame_start,sample_valid
  .shared_read_addr(shared_read_addr),.shared_write_data(shared_write_data),.shared_read_data(shared_read_data));
 endmodule
 '@
+ if($TrackerSharedStorage -and -not $TrackerExtendedInterface){throw 'Shared storage requires extended interface'}
+ if($TrackerExtendedInterface){
+  $wrapper=$wrapper.Replace('input wire [7:0] gray,shared_read_data,','input wire [7:0] gray,shared_read_data,input wire [31:0] shared_read_word,')
+  $wrapper=$wrapper.Replace('output wire [17:0] best_sad,second_sad,','output wire [17:0] score_debug,')
+  $wrapper=$wrapper.Replace('output wire [31:0] compute_cycles,','output wire [15:0] cycles_debug,')
+  $wrapper=$wrapper.Replace('[13:0] shared_write_addr,shared_read_addr','[14:0] shared_write_addr,shared_read_addr')
+  $wrapper=$wrapper.Replace(' vision_sad_tracker #('," wire [17:0] best_sad,second_sad;wire [31:0] compute_cycles;`n assign score_debug=best_sad^second_sad;assign cycles_debug=compute_cycles[15:0];`n vision_sad_tracker #(")
+  $shared=if($TrackerSharedStorage){1}else{0}
+  $wrapper=$wrapper.Replace('.EXTERNAL_FRAME(1))',".EXTERNAL_FRAME(1),.EXTERNAL_TEMPLATES($shared),.EXTERNAL_SCORES($shared))")
+  $wrapper=$wrapper.Replace('.shared_read_data(shared_read_data));','.shared_read_data(shared_read_data),.shared_read_word(shared_read_word));')
+ }
  $wrapperPath=Join-Path $run 'tracker_probe.v';[IO.File]::WriteAllText($wrapperPath,$wrapper,$utf8)
  $files+=$wrapperPath.Replace('\','/');$top='vision_tracker_probe'
 }

@@ -84,6 +84,13 @@
       "source_commit": "5942b882f55042cfc28108b9aa7d9b12a82255ac",
       "message": "perf: 模板插值流水——保持旋转采样结果一致",
       "changed_files": 4,
+      "removed_files": 0,
+      "destination_commit": "53990634c63c30270e02d2296213c01590505bb8"
+    },
+    {
+      "source_commit": "1d5d18bc771d22dc1ded66a805ee037adf0b99c8",
+      "message": "perf: 模板旋转系数——移位加法替代通用乘法",
+      "changed_files": 3,
       "removed_files": 0
     }
   ]

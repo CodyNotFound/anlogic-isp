@@ -33,13 +33,30 @@
  integer lane,j;
  reg [8:0] candidate_index,peak_index;
  reg [7:0] lx,rx,ty,by,cx,cy,bx,byy,px,py;
- reg signed [9:0] cosine,sine;
  reg signed [14:0] qx,qy;
  reg [3:0] fx,fy;
  wire [16:0] seed_blend=seed_top*(5'd16-{1'b0,fy})+seed_bottom*fy+17'd128;
  wire signed [5:0] dx=$signed({2'b0,idx[3:0]})-6'sd8+(point_b?6'sd1:6'sd0);
  wire signed [5:0] dy=$signed({2'b0,idx[7:4]})-6'sd8;
- wire signed [15:0] xc=dx*cosine,ys=dy*sine,xs=dx*sine,yc=dy*cosine;
+ function signed [15:0] rotate_cos;
+ input signed [5:0] d;input [3:0] b;reg signed [15:0] q;
+ begin q={{10{d[5]}},d};case(b)
+  1,2:rotate_cos=(q<<<8)-q;
+  3,4:rotate_cos=(q<<<8)-(q<<<2)-(q<<<1);
+  5,6:rotate_cos=(q<<<8)-(q<<<3)-(q<<<2)-q;
+  7:rotate_cos=(q<<<8)-(q<<<5);
+  8:rotate_cos=(q<<<8)+(q<<<5);
+  default:rotate_cos=q<<<8;
+ endcase end endfunction
+ function signed [15:0] rotate_sin;
+ input signed [5:0] d;input [3:0] b;reg signed [15:0] q,v;
+ begin q={{10{d[5]}},d};case(b)
+  1,2:v=(q<<<5)-(q<<<2)-q;
+  3,4:v=(q<<<6)-(q<<<3)-(q<<<1)-q;
+  5,6:v=(q<<<6)+(q<<<4)-q;
+  default:v=0;
+ endcase rotate_sin=(b==2||b==4||b==6)?-v:v;end endfunction
+ wire signed [15:0] xc=rotate_cos(dx,bank),ys=rotate_sin(dy,bank),xs=rotate_sin(dx,bank),yc=rotate_cos(dy,bank);
  wire signed [16:0] sx=$signed(WIDTH/2)+($signed(qx)>>>8),sy=$signed(HEIGHT/2)+($signed(qy)>>>8);
  wire signed [8:0] grad=$signed({1'b0,frame_q})-$signed({1'b0,a});
  wire signed [8:0] sg=$signed({1'b0,seed_value})-$signed({1'b0,a});
@@ -61,13 +78,6 @@
    if(state==STORE&&point_b&&bank==g)mem[idx]<=sg;
   end
  end endgenerate
- always @*case(bank)
-  1:begin cosine=255;sine=27;end 2:begin cosine=255;sine=-27;end
-  3:begin cosine=250;sine=53;end 4:begin cosine=250;sine=-53;end
-  5:begin cosine=243;sine=79;end 6:begin cosine=243;sine=-79;end
-  7:begin cosine=224;sine=0;end 8:begin cosine=288;sine=0;end
-  default:begin cosine=256;sine=0;end
- endcase
  function [7:0] bilinear;
  input [7:0] aa,bb,cc,dd;input [3:0] xx,yy;
  reg [12:0] top,bot;reg [17:0] total;
