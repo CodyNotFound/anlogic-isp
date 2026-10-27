@@ -1,4 +1,4 @@
-module hdmi_mixer #(
+(* dsp_style="no" *) module hdmi_mixer #(
     parameter H_OFFSET = 128,
     parameter V_OFFSET = 60,
     parameter IMG_WIDTH = 1280,
@@ -127,22 +127,26 @@ module hdmi_mixer #(
     reg [15:0] target_x_f,target_y_f,compute_ms_f;
     function [7:0] bcd_ascii;input [3:0] d;begin bcd_ascii=d<10?8'd48+{4'd0,d}:8'h2d;end endfunction
     reg [3:0] panel_f,mode_f,task_f;
-    reg [1:0] state_f;
+    reg [1:0] state_f;reg [3:0] state_wait;
     reg [11:0] ph_f,pv_f;
     reg [23:0] hd_f,vd_f;
-    localparam CPX=IMG_WIDTH-400,CPY=IMG_HEIGHT-44;
-    localparam CBX=IMG_WIDTH-112,CBY=IMG_HEIGHT-152;
+    localparam CPX=IMG_WIDTH-592,CPY=IMG_HEIGHT-64;
+    localparam CBX=IMG_WIDTH-160,CBY=IMG_HEIGHT-224;
     integer c_x,c_y,c_slot,c_group,c_mx,c_my;
     reg [95:0] c_label;
     reg [191:0] c_text;
     always @(posedge I_clk or negedge I_rst_n)begin
         if(!I_rst_n)begin
-            info_f<=0;target_found_f<=0;compute_valid_f<=0;target_x_f<=0;target_y_f<=0;compute_ms_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;
+            info_f<=0;target_found_f<=0;compute_valid_f<=0;target_x_f<=0;target_y_f<=0;compute_ms_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;state_wait<=0;
             ph_f<=1500;pv_f<=1500;hd_f<=24'h001500;vd_f<=24'h001500;
         end else if(I_video_user)begin
             info_f<=I_info_enable;target_found_f<=I_target_found;compute_valid_f<=I_compute_valid;
             target_x_f<=I_target_x_digits;target_y_f<=I_target_y_digits;compute_ms_f<=I_compute_ms_digits;panel_f<=I_panel_features;mode_f<=I_mode;
-            task_f<=I_task_status;state_f<=I_ctl_state;
+            task_f<=I_task_status;
+            if(I_mode!=mode_f || I_ctl_state==1 || I_panel_features[3] || !I_panel_features[2])begin state_f<=I_ctl_state;state_wait<=0;end
+            else if(I_ctl_state==state_f)state_wait<=0;
+            else if(state_wait==15)begin state_f<=I_ctl_state;state_wait<=0;end
+            else state_wait<=state_wait+1'b1;
             ph_f<=I_pulse_h;pv_f<=I_pulse_v;hd_f<=I_h_digits;vd_f<=I_v_digits;
         end
     end
@@ -167,8 +171,8 @@ module hdmi_mixer #(
     localparam DYN_OSD_W         = 12'd120;  // 安路(32)+gap(8)+CNT:(32)+6数字(48)
     localparam DYN_OSD_H         = 12'd16;
     localparam COLOR_DYN_TEXT    = 24'hfff200;
-    localparam CHAR_AN           = 8'h80;
-    localparam CHAR_LU           = 8'h81;
+    localparam CHAR_AN           = 8'h9e;
+    localparam CHAR_LU           = 8'h9f;
     localparam CHAR_C            = 8'h43;
     localparam CHAR_N            = 8'h4e;
     localparam CHAR_T            = 8'h54;
@@ -365,56 +369,10 @@ module hdmi_mixer #(
 
     // 模式名称字符表, idx 超出名称长度返回 0(空白)
     // 模式名(中文两字, 0x80系字库码; 超出返回空白)
-    function [7:0] F_mode_name_char;
-        input [3:0] I_m;
-        input [3:0] I_idx;
-        begin
-            case (I_m)
-                4'd0: case (I_idx) 4'd0: F_mode_name_char=8'h9c; 4'd1: F_mode_name_char=8'hcc; 4'd2: F_mode_name_char=8'hcd; 4'd3: F_mode_name_char=8'h97; default: F_mode_name_char=8'h00; endcase // 色彩还原(ISP链直通)
-                4'd1: case (I_idx) 4'd0: F_mode_name_char=8'h99; 4'd1: F_mode_name_char=8'h9a; default: F_mode_name_char=8'h00; endcase // 灰度
-                4'd2: case (I_idx) 4'd0: F_mode_name_char=8'h9b; 4'd1: F_mode_name_char=8'h9c; default: F_mode_name_char=8'h00; endcase // 反色
-                4'd3: case (I_idx) 4'd0: F_mode_name_char=8'h9d; 4'd1: F_mode_name_char=8'h9e; default: F_mode_name_char=8'h00; endcase // 二值
-                4'd4: case (I_idx) 4'd0: F_mode_name_char=8'h9f; 4'd1: F_mode_name_char=8'ha0; default: F_mode_name_char=8'h00; endcase // 增亮
-                4'd5: case (I_idx) 4'd0: F_mode_name_char=8'ha1; 4'd1: F_mode_name_char=8'ha2; default: F_mode_name_char=8'h00; endcase // 锐化
-                4'd6: case (I_idx) 4'd0: F_mode_name_char=8'h82; 4'd1: F_mode_name_char=8'ha3; default: F_mode_name_char=8'h00; endcase // 模糊
-                4'd7: case (I_idx) 4'd0: F_mode_name_char=8'ha4; 4'd1: F_mode_name_char=8'ha5; default: F_mode_name_char=8'h00; endcase // 边缘
-                4'd8: case (I_idx) 4'd0: F_mode_name_char=8'ha6; 4'd1: F_mode_name_char=8'ha7; default: F_mode_name_char=8'h00; endcase // 浮雕
-                4'd9: case (I_idx) 4'd0: F_mode_name_char="T"; 4'd1: F_mode_name_char="O"; 4'd2: F_mode_name_char="O"; 4'd3: F_mode_name_char="N"; default: F_mode_name_char=8'h00; endcase // Cel cartoon
-                4'd10: case (I_idx) 4'd0: F_mode_name_char=8'haa; 4'd1: F_mode_name_char=8'h9c; default: F_mode_name_char=8'h00; endcase // 换色
-                4'd11: case (I_idx) 4'd0: F_mode_name_char="F"; 4'd1: F_mode_name_char="A"; 4'd2: F_mode_name_char="C"; 4'd3: F_mode_name_char="E"; default: F_mode_name_char=8'h00; endcase // 人脸
-                4'd12: case (I_idx) 4'd0: F_mode_name_char=8'h8c; 4'd1: F_mode_name_char=8'h8d; default: F_mode_name_char=8'h00; endcase // 跟踪
-                4'd13: case (I_idx) 4'd0: F_mode_name_char=8'h88; 4'd1: F_mode_name_char=8'h89; default: F_mode_name_char=8'h00; endcase // 均衡
-                4'd14: case (I_idx) 4'd0: F_mode_name_char=8'h9c; 4'd1: F_mode_name_char=8'hce; default: F_mode_name_char=8'h00; endcase // 色区
-                4'd15: case(I_idx)0:F_mode_name_char="M";1:F_mode_name_char="O";2:F_mode_name_char="V";3:F_mode_name_char="E";default:F_mode_name_char=0;endcase
-                default: case (I_idx) 4'd0: F_mode_name_char=8'h00; 4'd1: F_mode_name_char=8'h00; default: F_mode_name_char=8'h00; endcase // 空白
-            endcase
-        end
-    endfunction
-
-    // [2026-10-14 还原] 车牌识别串(cls2char+7字符锁存)已随plate-demo分支撤下
-
-    // ISP分步演示名称: 名称区64px按8px槽取字符(0=空白); CJK字符占两槽(左右半字)
-    // 步0原图 1黑电平 2白平衡 3镜头阴影 4色调 5色彩还原(=模式00)
-    function [7:0] F_isp_name_char;
-        input [2:0] I_step;
-        input [2:0] I_slot;
-        begin
-            case (I_step)
-                3'd0: case (I_slot) 3'd0,3'd1: F_isp_name_char=8'h97; 3'd2,3'd3: F_isp_name_char=8'h98; default: F_isp_name_char=8'h00; endcase // 原图
-                3'd1: case (I_slot) 3'd0:F_isp_name_char=8'h42; 3'd1:F_isp_name_char=8'h4c; 3'd2:F_isp_name_char=8'h43; default:F_isp_name_char=8'h00; endcase // BLC
-                3'd2: case (I_slot) 3'd0:F_isp_name_char=8'h41; 3'd1:F_isp_name_char=8'h57; 3'd2:F_isp_name_char=8'h42; default:F_isp_name_char=8'h00; endcase // AWB
-                3'd3: case (I_slot) 3'd0:F_isp_name_char=8'h4c; 3'd1:F_isp_name_char=8'h53; 3'd2:F_isp_name_char=8'h43; default:F_isp_name_char=8'h00; endcase // LSC
-                3'd4: case (I_slot) 3'd0:F_isp_name_char=8'h47; 3'd1:F_isp_name_char=8'h41; 3'd2:F_isp_name_char=8'h4d; 3'd3:F_isp_name_char=8'h4d; 3'd4:F_isp_name_char=8'h41; default:F_isp_name_char=8'h00; endcase // GAMMA
-                default: case (I_slot) 3'd0,3'd1: F_isp_name_char=8'h9c; 3'd2,3'd3: F_isp_name_char=8'hcc; 3'd4,3'd5: F_isp_name_char=8'hcd; 3'd6,3'd7: F_isp_name_char=8'h97; default: F_isp_name_char=8'h00; endcase // 色彩还原
-            endcase
-        end
-    endfunction
-    // 1=该步名称为CJK(列号=槽内16px位置v_lx[3:0]), 0=ASCII(列号=8px位置)
-    function F_isp_name_cjk;
-        input [2:0] I_step;
-        begin F_isp_name_cjk = (I_step == 3'd0) || (I_step >= 3'd5); end
-    endfunction
-
+function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:case(slot)0: F_mode_name_char=8'h99;1: F_mode_name_char=8'h9a;default:F_mode_name_char=0;endcase 14:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 15:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
+function[7:0] F_isp_name_char;input[2:0] kind;input[2:0] slot;begin case(kind)0:case(slot)0: F_isp_name_char=8'h83;1: F_isp_name_char=8'h83;2: F_isp_name_char=8'ha1;3: F_isp_name_char=8'ha1;default:F_isp_name_char=0;endcase 1:case(slot)0: F_isp_name_char=8'h42;1: F_isp_name_char=8'h4c;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 2:case(slot)0: F_isp_name_char=8'h41;1: F_isp_name_char=8'h57;2: F_isp_name_char=8'h42;default:F_isp_name_char=0;endcase 3:case(slot)0: F_isp_name_char=8'h4c;1: F_isp_name_char=8'h53;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 4:case(slot)0: F_isp_name_char=8'h47;1: F_isp_name_char=8'h41;2: F_isp_name_char=8'h4d;3: F_isp_name_char=8'h4d;4: F_isp_name_char=8'h41;default:F_isp_name_char=0;endcase 5:case(slot)0: F_isp_name_char=8'h80;1: F_isp_name_char=8'h80;2: F_isp_name_char=8'h81;3: F_isp_name_char=8'h81;4: F_isp_name_char=8'h82;5: F_isp_name_char=8'h82;6: F_isp_name_char=8'h83;7: F_isp_name_char=8'h83;default:F_isp_name_char=0;endcase default:F_isp_name_char=0;endcase end endfunction
+function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step>=5;end endfunction
+ function[8:0] unscale15;input[8:0] value;begin unscale15=({value,1'b0})/10'd3;end endfunction
     // ================= 级A: 区域判定与字符选择 (像素位置在 S_x_1d/S_y_1d) =================
     // 纯位置判定, 各区域显式互斥, 不存在旧实现的 S_osd_hit 反馈(组合环)
     always @(*) begin
@@ -423,7 +381,7 @@ module hdmi_mixer #(
         v_lx = 12'd0; v_ly = 12'd0; v_idx = 4'd0;
         v_blend=0;v_compact_color=24'hf0f5f5;
         c_x=0;c_y=0;c_slot=0;c_group=0;c_label=0;c_text=0;
-        c_mx=CBX+16+((2500-ph_f)>>5);c_my=CBY+4+((pv_f-500)>>5);
+        c_mx=16+((2500-ph_f)>>5);c_my=4+((pv_f-500)>>5);
 
         if(COMPACT_OSD && S_video_de_1d)begin
             // Logo always survives SW3 OFF. Preserve every original ROM pixel,
@@ -432,117 +390,77 @@ module hdmi_mixer #(
                 v_region=1;
                 v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
-                if(S_x_1d>=IMG_WIDTH-80 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<44)begin
-                    v_blend=1;c_x=S_x_1d-(IMG_WIDTH-76);c_y=S_y_1d-26;
-                    c_label="00 FPS      ";c_label[95:88]="0"+S_fps_d1;c_label[87:80]="0"+S_fps_d0;
-                    c_text={c_label,96'd0};v_region=6;
-                end else if(S_x_1d>=192 && S_x_1d<296 && S_y_1d>=24 && S_y_1d<44)begin
-                    v_blend=1;c_x=S_x_1d-196;c_y=S_y_1d-26;
+                if(S_x_1d>=IMG_WIDTH-164 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<84)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-(IMG_WIDTH-160);
+                    if(S_y_1d<52)begin
+                     c_y=S_y_1d-26;c_text="00 FPS                  ";c_text[191:184]="0"+S_fps_d1;c_text[183:176]="0"+S_fps_d0;
+                    end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15))begin
+                     c_y=S_y_1d-58;c_text="----ms PROC             ";
+                     if(compute_valid_f)begin
+                      c_text[191:184]=bcd_ascii(compute_ms_f[15:12]);c_text[183:176]=bcd_ascii(compute_ms_f[11:8]);
+                      c_text[175:168]=bcd_ascii(compute_ms_f[7:4]);c_text[167:160]=bcd_ascii(compute_ms_f[3:0]);
+                     end
+                    end else begin v_region=0;v_blend=0;end
+                end else if(S_x_1d>=192 && S_x_1d<360 && S_y_1d>=24 && S_y_1d<52)begin
+                    v_blend=1;c_x=unscale15(S_x_1d-196);c_y=unscale15(S_y_1d-26);
                     v_region=5;v_row=c_y[3:0];
                     if(c_x>=0 && c_x<16)begin
-                        v_char=c_x<8 ? (mode_f>=10?"1":"0") : "0"+(mode_f>=10?mode_f-10:mode_f);
-                        v_col=c_x&7;
-                    end else if(c_x>=24 && c_x<88)begin
-                        v_char=F_mode_name_char(mode_f,(c_x-24)>>4);v_col=(c_x-24)&15;
-                    end
-                    if(c_y<0 || c_y>=16)v_char=0;
-                end else if(S_x_1d>=192 && S_x_1d<392 && S_y_1d>=48 && S_y_1d<68)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-50;
-                    c_text="IDLE                    ";
-                    if(panel_f[3])c_text="MANUAL H J K L          ";
+                     v_char=c_x<8?(mode_f>=10?"1":"0"):"0"+(mode_f>=10?mode_f-10:mode_f);v_col=c_x&7;
+                    end else if(c_x>=24 && c_x<88)begin v_char=F_mode_name_char(mode_f,(c_x-24)>>4);v_col=(c_x-24)&15;end
+                    if(S_x_1d<196||S_y_1d<26||c_y>=16)v_char=0;
+                end else if(S_x_1d>=192 && S_x_1d<480 && S_y_1d>=56 && S_y_1d<84)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-58;c_text=192'ha2ffa3ff2020202020202020202020202020202020202020;
+                    if(panel_f[3])c_text=192'habff9dffacffadff20202020202020202020202020202020;
                     else if(mode_f==15)begin
-                        case(task_f)
-                         8:c_text="MOTION DETECTED         ";
-                         10:c_text="LIGHT CHANGE            ";
-                         11:c_text="CAMERA MOVING           ";
-                         12:c_text="BUILDING REFERENCE      ";
-                         default:c_text="NO MOTION               ";
-                        endcase
+                     case(task_f)8:c_text=192'h9cff9dffb8ffb9ff20202020202020202020202020202020;10:c_text=192'hbaffbbffbcff8cff20202020202020202020202020202020;11:c_text=192'hbdffbeffbfff9dff20202020202020202020202020202020;12:c_text=192'hc0ffc1ffc2ffc3ff20202020202020202020202020202020;default:c_text=192'hc4ffc5ff9cff9dff20202020202020202020202020202020;endcase
+                    end else if(mode_f==11||mode_f==12||mode_f==14)begin
+                     case(state_f)1:begin c_text=192'ha4ffa5ffa6ff202020202020202020202020202020202020;v_compact_color=24'h60ff90;end 2,3:c_text=192'ha7ffa8ffa9ffaaff20202020202020202020202020202020;default:c_text=192'ha2ffa3ff2020202020202020202020202020202020202020;endcase
+                     if(!panel_f[2])c_text=192'haeff9dffafffb0ff20202020202020202020202020202020;
+                     else if((mode_f==12||mode_f==14)&&task_f==3)c_text=192'hb3ffb4ffb2ffb5ff20202020202020202020202020202020;
+                     else if((mode_f==12||mode_f==14)&&(task_f==4||task_f==5))c_text=192'hb6ffb7ffb1ffb2ff20202020202020202020202020202020;
                     end
-                    else if(mode_f==11 || mode_f==12 || mode_f==14)begin
-                        case(state_f)
-                            1:begin c_text="AUTO TRACK              ";v_compact_color=24'h60ff90;end
-                            2:c_text="AUTO HOLD               ";
-                            3:c_text="LOST HOLD POSITION      ";
-                            default:c_text="AUTO WAIT               ";
-                        endcase
-                        if(mode_f==12 || mode_f==14)case(task_f)
-                            2:c_text="SEARCH K4 PICK          ";
-                            3:c_text="SAMPLING CENTER         ";
-                            4:c_text="SAMPLE BAD K4 TRY       ";
-                            5:c_text="OVERFLOW K4 PICK        ";
-                            6:c_text="REACQUIRE K4 PICK       ";
-                            default:begin end
-                        endcase
-                        if(!panel_f[2])c_text="AUTO OFF K4 PICK        ";
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<480 && S_y_1d>=88 && S_y_1d<116)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-90;c_text="X:---- Y:----           ";
+                    if(target_found_f)begin
+                     c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
+                     c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
                     end
-                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<392 && S_y_1d>=72 && S_y_1d<112)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-74;
-                    if(S_y_1d<92)begin
-                     c_text="X:---- Y:----           ";
-                     if(target_found_f)begin
-                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);
-                      c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
-                      c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);
-                      c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
-                     end
-                    end else begin
-                     c_y=c_y-20;c_text="PROC ---- MS            ";
-                     if(compute_valid_f)begin
-                      c_text[151:144]=bcd_ascii(compute_ms_f[15:12]);c_text[143:136]=bcd_ascii(compute_ms_f[11:8]);
-                      c_text[135:128]=bcd_ascii(compute_ms_f[7:4]);c_text[127:120]=bcd_ascii(compute_ms_f[3:0]);
-                     end
-                    end
-                end else if(S_x_1d>=CPX && S_x_1d<CPX+384 && S_y_1d>=CPY && S_y_1d<CPY+36)begin
+                end else if(S_x_1d>=CPX && S_x_1d<CPX+576 && S_y_1d>=CPY && S_y_1d<CPY+54)begin
                     v_blend=1;v_region=6;
-                    c_group=S_x_1d<CPX+96?0:S_x_1d<CPX+192?1:S_x_1d<CPX+288?2:3;
-                    c_x=S_x_1d-CPX-(c_group<<6)-(c_group<<5);c_y=S_y_1d-CPY;
-                    if(c_y<16)begin
-                        case(c_group)
-                            0:c_label=panel_f[3]?"SW4 MAN ON  ":"SW4 MAN OFF ";
-                            1:c_label=panel_f[2]?"SW3 AUTO ON ":"SW3 AUTO OFF";
-                            2:c_label=panel_f[1]?"SW2 AE AUTO ":"SW2 AE HOLD ";
-                            3:c_label=panel_f[0]?"SW1 WB AUTO ":"SW1 WB HOLD ";
-                        endcase
-                        v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
-                    end else if(c_y>=20)begin
-                        c_y=c_y-20;
-                        if(panel_f[3])case(c_group)
-                            0:c_label="K4 H LEFT   ";1:c_label="K3 J DOWN   ";
-                            2:c_label="K2 K UP     ";3:c_label="K1 L RIGHT  ";
-                        endcase
-                        else case(c_group)
-                            0:c_label=(mode_f==15)?"K4 RESET    ":(mode_f==12||mode_f==14)?"K4 PICK     ":"K4 NONE     ";
-                            1:c_label="K3 NONE     ";2:c_label="K2 PREV MODE";3:c_label="K1 NEXT MODE";
-                        endcase
-                    end
-                    c_text={c_label,96'd0};
-                end else if(S_x_1d>=CBX && S_x_1d<CBX+96 && S_y_1d>=CBY && S_y_1d<CBY+100)begin
-                    v_blend=1;c_x=S_x_1d-CBX;c_y=S_y_1d-CBY;
+                    c_group=S_x_1d<CPX+144?0:S_x_1d<CPX+288?1:S_x_1d<CPX+432?2:3;
+                    c_x=S_x_1d-CPX-(c_group<<7)-(c_group<<4);c_y=S_y_1d-CPY;
+                    if(c_y<24)begin
+                     case(c_group)
+                      0:c_text=panel_f[3]?192'h535734abff9dffc6ff202020202020202020202020202020:192'h535734abff9dffafff202020202020202020202020202020;
+                      1:c_text=panel_f[2]?192'h535733a4ffc7ffc6ff202020202020202020202020202020:192'h535733a4ffc7ffafff202020202020202020202020202020;
+                      2:c_text=panel_f[1]?192'h535732c8ffbaffaeff202020202020202020202020202020:192'h535732c8ffbaffc9ff202020202020202020202020202020;
+                      3:c_text=panel_f[0]?192'h535731caffcbff9affaeff20202020202020202020202020:192'h535731caffcbff9affc9ff20202020202020202020202020;
+                     endcase
+                     v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
+                    end else if(c_y>=30)begin
+                     c_y=c_y-30;
+                     if(panel_f[3])case(c_group)0:c_text=192'h4b34ccffcdff202020202020202020202020202020202020;1:c_text=192'h4b33ccffceff202020202020202020202020202020202020;2:c_text=192'h4b32ccffcfff202020202020202020202020202020202020;3:c_text=192'h4b31ccffd0ff202020202020202020202020202020202020;endcase
+                     else case(c_group)0:c_text=mode_f==15?192'h4b34b6ffd1ff202020202020202020202020202020202020:(mode_f==12||mode_f==14)?192'h4b34b1ffb2ff202020202020202020202020202020202020:192'h4b34c5ff2020202020202020202020202020202020202020;1:c_text=192'h4b33c5ff2020202020202020202020202020202020202020;2:c_text=192'h4b32cfffd2ffd3ff20202020202020202020202020202020;3:c_text=192'h4b31ceffd2ffd3ff20202020202020202020202020202020;endcase
+                    end else c_text=0;
+                end else if(S_x_1d>=CBX && S_x_1d<CBX+144 && S_y_1d>=CBY && S_y_1d<CBY+150)begin
+                    v_blend=1;c_x=unscale15(S_x_1d-CBX);c_y=unscale15(S_y_1d-CBY);
                     if(c_y>=76 && c_y<92)begin
-                        v_region=6;c_y=c_y-76;
-                        c_label="H0000 V0000 ";
-                        c_label[87:80]="0"+hd_f[15:12];c_label[79:72]="0"+hd_f[11:8];
-                        c_label[71:64]="0"+hd_f[7:4];c_label[63:56]="0"+hd_f[3:0];
-                        c_label[39:32]="0"+vd_f[15:12];c_label[31:24]="0"+vd_f[11:8];
-                        c_label[23:16]="0"+vd_f[7:4];c_label[15:8]="0"+vd_f[3:0];
-                        c_text={c_label,96'd0};
+                     v_region=6;c_x=(S_x_1d-CBX);c_y=(S_y_1d-CBY)-114;c_text="H0000 V0000             ";
+                     c_text[183:176]="0"+hd_f[15:12];c_text[175:168]="0"+hd_f[11:8];c_text[167:160]="0"+hd_f[7:4];c_text[159:152]="0"+hd_f[3:0];
+                     c_text[135:128]="0"+vd_f[15:12];c_text[127:120]="0"+vd_f[11:8];c_text[119:112]="0"+vd_f[7:4];c_text[111:104]="0"+vd_f[3:0];
                     end else begin
-                        if(((c_x==16 || c_x==80) && c_y>=4 && c_y<=68) ||
-                           ((c_y==4 || c_y==68) && c_x>=16 && c_x<=80) ||
-                           (c_x==48 && c_y>=4 && c_y<=68) ||
-                           ((c_y==36 || c_y==21 || c_y==55) && c_x>=16 && c_x<=80))begin
-                            v_region=7;v_compact_color=24'h606870;
-                        end
-                        if(S_x_1d+2>=c_mx && S_x_1d<=c_mx+2 && S_y_1d+2>=c_my && S_y_1d<=c_my+2)begin
-                            v_region=7;v_compact_color=panel_f[3]?24'h30e0ff:24'hffb050;
-                            if(ph_f==500 || ph_f==2500 || pv_f==1050 || pv_f==2150)v_compact_color=24'hff4040;
-                        end
+                     if(((c_x==16||c_x==80)&&c_y>=4&&c_y<=68)||((c_y==4||c_y==68)&&c_x>=16&&c_x<=80)||(c_x==48&&c_y>=4&&c_y<=68)||((c_y==36||c_y==21||c_y==55)&&c_x>=16&&c_x<=80))begin v_region=7;v_compact_color=24'h606870;end
+                     if(c_x+2>=c_mx&&c_x<=c_mx+2&&c_y+2>=c_my&&c_y<=c_my+2)begin v_region=7;v_compact_color=panel_f[3]?24'h30e0ff:24'hffb050;end
                     end
                 end
                 if(v_region==6)begin
-                    c_slot=c_x>>3;v_col=c_x&7;v_row=c_y[3:0];
-                    if(c_x>=0 && c_y>=0 && c_y<16 && c_slot<24)v_char=c_text>>(8*(23-c_slot));
+                    if(c_x<0||c_y<0)begin v_char=0;end else begin
+                     c_x=unscale15(c_x);c_y=unscale15(c_y);c_slot=c_x>>3;v_col=c_x&7;v_row=c_y[3:0];
+                     if(c_y<16&&c_slot<24)begin
+                      v_char=c_text>>(8*(23-c_slot));
+                      if(v_char==8'hff&&c_slot>0)begin v_char=c_text>>(8*(24-c_slot));v_col=8+(c_x&7);end
+                     end
+                    end
                 end
             end
         end else if (!COMPACT_OSD && S_video_de_1d) begin
@@ -636,10 +554,10 @@ module hdmi_mixer #(
                     // 正常模式: [模16|式16|:8|d8|d8|gap8|名16×4]
                     v_region = 3'd5;
                     if (v_lx < 12'd16) begin
-                        v_char = 8'h82;  v_col = v_lx[3:0];          // 模
+                        v_char = 8'h8d;  v_col = v_lx[3:0];          // 模
                     end
                     else if (v_lx < 12'd32) begin
-                        v_char = 8'h83;  v_col = (v_lx - 12'd16);    // 式
+                        v_char = 8'ha0;  v_col = (v_lx - 12'd16);    // 式
                     end
                     else if (v_lx < 12'd40) begin
                         v_char = CHAR_COLON;  v_col = {1'b0, v_lx[2:0]};

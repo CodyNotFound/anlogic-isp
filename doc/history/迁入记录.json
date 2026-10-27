@@ -119,6 +119,13 @@
       "source_commit": "12751d7e4095b29280f28c122804f2582cf7242b",
       "message": "feat: 固定机位运动检测——共享特征存储并抑制云台运动干扰",
       "changed_files": 12,
+      "removed_files": 0,
+      "destination_commit": "cd6e07d907440e5edfe4b2b44d90035235dd3bd6"
+    },
+    {
+      "source_commit": "0553dba3290a2895b993ab3f458d8cd54b52dfed",
+      "message": "fix: 人脸跟随反馈——补偿采集年龄并分步更新云台",
+      "changed_files": 23,
       "removed_files": 0
     }
   ]

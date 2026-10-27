@@ -115,7 +115,7 @@ module pixel_algorithm #(
     wire [11:0] neighbor_sum = window_sum9-{4'd0,mid_prev1};
     wire [11:0] neighbor_avg = neighbor_sum>>3;
     wire signed [11:0] detail=$signed({4'd0,mid_prev1})-$signed({4'd0,neighbor_avg});
-    wire signed [11:0] sharpen_value=$signed({4'd0,mid_prev1})+((detail>6||detail< -6)?(detail<<<1):12'sd0);
+    wire signed [11:0] sharpen_value=$signed({4'd0,mid_prev1})+((detail>6||detail< -6)?(detail<<<2):12'sd0);
     wire signed [11:0] emboss_delta=$signed({4'd0,mid_prev1})-$signed({4'd0,top_prev2});
     wire signed [11:0] emboss_value=12'sd128+((emboss_delta>6||emboss_delta< -6)?emboss_delta:12'sd0);
 
@@ -145,7 +145,17 @@ module pixel_algorithm #(
     wire [9:0] corners={1'b0,gc0}+{1'b0,gc1},sides={1'b0,ge0}+{1'b0,ge1};
     wire [11:0] gaussian_sum={2'd0,corners}+{1'b0,sides,1'b0}+{2'd0,mid_prev1,2'd0}+12'd8;
     wire [23:0] box_scaled=({12'd0,window_sum9}<<9)-({12'd0,window_sum9}<<6)+({12'd0,window_sum9}<<2)+({12'd0,window_sum9}<<1)+window_sum9+24'd2048;
-    wire [7:0] blur_value=edge_valid?box_scaled[19:12]:gray_reg;
+    // Strong separable recursive low-pass: reuse line1 for vertical state in
+    // mode 6; no extra frame/line RAM. First row/column initialize from input.
+    reg [7:0] blur_horizontal;
+    wire [9:0] blur_h_sum={2'd0,spatial_gray_reg}+{2'd0,blur_horizontal}+{1'b0,blur_horizontal,1'b0}+10'd2;
+    wire [7:0] blur_h=spatial_x==0?spatial_gray_reg:blur_h_sum[9:2];
+    wire [9:0] blur_v_sum={2'd0,blur_h}+{2'd0,mid_now}+{1'b0,mid_now,1'b0}+10'd2;
+    wire [7:0] blur_value=spatial_y==0?blur_h:blur_v_sum[9:2];
+    always @(posedge clk or negedge rst_n)begin
+     if(!rst_n)blur_horizontal<=0;
+     else if(de_reg)blur_horizontal<=blur_h;
+    end
     wire [7:0] sharpen_value8=edge_valid?clip_signed12(sharpen_value):gray_reg;
     wire [7:0] emboss_value8=edge_valid?clip_signed12(emboss_value):gray_reg;
     wire [23:0] binary_pixel = (gray_reg >= binary_threshold_used) ? 24'hffffff : 24'h000000;
@@ -192,7 +202,7 @@ module pixel_algorithm #(
 
     // One explicit write port per line RAM, including coincident SOF+DE.
     always @(posedge clk)begin
-        if(de_reg)begin line2[spatial_x]<=mid_now;line1[spatial_x]<=bot_now;end
+        if(de_reg)begin line2[spatial_x]<=mid_now;line1[spatial_x]<=mode_reg==6?blur_value:bot_now;end
     end
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin

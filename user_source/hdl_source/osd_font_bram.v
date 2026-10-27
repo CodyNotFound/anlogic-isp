@@ -52,22 +52,16 @@ module osd_font_bram (
     reg [6:0] char_idx;
 
     always @* begin
-        if ((I_char >= 8'h30) && (I_char <= 8'h39)) begin
-            char_idx = {3'b000, I_char[3:0]};    // '0'~'9' -> 0~9
-        end else if ((I_char >= 8'h41) && (I_char <= 8'h5A)) begin
-            char_idx = {2'b00, I_char[4:0]} + 7'd9;   // 'A'~'Z' -> 10~35
-        end else if (I_char == 8'h3A) begin
-            char_idx = 7'd36;                    // ':' -> 36
-        end else if (I_char == 8'h2D) begin
-            char_idx = 7'd37;                    // '-' -> 37
-        end else if (I_char == 8'h2E) begin
-            char_idx = 7'd38;                    // '.' -> 38
-        end else if ((I_char >= 8'h80) && (I_char <= 8'hCE)) begin
-            char_idx = {1'b0, I_char[6:0]} + 7'd40; // 中文 -> 40~118(79字,+区)
-        end else begin
-            char_idx = 7'd39;                    // 空格/未知码兜底（全 0 字模）
-        end
-    end
+  if(I_char>=8'h30&&I_char<=8'h39)char_idx=I_char-8'h30;
+  else if(I_char>=8'h41&&I_char<=8'h5A)char_idx=I_char-8'h41+7'd10;
+  else if(I_char==8'h3A)char_idx=36;
+  else if(I_char==8'h2D)char_idx=37;
+  else if(I_char==8'h2E)char_idx=38;
+  else if(I_char==8'h6D)char_idx=40;
+  else if(I_char==8'h73)char_idx=41;
+  else if(I_char>=8'h80&&I_char<=8'hD3)char_idx={1'b0,I_char[6:0]}+7'd42;
+  else char_idx=39;
+ end
 
     // ROM 读地址 = 索引*16 + 行号，即 7bit 索引拼接 4bit 行号（11bit，最大 1887）
     wire [10:0] rom_addr = {char_idx, I_row};   // 索引*16+行, 最大118*16+15=1903

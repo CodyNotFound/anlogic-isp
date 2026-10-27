@@ -5,14 +5,15 @@ module servo_gimbal_ctrl #(
  parameter integer H_MIN_US=500,H_MAX_US=2500,V_MIN_US=1050,V_MAX_US=2150,
  parameter integer CENTER_US=1500, STEP_MAX_US=32, AUTO_GAIN_SHIFT=1,
  parameter integer MANUAL_STEP_US=4, MANUAL_FAST_STEP_US=32, MANUAL_ACCEL_FRAMES=10,
- parameter integer H_INVERT=1, V_INVERT=0, AUTO_SLEW_US=8, AUTO_PLAN_US=120000
+ parameter integer H_INVERT=1, V_INVERT=0, AUTO_SLEW_US=8, AUTO_PLAN_US=120000, SLOW_TIMEOUT_US=650000
 )(
  input wire clk,rst_n,enable,result_valid,found,
  input wire [7:0] cx,cy,
  input wire manual_mode,input wire [3:0] keys_pressed,
  output reg pwm_h,pwm_v,
  output reg [11:0] pulse_h_us,pulse_v_us,
- output wire [1:0] ctl_state
+ output wire [1:0] ctl_state,
+ input wire slow_source,capture_valid
 );
  localparam integer DIV=CLK_HZ/1000000;
  localparam integer DW=(DIV<2)?1:$clog2(DIV);
@@ -21,13 +22,21 @@ module servo_gimbal_ctrl #(
  reg [21:0] age_us;
  reg seen,pending,valid_d;
  reg [11:0] desired_h,desired_v;
+ reg [11:0] capture_h,capture_v;reg capture_good;
+ reg [4:0] slow_left;
+ reg [7:0] slow_mag_h,slow_mag_v;
+ reg slow_neg_h,slow_neg_v;
+ reg [3:0] fraction_h,fraction_v;
+ wire slow=slow_source===1'b1;
+ wire [8:0] ramp_h={5'd0,fraction_h}+{1'b0,slow_mag_h};
+ wire [8:0] ramp_v={5'd0,fraction_v}+{1'b0,slow_mag_v};
  wire plan_active=age_us<AUTO_PLAN_US;
  reg [3:0] held_frames,held_keys;
  wire tick_us=divider==DIV-1;
  wire boundary=tick_us && phase_us==19999;
  wire fresh=result_valid && !valid_d;
  assign ctl_state=!enable||!seen ? 2'd0 : age_us>=HOLD_US ? 2'd3 :
-                    (found && age_us<200000 ? 2'd1:2'd2);
+                    (found && age_us<(slow?SLOW_TIMEOUT_US:200000) ? 2'd1:2'd2);
  function signed [6:0] correction;
   input [7:0] pos;input integer mid,dead;input integer invert;
   integer err,mag;
@@ -55,6 +64,21 @@ module servo_gimbal_ctrl #(
    approach=current+delta;
   end
  endfunction
+ function integer slow_correction;
+ input [7:0] pos;input integer mid,dead,invert;integer e,m;
+ begin e=pos-mid;m=e<0?-e:e;m=m<=dead?0:(m-dead)*2;
+ if(m>128)m=128;slow_correction=((e<0)^invert)?-m:m;end
+ endfunction
+ function integer bounded_delta;
+ input integer goal,current;integer d;
+ begin d=goal-current;bounded_delta=d>128?128:d< -128?-128:d;end
+ endfunction
+ integer target_h,target_v,delta_h,delta_v;
+ always @*begin
+ target_h=clamp($signed({1'b0,capture_h})+slow_correction(cx,IMG_W/2,4,H_INVERT),H_MIN_US,H_MAX_US);
+ target_v=clamp($signed({1'b0,capture_v})+slow_correction(cy,IMG_H/2,3,V_INVERT),V_MIN_US,V_MAX_US);
+ delta_h=bounded_delta(target_h,pulse_h_us);delta_v=bounded_delta(target_v,pulse_v_us);
+ end
  integer dh,dv;
  wire [6:0] manual_step=(keys_pressed==held_keys && held_frames>=MANUAL_ACCEL_FRAMES)?MANUAL_FAST_STEP_US:MANUAL_STEP_US;
  always @* begin
@@ -69,9 +93,10 @@ module servo_gimbal_ctrl #(
    divider<=0;phase_us<=0;pwm_h<=0;pwm_v<=0;
    pulse_h_us<=CENTER_US;pulse_v_us<=CENTER_US;
    age_us<=0;seen<=0;pending<=0;valid_d<=0;desired_h<=CENTER_US;desired_v<=CENTER_US;
-   held_frames<=0;held_keys<=0;
+   held_frames<=0;held_keys<=0;capture_h<=CENTER_US;capture_v<=CENTER_US;capture_good<=0;slow_left<=0;slow_mag_h<=0;slow_mag_v<=0;slow_neg_h<=0;slow_neg_v<=0;fraction_h<=0;fraction_v<=0;
   end else begin
    valid_d<=result_valid;
+   if(capture_valid===1'b1 && enable && !manual_mode)begin capture_good<=1;capture_h<=pulse_h_us;capture_v<=pulse_v_us;end
    // Release or direction changes restore fine control before another PWM tick.
    if(!manual_mode || keys_pressed!=held_keys)begin held_frames<=0;held_keys<=keys_pressed;end
    else if(boundary && |keys_pressed && held_frames<MANUAL_ACCEL_FRAMES)held_frames<=held_frames+1'b1;
@@ -86,7 +111,11 @@ module servo_gimbal_ctrl #(
      end else if(enable && seen)begin
       // Loss holds the last pulse indefinitely. Only a fresh accepted target
       // or an explicit manual command may move the axes; timeout never homes.
-      if(plan_active && pending && found)begin
+      if(slow && slow_left!=0 && found && age_us<SLOW_TIMEOUT_US)begin
+       pulse_h_us<=clamp($signed({1'b0,pulse_h_us})+(slow_neg_h?-$signed({1'b0,ramp_h[8:4]}):$signed({1'b0,ramp_h[8:4]})),H_MIN_US,H_MAX_US);
+       pulse_v_us<=clamp($signed({1'b0,pulse_v_us})+(slow_neg_v?-$signed({1'b0,ramp_v[8:4]}):$signed({1'b0,ramp_v[8:4]})),V_MIN_US,V_MAX_US);
+       fraction_h<=ramp_h[3:0];fraction_v<=ramp_v[3:0];slow_left<=slow_left-1'b1;
+      end else if(!slow && plan_active && pending && found)begin
        pulse_h_us<=approach(pulse_h_us,desired_h);
        pulse_v_us<=approach(pulse_v_us,desired_v);
       end
@@ -100,10 +129,15 @@ module servo_gimbal_ctrl #(
    end else divider<=divider+1'b1;
    // A fresh result creates one bounded endpoint, not a repeated velocity.
    if(boundary && pulse_h_us==desired_h && pulse_v_us==desired_v)pending<=0;
-   if(!found)pending<=0;
-   if(!enable || manual_mode)begin seen<=0;pending<=0;age_us<=0;end
-   else if(fresh && found && cx<IMG_W && cy<IMG_H)begin
-    seen<=1;age_us<=0;pending<=1;
+   if(!found)begin pending<=0;slow_left<=0;end
+   if(!enable || manual_mode)begin seen<=0;pending<=0;slow_left<=0;age_us<=0;capture_good<=0;end
+   else if(fresh && found && (!slow||capture_good) && cx<IMG_W && cy<IMG_H)begin
+    seen<=1;age_us<=0;pending<=!slow;
+    if(slow)begin
+     slow_left<=16;fraction_h<=0;fraction_v<=0;
+     slow_mag_h<=delta_h<0?-delta_h:delta_h;slow_neg_h<=delta_h<0;
+     slow_mag_v<=delta_v<0?-delta_v:delta_v;slow_neg_v<=delta_v<0;
+    end else slow_left<=0;
     desired_h<=clamp($signed({1'b0,pulse_h_us})+correction(cx,IMG_W/2,8,H_INVERT),H_MIN_US,H_MAX_US);
     desired_v<=clamp($signed({1'b0,pulse_v_us})+correction(cy,IMG_H/2,6,V_INVERT),V_MIN_US,V_MAX_US);
    end

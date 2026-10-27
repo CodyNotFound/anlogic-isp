@@ -20,9 +20,9 @@ module face_position_overlay(
     wire inside_x=px>=left && {1'b0,px}<right;
     wire inside_y=py>=top && {1'b0,py}<bottom;
     wire border=inside_x && inside_y &&
-        (px-left<2 || right-{1'b0,px}<=2 || py-top<2 || bottom-{1'b0,py}<=2);
-    wire crosshair=(px==mid_x && py+7>=mid_y && py<=mid_y+7) ||
-                   (py==mid_y && px+7>=mid_x && px<=mid_x+7);
+        (px-left<3 || right-{1'b0,px}<=3 || py-top<3 || bottom-{1'b0,py}<=3);
+    wire crosshair=(px+1>=mid_x && px<=mid_x+1 && py+7>=mid_y && py<=mid_y+7) ||
+                   (py+1>=mid_y && py<=mid_y+1 && px+7>=mid_x && px<=mid_x+7);
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             x<=0;y<=0;display_found<=0;display_enable<=0;bx<=0;by<=0;bs<=0;cx<=0;cy<=0;

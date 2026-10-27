@@ -29,8 +29,8 @@
     wire [11:0] midx=sof?center_x:cx,midy=sof?center_y:cy;
     wire [12:0] right={1'b0,left}+ww,bottom={1'b0,top}+hh;
     wire within_box=px>=left && {1'b0,px}<right && py>=top && {1'b0,py}<bottom;
-    wire border=f && within_box && (px-left<2 || right-px<=2 || py-top<2 || bottom-py<=2);
-    wire crosshair=f && ((px==midx && py+7>=midy && py<=midy+7)||(py==midy && px+7>=midx && px<=midx+7));
+    wire border=f && within_box && (px-left<3 || right-px<=3 || py-top<3 || bottom-py<=3);
+    wire crosshair=f && ((px+1>=midx && px<=midx+1 && py+7>=midy && py<=midy+7)||(py+1>=midy && py<=midy+1 && px+7>=midx && px<=midx+7));
     wire reticle=mode!=15&&(!f || mode==14) && ((px==WIDTH/2 && py+12>=HEIGHT/2 && py<=HEIGHT/2+12)||
         (py==HEIGHT/2 && px+12>=WIDTH/2 && px<=WIDTH/2+12));
     wire sample_box=mode==14 && px>=WIDTH/2-8 && px<WIDTH/2+16 && py>=HEIGHT/2-8 && py<HEIGHT/2+16 &&

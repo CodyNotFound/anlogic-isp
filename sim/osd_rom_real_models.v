@@ -4,11 +4,15 @@ module osd_font_bram (
  output wire [15:0] O_row_bits);
  reg [15:0] mem [0:2047];reg [6:0] char_idx;
  always @* begin
-  if(I_char>=8'h30&&I_char<=8'h39)char_idx={3'b000,I_char[3:0]};
-  else if(I_char>=8'h41&&I_char<=8'h5A)char_idx={2'b00,I_char[4:0]}+7'd9;
-  else if(I_char==8'h3a)char_idx=7'd36;else if(I_char==8'h2d)char_idx=7'd37;
-  else if(I_char==8'h2e)char_idx=7'd38;else if(I_char>=8'h80&&I_char<=8'hce)char_idx={1'b0,I_char[6:0]}+7'd40;
-  else char_idx=7'd39;
+  if(I_char>=8'h30&&I_char<=8'h39)char_idx=I_char-8'h30;
+  else if(I_char>=8'h41&&I_char<=8'h5A)char_idx=I_char-8'h41+7'd10;
+  else if(I_char==8'h3A)char_idx=36;
+  else if(I_char==8'h2D)char_idx=37;
+  else if(I_char==8'h2E)char_idx=38;
+  else if(I_char==8'h6D)char_idx=40;
+  else if(I_char==8'h73)char_idx=41;
+  else if(I_char>=8'h80&&I_char<=8'hD3)char_idx={1'b0,I_char[6:0]}+7'd42;
+  else char_idx=39;
  end
  initial $readmemh("osd_font_rom.hex",mem);
  assign O_row_bits=mem[{char_idx,I_row}];
