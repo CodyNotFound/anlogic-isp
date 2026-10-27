@@ -62,20 +62,18 @@ module algorithm_mode_ctrl #(
             end
 
             if(ENABLE_REMOTE)begin
-                if(remote_set && remote_mode<=MODE_LAST && remote_mode!=13)begin mode<=remote_mode;demo_active<=0;end
-                if(remote_action && !demo_active && (mode==12||mode==14||mode==15))action_pulse<=1;
+                if(remote_set && remote_mode<=MODE_LAST)begin mode<=remote_mode;demo_active<=0;end
+                if(remote_action && !demo_active && (mode==12||mode==13||mode==14))action_pulse<=1;
             end
             // K1/K2: 演示模式下仅退出; 正常模式下加减模式
             if (stable_d[0] && !stable[0]) begin
                 if (demo_active) demo_active <= 1'b0;
                 else if (mode == MODE_LAST) mode <= 4'd0;
-                else if(mode==12)mode<=14; // retired local histogram mode 13
                 else mode <= mode + 1'b1;
             end
             if (stable_d[1] && !stable[1]) begin
                 if (demo_active) demo_active <= 1'b0;
                 else if (mode == 4'd0) mode <= MODE_LAST;
-                else if(mode==14)mode<=12;
                 else mode <= mode - 1'b1;
             end
             // K3: 进入演示/下一步(到顶循环回0)
@@ -87,7 +85,7 @@ module algorithm_mode_ctrl #(
             // K4: 上一步(到0不动), 非演示状态无动作
             if (stable_d[3] && !stable[3]) begin
                 if (demo_active && demo_step != 3'd0) demo_step <= demo_step - 1'b1;
-                else if(!demo_active && (mode==12 || mode==14 || mode==15))action_pulse<=1'b1;
+                else if(!demo_active && (mode==12 || mode==13 || mode==14))action_pulse<=1'b1;
             end
         end
     end

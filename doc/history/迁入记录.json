@@ -182,6 +182,13 @@
       "source_commit": "4207076652d51375ab5bf24943fd3265dd2fcb77",
       "message": "fix: 方向键与自动跟随——分离用途切换并完善外部控制",
       "changed_files": 20,
+      "removed_files": 0,
+      "destination_commit": "53e1be4a58ee3da1c44cc836e0261aa38cb03b99"
+    },
+    {
+      "source_commit": "3fb3ae401dc213c5222b543721302e3664419d12",
+      "message": "fix: 控制权与模式循环——保持串口状态并流水化字库请求",
+      "changed_files": 16,
       "removed_files": 0
     }
   ]

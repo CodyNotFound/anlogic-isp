@@ -114,7 +114,8 @@
     reg        S_video_de_3d;
     reg        S_video_vsync_3d;
     reg        S_video_hsync_3d;
-    reg [23:0] S_video_data_3d;
+    reg [23:0] S_video_data_3d,S_video_data_4d;
+    reg S_video_vsync_4d,S_video_hsync_4d,S_video_user_4d,S_video_de_4d;
     // 级A组合中间量
     reg [2:0]  v_region;
     reg [14:0] v_addr;
@@ -143,18 +144,18 @@
     function[191:0] F_status;input[3:0] m,t,panel;input[1:0] state;input active;begin
      F_status=192'ha2a320202020202020202020202020202020202020202020;
      if(active)F_status=192'hab9dacad2020202020202020202020202020202020202020;
-     else if(m==15)case(t)
+     else if(m==14)case(t)
        8:F_status=192'h9c9db8b92020202020202020202020202020202020202020;
        10:F_status=192'hbabbbc8c2020202020202020202020202020202020202020;
        11:F_status=192'hbdbebf9d2020202020202020202020202020202020202020;
        12:F_status=192'hc0c1c2c32020202020202020202020202020202020202020;
        default:F_status=192'hc4c59c9d2020202020202020202020202020202020202020;endcase
-     else if(m==11||m==12||m==14)begin
+     else if(m==11||m==12||m==13)begin
        case(state)1:F_status=192'ha4a5a6202020202020202020202020202020202020202020;2,3:F_status=192'ha7a8a9aa2020202020202020202020202020202020202020;default:F_status=192'ha2a320202020202020202020202020202020202020202020;endcase
        if(!panel[2])F_status=192'hae9dafb02020202020202020202020202020202020202020;
        else if(m==12&&t==6)F_status=192'h99d4a6202020202020202020202020202020202020202020;
-       else if((m==12||m==14)&&t==3)F_status=192'hb3b4b2b52020202020202020202020202020202020202020;
-       else if((m==12||m==14)&&(t==4||t==5))F_status=192'hb6b7b1b22020202020202020202020202020202020202020;
+       else if((m==12||m==13)&&t==3)F_status=192'hb3b4b2b52020202020202020202020202020202020202020;
+       else if((m==12||m==13)&&(t==4||t==5))F_status=192'hb6b7b1b22020202020202020202020202020202020202020;
      end
     end endfunction
     wire[191:0]compact_status=F_status(mode_f,task_f,panel_f,state_f,manual_f);
@@ -247,8 +248,8 @@
 
     osd_font_bram u_osd_font_bram(
         .I_clk      ( I_clk         ),
-        .I_char     ( v_char        ),
-        .I_row      ( v_row         ),
+        .I_char     ( r1_char        ),
+        .I_row      ( r1_row         ),
         .O_row_bits ( S_pf_row_bits )
     );
 
@@ -396,7 +397,7 @@
 
     // 模式名称字符表, idx 超出名称长度返回 0(空白)
     // 模式名(中文两字, 0x80系字库码; 超出返回空白)
-function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:F_mode_name_char=0; 14:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 15:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
+function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 14:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
 function[7:0] F_isp_name_char;input[2:0] kind;input[2:0] slot;begin case(kind)0:case(slot)0: F_isp_name_char=8'h83;1: F_isp_name_char=8'h83;2: F_isp_name_char=8'ha1;3: F_isp_name_char=8'ha1;default:F_isp_name_char=0;endcase 1:case(slot)0: F_isp_name_char=8'h42;1: F_isp_name_char=8'h4c;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 2:case(slot)0: F_isp_name_char=8'h41;1: F_isp_name_char=8'h57;2: F_isp_name_char=8'h42;default:F_isp_name_char=0;endcase 3:case(slot)0: F_isp_name_char=8'h4c;1: F_isp_name_char=8'h53;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 4:case(slot)0: F_isp_name_char=8'h47;1: F_isp_name_char=8'h41;2: F_isp_name_char=8'h4d;3: F_isp_name_char=8'h4d;4: F_isp_name_char=8'h41;default:F_isp_name_char=0;endcase 5:case(slot)0: F_isp_name_char=8'h80;1: F_isp_name_char=8'h80;2: F_isp_name_char=8'h81;3: F_isp_name_char=8'h81;4: F_isp_name_char=8'h82;5: F_isp_name_char=8'h82;6: F_isp_name_char=8'h83;7: F_isp_name_char=8'h83;default:F_isp_name_char=0;endcase default:F_isp_name_char=0;endcase end endfunction
 function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step>=5;end endfunction
     // ================= 级A: 区域判定与字符选择 (像素位置在 S_x_1d/S_y_1d) =================
@@ -415,14 +416,14 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
             if(S_x_1d>=24 && S_x_1d<170 && S_y_1d>=24 && S_y_1d<118)begin
                 v_region=1;v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
-                if(S_x_1d>=180 && S_x_1d<180+((status_first+status_count)<<4)+16 && S_y_1d>=24 && S_y_1d<52)begin
+                if(S_x_1d>=180 && S_x_1d<180+((mode_f<11?(mode_f==0?7:5):status_first+status_count)<<4)+16 && S_y_1d>=24 && S_y_1d<52)begin
                     v_blend=1;
                     v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-30;c_text="                        ";
                     c_text[191:184]=mode_f>=10?"1":"0";c_text[183:176]="0"+(mode_f>=10?mode_f-10:mode_f);
                     c_text[167:160]=F_mode_name_char(mode_f,0);c_text[159:152]=F_mode_name_char(mode_f,1);
                     c_text[151:144]=F_mode_name_char(mode_f,2);c_text[143:136]=F_mode_name_char(mode_f,3);
-                    if(mode_f==0)c_text[127:0]=compact_status[191:64];else c_text[143:0]=compact_status[191:48];
-                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=180 && S_x_1d<404 && S_y_1d>=56 && S_y_1d<84)begin
+                    if(mode_f>=11)c_text[143:0]=compact_status[191:48];
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==13||mode_f==14) && S_x_1d>=180 && S_x_1d<404 && S_y_1d>=56 && S_y_1d<84)begin
                     v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-62;c_text="X:---- Y:----           ";
                     if(target_found_f)begin
                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
@@ -431,12 +432,18 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                 end else if(hmi_f && S_x_1d>=180 && S_x_1d<292 && S_y_1d>=88 && S_y_1d<116)begin
                     v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-94;
                     c_text=192'hd6d7d8d9dadb202020202020202020202020202020202020;
-                end else if(S_x_1d>=IMG_WIDTH-104 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=16 && S_y_1d<68)begin
+                end else if(S_x_1d>=IMG_WIDTH-(mode_f<11?112:88)-16 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=16 && S_y_1d<68)begin
                     v_blend=1;v_region=6;c_small=1;c_x=S_x_1d-(IMG_WIDTH-96);
                     if(S_y_1d<42)begin c_y=S_y_1d-24;c_text="00 FPS                  ";c_text[191:184]="0"+S_fps_d1;c_text[183:176]="0"+S_fps_d0;end
-                    else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15))begin
+                    else if(TARGET_TELEMETRY)begin
                      c_y=S_y_1d-44;c_text="----ms                  ";
-                     if(compute_valid_f)begin
+                     if(mode_f<11)begin
+                      c_x=S_x_1d-(IMG_WIDTH-120);c_text="0.----ms                ";
+                      if(compute_valid_f)begin
+                       c_text[175:168]=bcd_ascii(compute_ms_f[15:12]);c_text[167:160]=bcd_ascii(compute_ms_f[11:8]);c_text[159:152]=bcd_ascii(compute_ms_f[7:4]);c_text[151:144]=bcd_ascii(compute_ms_f[3:0]);
+                      end
+                     end
+                     if(compute_valid_f&&mode_f>=11)begin
                       c_text[191:184]=bcd_ascii(compute_ms_f[15:12]);c_text[183:176]=bcd_ascii(compute_ms_f[11:8]);c_text[175:168]=bcd_ascii(compute_ms_f[7:4]);c_text[167:160]=bcd_ascii(compute_ms_f[3:0]);
                      end
                     end else v_region=0;
@@ -459,7 +466,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                       2:c_text=192'hcccf20202020202020202020202020202020202020202020;
                       3:c_text=192'hccd020202020202020202020202020202020202020202020;
                      endcase else case(c_group)
-                      0:c_text=mode_f==15?192'hb6d120202020202020202020202020202020202020202020:(mode_f==12||mode_f==14)?192'hb1b220202020202020202020202020202020202020202020:192'hc52020202020202020202020202020202020202020202020;
+                      0:c_text=mode_f==14?192'hb6d120202020202020202020202020202020202020202020:(mode_f==12||mode_f==13)?192'hb1b220202020202020202020202020202020202020202020:192'hc52020202020202020202020202020202020202020202020;
                       1:c_text=192'hc52020202020202020202020202020202020202020202020;
                       2:c_text=192'hcfd2d3202020202020202020202020202020202020202020;
                       3:c_text=192'hced2d3202020202020202020202020202020202020202020;
@@ -486,7 +493,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     v_row=c_y[3:0];
                     if(c_y<16&&c_slot<24)begin
                      v_char=c_text>>(8*(23-c_slot));
-                     if(c_header&&c_slot>=status_first&&!manual_f&&panel_f[2]&&state_f==1&&(mode_f==11||mode_f==12||mode_f==14))v_compact_color=24'h60ff90;
+                     if(c_header&&c_slot>=status_first&&!manual_f&&panel_f[2]&&state_f==1&&(mode_f==11||mode_f==12||mode_f==13))v_compact_color=24'h60ff90;
                     end
                 end
             end
@@ -657,8 +664,15 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         end
     end
 
+    // Registered font request; delay all parallel metadata/RGB identically.
+    reg[2:0]q_region;reg[7:0]q_char,q_logo_idx;reg[3:0]q_col,q_sw_idx;
+    reg q_blend;reg[23:0]q_color,q_logo_rgb;
+    always @(posedge I_clk or negedge I_rst_n)begin
+     if(!I_rst_n)begin q_region<=0;q_char<=0;q_col<=0;q_sw_idx<=0;q_blend<=0;q_color<=0;q_logo_idx<=0;q_logo_rgb<=0;end
+     else begin q_region<=r1_region;q_char<=r1_char;q_col<=r1_col;q_sw_idx<=r1_sw_idx;q_blend<=r1_blend;q_color<=r1_compact_color;q_logo_idx<=S_logo_idx;q_logo_rgb<=S_logo_rgb;end
+    end
     // ================= 级B: BRAM命中与颜色 (ERAM同步读出, 打拍) =================
-    wire v2_text_bit = S_pf_row_bits[4'd15 - r1_col];   // 字库ERAM(地址已提前到级A组合, 本拍有效)
+    wire v2_text_bit = S_pf_row_bits[4'd15 - q_col];   // 字库ERAM(地址已提前到级A组合, 本拍有效)
     reg  v2_hit;
     reg  v2_is_logo;      // logo像素: 颜色不走r2_color, 由调色板ERAM在级C直混
     reg  [23:0] v2_color;
@@ -667,23 +681,23 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         v2_hit = 1'b0;
         v2_is_logo = 1'b0;
         v2_color = 24'd0;
-        if (r1_region == 3'd1) begin
-            if (S_logo_idx != 8'd0) begin       // 索引0=透明; RGB两级BRAM延迟到级C
+        if (q_region == 3'd1) begin
+            if (q_logo_idx != 8'd0) begin       // 索引0=透明; RGB两级BRAM延迟到级C
                 v2_hit = 1'b1;
                 v2_is_logo = 1'b1;
             end
         end
-        else if(COMPACT_OSD && r1_region==7)begin
-            v2_hit=1;v2_color=r1_compact_color;
-        end else if (r1_region != 3'd0) begin
-            if ((r1_char != 8'd0) && v2_text_bit) begin
+        else if(COMPACT_OSD && q_region==7)begin
+            v2_hit=1;v2_color=q_color;
+        end else if (q_region != 3'd0) begin
+            if ((q_char != 8'd0) && v2_text_bit) begin
                 v2_hit = 1'b1;
-                if(COMPACT_OSD)v2_color=r1_compact_color;
-                else case (r1_region)
+                if(COMPACT_OSD)v2_color=q_color;
+                else case (q_region)
                     3'd2:    v2_color = COLOR_DYN_TEXT;
                     3'd3:    v2_color = COLOR_FPS_TEXT;
                     3'd6: begin
-                        case (r1_sw_idx)
+                        case (q_sw_idx)
                             4'd0,4'd1: v2_color = S_feature_2d[0] ? COLOR_SW_ON : COLOR_SW_OFF;
                             4'd3,4'd4,4'd5: v2_color = S_feature_2d[1] ? COLOR_SW_ON : COLOR_SW_OFF;
                             4'd7,4'd8: v2_color = S_feature_2d[2] ? COLOR_SW_ON : COLOR_SW_OFF;
@@ -704,7 +718,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
             r2_hit   <= v2_hit;
             r2_is_logo <= v2_is_logo;
             r2_color <= v2_color;
-            r2_blend <= r1_blend;
+            r2_blend <= q_blend;
         end
     end
 
@@ -713,17 +727,17 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         if(!I_rst_n) begin
             S_video_vsync_1d <= 1'b0;
             S_video_vsync_2d <= 1'b0;
-            S_video_vsync_3d <= 1'b0;
+            S_video_vsync_3d <= 1'b0;S_video_vsync_4d<=0;
             S_video_hsync_1d <= 1'b0;
             S_video_hsync_2d <= 1'b0;
-            S_video_hsync_3d <= 1'b0;
+            S_video_hsync_3d <= 1'b0;S_video_hsync_4d<=0;
             S_video_user_1d  <= 1'b0;
             S_video_user_2d  <= 1'b0;
-            S_video_user_3d  <= 1'b0;
+            S_video_user_3d  <= 1'b0;S_video_user_4d<=0;
             O_hdmi_sof       <= 1'b0;
             S_video_de_1d    <= 1'b0;
             S_video_de_2d    <= 1'b0;
-            S_video_de_3d    <= 1'b0;
+            S_video_de_3d    <= 1'b0;S_video_de_4d<=0;
             O_hdmi_vsync     <= 1'b0;
             O_hdmi_hsync     <= 1'b0;
             O_hdmi_de        <= 1'b0;
@@ -732,28 +746,28 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         else begin
             S_video_vsync_1d <= I_video_vsync;
             S_video_vsync_2d <= S_video_vsync_1d;
-            S_video_vsync_3d <= S_video_vsync_2d;
-            O_hdmi_vsync     <= S_video_vsync_3d;
+            S_video_vsync_3d <= S_video_vsync_2d;S_video_vsync_4d<=S_video_vsync_3d;
+            O_hdmi_vsync     <= S_video_vsync_4d;
 
             S_video_hsync_1d <= I_video_hsync;
             S_video_hsync_2d <= S_video_hsync_1d;
-            S_video_hsync_3d <= S_video_hsync_2d;
-            O_hdmi_hsync     <= S_video_hsync_3d;
+            S_video_hsync_3d <= S_video_hsync_2d;S_video_hsync_4d<=S_video_hsync_3d;
+            O_hdmi_hsync     <= S_video_hsync_4d;
 
             S_video_user_1d  <= I_video_user;
             S_video_user_2d  <= S_video_user_1d;
-            S_video_user_3d  <= S_video_user_2d;
-            O_hdmi_sof       <= S_video_user_3d;
+            S_video_user_3d  <= S_video_user_2d;S_video_user_4d<=S_video_user_3d;
+            O_hdmi_sof       <= S_video_user_4d;
             S_video_de_1d    <= I_video_de;
             S_video_de_2d    <= S_video_de_1d;
-            S_video_de_3d    <= S_video_de_2d;
-            O_hdmi_de        <= S_video_de_3d;
+            S_video_de_3d    <= S_video_de_2d;S_video_de_4d<=S_video_de_3d;
+            O_hdmi_de        <= S_video_de_4d;
             S_video_data_1d  <= I_video_rd_data;
             S_video_data_2d  <= S_video_data_1d;
-            S_video_data_3d  <= S_video_data_2d;
+            S_video_data_3d<=S_video_data_2d;S_video_data_4d<=S_video_data_3d;
 
             if(DEBUG_MODE == 1) begin
-                if(S_video_de_3d) begin
+                if(S_video_de_4d) begin
                     if(S_x < 12'd128)
                         O_hdmi_data <= 24'hff0000;
                     else if(S_x < 12'd256)
@@ -776,7 +790,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                 end
             end
             else if(DEBUG_MODE == 2) begin
-                if(S_video_de_3d) begin
+                if(S_video_de_4d) begin
                     case (I_debug_status)
                         4'b0000: O_hdmi_data <= 24'h000000;
                         4'b0001: O_hdmi_data <= 24'hff0000;
@@ -791,7 +805,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                 end
             end
             else if(DEBUG_MODE == 3) begin
-                if(S_video_de_3d) begin
+                if(S_video_de_4d) begin
                     if(S_x < 12'd256)
                         O_hdmi_data <= I_debug_status[0] ? 24'hff8000 : 24'h201000;
                     else if(S_x < 12'd512)
@@ -807,19 +821,19 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
             end
             else if (ENABLE_OSD == 0) begin
                 // 保持原图像流水延迟，允许综合裁剪未使用的 OSD 逻辑。
-                O_hdmi_data <= S_video_data_3d;
+                O_hdmi_data <= S_video_data_4d;
             end
             else begin
                 // 最终只有一级优先选择: 前景命中 > 半透明压暗 > 原图像
                 // logo颜色走调色板ERAM第2拍输出(本拍直混), 文字颜色走r2_color
                 if(r2_hit)
-                    O_hdmi_data <= r2_is_logo ? S_logo_rgb : r2_color;
+                    O_hdmi_data <= r2_is_logo ? q_logo_rgb : r2_color;
                 else if(r2_blend)
-                    O_hdmi_data <= {1'b0, S_video_data_3d[23:17],
-                                    1'b0, S_video_data_3d[15:9],
-                                    1'b0, S_video_data_3d[7:1]};
+                    O_hdmi_data <= {1'b0, S_video_data_4d[23:17],
+                                    1'b0, S_video_data_4d[15:9],
+                                    1'b0, S_video_data_4d[7:1]};
                 else
-                    O_hdmi_data <= S_video_data_3d;
+                    O_hdmi_data <= S_video_data_4d;
             end
         end
     end

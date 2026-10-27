@@ -1,5 +1,6 @@
 // Off-pixel-path formatting: one shared serial BCD engine for X, Y and time.
-// PROC is measured algorithm cycles, not sensor-to-display transport latency.
+// Modes0..10: application SOF cycles in 0.0001ms units; other modes: task ms.
+// Neither quantity includes sensor exposure or upstream DDR transport.
 module vision_telemetry #(parameter CLK_HZ=75000000,WIDTH=1280,HEIGHT=720)(
  input wire clk,rst_n,input wire [3:0] mode,input wire found,compute_valid,
  input wire [11:0] x,y,input wire [31:0] compute_cycles,
@@ -24,9 +25,9 @@ module vision_telemetry #(parameter CLK_HZ=75000000,WIDTH=1280,HEIGHT=720)(
    packet_tick<=0;
    case(state)
     0:begin saved_mode<=mode;saved_found<=found&&x<WIDTH&&y<HEIGHT;saved_compute_valid<=compute_valid;
-     saved_x<=x;saved_y<=y;remaining<=compute_valid?{1'b0,compute_cycles}+CYCLES_PER_MS/2:33'd0;
+     saved_x<=x;saved_y<=y;remaining<=!compute_valid?33'd0:mode<11?({1'b0,compute_cycles}<<1)+7:{1'b0,compute_cycles}+CYCLES_PER_MS/2;
      milliseconds<=0;state<=1;end
-    1:if(remaining>=CYCLES_PER_MS&&milliseconds<9999)begin remaining<=remaining-CYCLES_PER_MS;milliseconds<=milliseconds+1'b1;end
+    1:if(remaining>=(saved_mode<11?CYCLES_PER_MS/5000:CYCLES_PER_MS)&&milliseconds<9999)begin remaining<=remaining-(saved_mode<11?CYCLES_PER_MS/5000:CYCLES_PER_MS);milliseconds<=milliseconds+1'b1;end
       else state<=2;
     2,4,6:begin wait_count<=0;state<=state+1'b1;end
     3:if(wait_count==20)begin staged_x<=digits[15:0];state<=4;end else wait_count<=wait_count+1'b1;

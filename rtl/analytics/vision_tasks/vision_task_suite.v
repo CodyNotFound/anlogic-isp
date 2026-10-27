@@ -14,7 +14,7 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
     output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word,output wire [31:0] target_compute_cycles,input wire camera_moving
 );
-    wire tracking=enabled && mode==12,region=enabled && mode==14,motion=enabled&&mode==15&&SHARED_TRACK_FRAME;
+    wire tracking=enabled && mode==12,region=enabled && mode==13,motion=enabled&&mode==14&&SHARED_TRACK_FRAME;
     wire fs,sv,fe,abort;
     wire [7:0] sx,sy,gray;
     wire [23:0] srgb;

@@ -5,13 +5,13 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  input wire target_found,compute_valid,input wire[3:0]task_status,input wire[1:0]ctl_state,
  input wire[15:0]x_digits,y_digits,h_digits,v_digits,ms_digits,input wire[7:0]fps_digits,
  output wire tx,output wire[3:0]features,output reg mode_set,output reg[3:0]mode_value,
- output reg action,output reg[3:0]keys,output reg connected,input wire manual_active);
+ output reg action,output reg[3:0]keys,output reg connected,input wire manual_active,input wire local_takeover);
  localparam MS_TICKS=CLK_HZ/1000,MW=MS_TICKS<2?1:$clog2(MS_TICKS);
  reg[MW-1:0]ms_count;wire ms_tick=ms_count==MS_TICKS-1;
  reg[3:0]desired,physical_prev;wire[3:0]changed=physical_features^physical_prev;
- // Connection is an input-source lease, never an implicit manual-mode request.
- // While connected, the latest screen command or physical switch edge wins.
- // After the link expires, every feature follows its physical switch again.
+ // Screen input ownership persists until reset or explicit local operation.
+ // A physical button/switch hands all features back to the local switches.
+ // Only directional motion uses a short safety lease.
  assign features=connected?desired:physical_features;
  wire manual_mode=features[3];
  wire received,rx_error,tx_ready;wire[7:0]received_data,tx_data;
@@ -20,11 +20,10 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  reg[2:0]parse;reg[7:0]op,arg,check;reg[3:0]gap_ms;
  wire command=received&&parse==5&&received_data==8'h0d&&check==(8'hff^op^arg);
  wire supported=((op==8'h01||op==8'h02||op==8'h15)&&arg==0)||
-                (op==8'h10&&arg<16&&arg!=13)||
+                (op==8'h10&&arg<15)||
                 (op>=8'h11&&op<=8'h14&&arg<2)||(op==8'h16&&arg<16);
  wire accepted=command&&supported;
- reg[9:0]link_ms;
- reg[7:0]lease_ms;
+ reg remote_seen,local_owned;reg[7:0]lease_ms;
  function[3:0]safe_keys;input[3:0]value;begin
  safe_keys=value;if(value[3]&&value[0])begin safe_keys[3]=0;safe_keys[0]=0;end
  if(value[2]&&value[1])begin safe_keys[2]=0;safe_keys[1]=0;end
@@ -52,31 +51,30 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  end
  integer i;
  always @(posedge clk or negedge rst_n)begin
-  if(!rst_n)begin desired<=0;physical_prev<=0;mode_set<=0;mode_value<=0;action<=0;keys<=0;lease_ms<=0;connected<=0;link_ms<=0;end
+  if(!rst_n)begin desired<=0;physical_prev<=0;mode_set<=0;mode_value<=0;action<=0;keys<=0;lease_ms<=0;connected<=0;local_owned<=0;remote_seen<=0;end
   else begin
    physical_prev<=physical_features;mode_set<=0;action<=0;
    if(!connected)desired<=physical_features;
    for(i=0;i<4;i=i+1)if(changed[i])desired[i]<=physical_features[i];
-   if(ms_tick&&connected)begin
-    if(link_ms==999)begin connected<=0;link_ms<=0;keys<=0;lease_ms<=0;end
-    else link_ms<=link_ms+1'b1;
-   end
    if(!manual_mode)begin keys<=0;lease_ms<=0;end
    else if(ms_tick&&lease_ms!=0)begin lease_ms<=lease_ms-1'b1;if(lease_ms==1)keys<=0;end
-   if(accepted)begin
-   connected<=1;link_ms<=0;
+   if(accepted&&!local_takeover&&!(|changed))begin
+   if(op>=8'h10||((op==8'h01||op==8'h02)&&!local_owned))begin connected<=1;local_owned<=0;remote_seen<=1;end
    case(op)
     8'h01:begin end // Status query is served by the next periodic snapshot (<=100ms).
-    8'h10:if(arg<16&&arg!=13)begin mode_value<=arg[3:0];mode_set<=1;end
+    8'h10:if(arg<15)begin mode_value<=arg[3:0];mode_set<=1;end
     8'h11:if(arg<2&&!changed[0])desired[0]<=arg[0];
     8'h12:if(arg<2&&!changed[1])desired[1]<=arg[0];
     8'h13:if(arg<2&&!changed[2])desired[2]<=arg[0];
     8'h14:if(arg<2&&!changed[3])desired[3]<=arg[0];
-    8'h15:if(arg==0&&manual_active!==1'b1&&(mode==12||mode==14||mode==15))action<=1;
+    8'h15:if(arg==0&&manual_active!==1'b1&&(mode==12||mode==13||mode==14))action<=1;
     8'h16:if(arg<16&&manual_mode)begin keys<=safe_keys(arg[3:0]);lease_ms<=arg==0?0:250;end
     default:begin end
    endcase
    end
+   // Explicit local operation owns control until another screen operation.
+   // Queries/heartbeats never steal it back after a local takeover.
+   if(local_takeover||(|changed))begin connected<=0;local_owned<=remote_seen;desired<=physical_features;keys<=0;lease_ms<=0;end
   end
  end
  // Four-digit values reuse the existing off-pixel formatting engines.

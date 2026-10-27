@@ -31,9 +31,9 @@
     wire within_box=px>=left && {1'b0,px}<right && py>=top && {1'b0,py}<bottom;
     wire border=f && within_box && (px-left<3 || right-px<=3 || py-top<3 || bottom-py<=3);
     wire crosshair=f && ((px+1>=midx && px<=midx+1 && py+7>=midy && py<=midy+7)||(py+1>=midy && py<=midy+1 && px+7>=midx && px<=midx+7));
-    wire reticle=mode!=15&&(!f || mode==14) && ((px==WIDTH/2 && py+12>=HEIGHT/2 && py<=HEIGHT/2+12)||
+    wire reticle=mode!=14&&(!f || mode==13) && ((px==WIDTH/2 && py+12>=HEIGHT/2 && py<=HEIGHT/2+12)||
         (py==HEIGHT/2 && px+12>=WIDTH/2 && px<=WIDTH/2+12));
-    wire sample_box=mode==14 && px>=WIDTH/2-8 && px<WIDTH/2+16 && py>=HEIGHT/2-8 && py<HEIGHT/2+16 &&
+    wire sample_box=mode==13 && px>=WIDTH/2-8 && px<WIDTH/2+16 && py>=HEIGHT/2-8 && py<HEIGHT/2+16 &&
         (px==WIDTH/2-8 || px==WIDTH/2+15 || py==HEIGHT/2-8 || py==HEIGHT/2+15);
     reg [7:0] character;
     reg [191:0] header;

@@ -53,6 +53,12 @@ module vision_pipeline #(
     wire manual_mode=feature_requested[3];
     // SW4 changes key routing only; idle direction keys never inhibit SW3.
     wire manual_motion=manual_mode && (|keys_pressed);
+    reg[3:0] local_buttons_prev;
+    wire[3:0] local_buttons=(~normal_buttons_n)|physical_keys;
+    wire local_takeover=|(local_buttons & ~local_buttons_prev);
+    always @(posedge clk or negedge rst_n)begin
+     if(!rst_n)local_buttons_prev<=0;else local_buttons_prev<=local_buttons;
+    end
     // SW3 gates automatic motion only. Analytics and compact OSD stay active.
     reg info_enabled_f;
     always @(posedge clk or negedge rst_n)begin
@@ -86,7 +92,7 @@ module vision_pipeline #(
     wire        auto_exposure_stat_toggle;
     reg         osd_frame_toggle;
     wire        mixer_sof,mixer_sof_raw;
-    reg         latency_active;
+    reg latency_seen;reg         latency_active;
     reg [11:0]  latency_counter;
     reg [11:0]  latency_cycles;
     // AE/AWB/HE each add one registered pixel stage. Keep the video
@@ -148,7 +154,7 @@ module vision_pipeline #(
     // platform frame marker to the marker emitted by hdmi_mixer.
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            latency_active  <= 1'b0;
+            latency_seen<=0;latency_active  <= 1'b0;
             latency_counter <= 12'd0;
             latency_cycles  <= 12'd0;
         end else if (video_sof) begin
@@ -157,7 +163,7 @@ module vision_pipeline #(
         end else if (latency_active) begin
             if (mixer_sof) begin
                 latency_active <= 1'b0;
-                latency_cycles <= latency_counter;
+                latency_cycles <= latency_counter;latency_seen<=1;
             end else if (latency_counter != 12'hfff) begin
                 latency_counter <= latency_counter + 1'b1;
             end
@@ -216,7 +222,7 @@ module vision_pipeline #(
         else if (video_sof) osd_frame_toggle <= ~osd_frame_toggle;
     end
 
-    algorithm_mode_ctrl #(.ENABLE_ISP_DEMO(0),.LAST_MODE(4'd15),.BUTTONS_DEBOUNCED(1),.ENABLE_REMOTE(ENABLE_HMI)) u_mode_ctrl (
+    algorithm_mode_ctrl #(.ENABLE_ISP_DEMO(0),.LAST_MODE(4'd14),.BUTTONS_DEBOUNCED(1),.ENABLE_REMOTE(ENABLE_HMI)) u_mode_ctrl (
         .clk         (clk),
         .rst_n       (rst_n),
         .buttons_n   (normal_buttons_n),
@@ -270,7 +276,7 @@ module vision_pipeline #(
     ) u_histogram_equalizer (
         .clk        (clk),
         .rst_n      (rst_n),
-        .enable     (feature_enable[2] && effective_mode!=13),
+        .enable     (feature_enable[2]),
         .frame_start(sof_pipe[1]),
         .de         (de_pipe[1]),
         .pixel_in   (white_balance_pixel),
@@ -312,7 +318,7 @@ module vision_pipeline #(
     adaptive_brightness u_adaptive_brightness (
         .clk        (clk),
         .rst_n      (rst_n),
-        .enable     (feature_enable[3] && effective_mode!=13),
+        .enable     (feature_enable[3]),
         .frame_start(ab_sof_reg),
         .de         (ab_de_reg),
         .pixel_in   (ab_pixel_reg),
@@ -334,7 +340,7 @@ module vision_pipeline #(
             .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
             .position_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
             .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
-            .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==14||mode==15)),.shared_write_en(shared_track_write),
+            .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==13||mode==14)),.shared_write_en(shared_track_write),
             .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
             .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.inference_cycles(face_compute_cycles),.capture_started(face_capture_started));
     end else begin: lbp_mode
@@ -369,7 +375,7 @@ module vision_pipeline #(
         .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
         .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles),.camera_moving(motion_camera_moving));
 
-    wire tracking_mode=mode==11||mode==12||mode==14||mode==15;
+    wire tracking_mode=mode==11||mode==12||mode==13||mode==14;
     wire coordinate_found=tracking_mode&&(face_enable?face_found:track_found);
     wire [11:0] coordinate_x=face_enable?face_center_x:{1'b0,track_x,3'b0};
     wire [11:0] coordinate_y=face_enable?face_center_y:{1'b0,track_y,3'b0};
@@ -388,18 +394,18 @@ module vision_pipeline #(
     wire [3:0] telemetry_mode;wire telemetry_found,telemetry_compute_valid;
     wire [15:0] target_x_digits,target_y_digits,compute_ms_digits;
     vision_telemetry #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT)) u_telemetry(
-     .clk(clk),.rst_n(rst_n),.mode(mode),.found(coordinate_found),.compute_valid(compute_seen),
-     .x(coordinate_x),.y(coordinate_y),.compute_cycles(completed_compute_cycles),
+     .clk(clk),.rst_n(rst_n),.mode(mode),.found(coordinate_found),.compute_valid(tracking_mode?compute_seen:latency_seen),
+     .x(coordinate_x),.y(coordinate_y),.compute_cycles(tracking_mode?completed_compute_cycles:{20'd0,latency_cycles}),
      .packet_mode(telemetry_mode),.packet_found(telemetry_found),.packet_compute_valid(telemetry_compute_valid),.packet_tick(),
      .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(compute_ms_digits));
 
     generate if(ENABLE_HMI)begin: g_hmi
      hmi_control_link u_link(.clk(clk),.rst_n(rst_n),.rx(hmi_rx),.tx(hmi_tx),
       .physical_features(physical_features),.features(feature_requested),.mode(mode),
-      .mode_set(hmi_mode_set),.mode_value(hmi_mode),.action(hmi_action),.keys(hmi_keys),.connected(hmi_connected),.manual_active(manual_motion),
+      .mode_set(hmi_mode_set),.mode_value(hmi_mode),.action(hmi_action),.keys(hmi_keys),.connected(hmi_connected),.manual_active(manual_motion),.local_takeover(local_takeover),
       .target_found(telemetry_found&&telemetry_mode==mode&&coordinate_found),
       .compute_valid(telemetry_compute_valid&&telemetry_mode==mode),.task_status(task_hud_status),.ctl_state(gimbal_state),
-      .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(compute_ms_digits),
+      .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(mode<11?16'h0000:compute_ms_digits),
       .h_digits(h_digits[15:0]),.v_digits(v_digits[15:0]),.fps_digits(fps_digits));
     end else begin: g_no_hmi
      assign feature_requested=physical_features;assign hmi_tx=1'b1;
@@ -450,7 +456,7 @@ module vision_pipeline #(
         if(!rst_n)gimbal_mode_d<=0;else gimbal_mode_d<=mode;
     end
     wire gimbal_auto_enable=ENABLE_PIPELINE && feature_requested[2] && !demo_active &&
-        gimbal_mode_d==mode && (mode==11 || mode==12 || mode==14);
+        gimbal_mode_d==mode && (mode==11 || mode==12 || mode==13);
     servo_gimbal_ctrl #(.IMG_W(IMG_WIDTH/8),.IMG_H(IMG_HEIGHT/8)) u_gimbal(.clk(clk),.rst_n(rst_n),
         .enable(gimbal_auto_enable),
         .result_valid(face_enable?face_position_valid:track_valid),.found(face_enable?face_found:track_found),
