@@ -32,7 +32,8 @@ module pixel_algorithm #(
     // Split the expensive luma conversion from the spatial operator.  The
     // source stream is registered here; all spatial state below consumes the
     // same delayed pixel and delayed qualifiers.
-    reg [7:0]  gray_reg;
+    reg [7:0]  gray_reg,spatial_gray_reg;
+    reg [7:0] gray_prev1,gray_prev2;reg [1:0] history_count;
     reg [23:0] pixel_in_reg;
     reg        de_reg;
     reg        frame_start_reg;
@@ -46,6 +47,7 @@ module pixel_algorithm #(
 
 
     wire [7:0] gray = {2'b0,pixel_in[23:18]} + {1'b0,pixel_in[15:9]} + {2'b0,pixel_in[7:2]};
+    wire [7:0] filtered_gray=(frame_start?gray:gray_prev1)>gray?((gray_prev2>gray)?(gray_prev2<gray_prev1?gray_prev2:gray_prev1):gray):((gray_prev2<gray)?(gray_prev2>gray_prev1?gray_prev2:gray_prev1):gray);
     // 1280x720 has 921600 active pixels.  146/2^27 is its reciprocal to
     // better than 0.2%; the shift/add form avoids a run-time divider.
     wire [39:0] binary_avg_product =
@@ -84,7 +86,7 @@ module pixel_algorithm #(
     always @(posedge clk)begin top_q<=line2[next_read_x];mid_q<=line1[next_read_x];end
     wire [7:0] top_now = top_q;
     wire [7:0] mid_now = mid_q;
-    wire [7:0] bot_now = gray_reg;
+    wire [7:0] bot_now = spatial_gray_reg;
     // ref Scharr kernel, expressed as shifts to avoid multipliers.
     wire signed [8:0] sch_gx_d0 = $signed({1'b0,top_now}) - $signed({1'b0,top_prev2});
     wire signed [8:0] sch_gx_d1 = $signed({1'b0,mid_now}) - $signed({1'b0,mid_prev2});
@@ -110,10 +112,12 @@ module pixel_algorithm #(
     wire [11:0] window_sum9 = {4'd0,top_prev2}+{4'd0,top_prev1}+{4'd0,top_now}+
                                {4'd0,mid_prev2}+{4'd0,mid_now}+{4'd0,mid_prev1}+
                                {4'd0,bot_prev2}+{4'd0,bot_prev1}+{4'd0,bot_now};
-    wire [11:0] neighbor_sum = window_sum9-{4'd0,mid_now};
+    wire [11:0] neighbor_sum = window_sum9-{4'd0,mid_prev1};
     wire [11:0] neighbor_avg = neighbor_sum>>3;
-    wire signed [11:0] sharpen_value = $signed({3'd0,mid_now}<<1)-$signed({3'd0,neighbor_avg});
-    wire signed [11:0] emboss_value = $signed({3'd0,mid_now})-$signed({3'd0,top_prev2})+12'sd128;
+    wire signed [11:0] detail=$signed({4'd0,mid_prev1})-$signed({4'd0,neighbor_avg});
+    wire signed [11:0] sharpen_value=$signed({4'd0,mid_prev1})+((detail>6||detail< -6)?(detail<<<1):12'sd0);
+    wire signed [11:0] emboss_delta=$signed({4'd0,mid_prev1})-$signed({4'd0,top_prev2});
+    wire signed [11:0] emboss_value=12'sd128+((emboss_delta>6||emboss_delta< -6)?emboss_delta:12'sd0);
 
     function [7:0] clip9;
         input [8:0] value;
@@ -140,7 +144,8 @@ module pixel_algorithm #(
     wire [8:0] ge0={1'b0,top_prev1}+{1'b0,mid_prev2},ge1={1'b0,mid_now}+{1'b0,bot_prev1};
     wire [9:0] corners={1'b0,gc0}+{1'b0,gc1},sides={1'b0,ge0}+{1'b0,ge1};
     wire [11:0] gaussian_sum={2'd0,corners}+{1'b0,sides,1'b0}+{2'd0,mid_prev1,2'd0}+12'd8;
-    wire [7:0] blur_value=edge_valid?gaussian_sum[11:4]:gray_reg;
+    wire [23:0] box_scaled=({12'd0,window_sum9}<<9)-({12'd0,window_sum9}<<6)+({12'd0,window_sum9}<<2)+({12'd0,window_sum9}<<1)+window_sum9+24'd2048;
+    wire [7:0] blur_value=edge_valid?box_scaled[19:12]:gray_reg;
     wire [7:0] sharpen_value8=edge_valid?clip_signed12(sharpen_value):gray_reg;
     wire [7:0] emboss_value8=edge_valid?clip_signed12(emboss_value):gray_reg;
     wire [23:0] binary_pixel = (gray_reg >= binary_threshold_used) ? 24'hffffff : 24'h000000;
@@ -196,7 +201,7 @@ module pixel_algorithm #(
             binary_luma_sum <= 32'd0;
             binary_pixel_count <= 22'd0;
             binary_threshold <= BINARY_TH;
-            gray_reg <= 8'd0;
+            gray_reg <= 8'd0;spatial_gray_reg<=0;gray_prev1<=0;gray_prev2<=0;history_count<=0;
             pixel_in_reg <= 24'd0;
             de_reg <= 1'b0;
             frame_start_reg <= 1'b0;
@@ -207,6 +212,9 @@ module pixel_algorithm #(
             // Stage 2 below performs the line-buffer/Sobel operation on the
             // previous registered sample.
             gray_reg        <= gray;
+            spatial_gray_reg <= frame_start||history_count<2?gray:filtered_gray;
+            if(de)begin gray_prev2<=frame_start?gray:gray_prev1;gray_prev1<=gray;
+             if(line_end)history_count<=0;else if(frame_start)history_count<=1;else if(history_count<2)history_count<=history_count+1'b1;end
             pixel_in_reg    <= pixel_in;
             de_reg          <= de;
             frame_start_reg <= frame_start;
@@ -215,7 +223,7 @@ module pixel_algorithm #(
 
             if (frame_start_reg) begin
             x <= de_reg && !line_end_reg ? 11'd1 : 11'd0; y <= de_reg && line_end_reg ? 11'd1 : 11'd0;
-            top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= de_reg?gray_reg:8'd0;
+            top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= de_reg?spatial_gray_reg:8'd0;
             if (binary_pixel_count != 0) begin
                 // Limit movement to eight levels per frame so illumination
                 // changes do not flip the whole binary image immediately.

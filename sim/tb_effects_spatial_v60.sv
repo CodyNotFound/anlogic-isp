@@ -16,8 +16,8 @@ module tb_effects_spatial_v60;
  end end
  initial begin
  repeat(5)@(negedge clk);rst=1;
- for(m=0;m<3;m=m+1)begin
- mode=m==0?5:m==1?6:8;
+ for(m=0;m<4;m=m+1)begin
+ mode=m==0?0:m==1?5:m==2?6:8;
  for(f=0;f<8;f=f+1)begin
  $sformat(name,"reports/effects_v60/input_%0d.hex",f);$readmemh(name,inputs);
  $sformat(name,"reports/effects_v60/mode%0d_%0d.hex",mode,f);$readmemh(name,expected);
@@ -30,7 +30,7 @@ module tb_effects_spatial_v60;
  repeat(8)@(negedge clk);checking=0;if(n!=4608)$fatal(1,"pixel count");
  end
  end
- $display("PASS tb_effects_spatial_v60 110592 exact RGB pixels, eight scenes, sharpen/blur/emboss, SOF/EOL and frame restart");$finish;
+ $display("PASS tb_effects_spatial_v60 147456 exact RGB pixels, eight scenes, untouched color/sharpen/blur/emboss, SOF/EOL and frame restart");$finish;
  end
  initial begin #2000000;$fatal(1,"watchdog");end
 endmodule

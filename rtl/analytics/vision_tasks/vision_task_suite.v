@@ -12,7 +12,7 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     input wire manual_mode,osd_enable,
     output wire [3:0] hud_status,
     output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
-    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data
+    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word
 );
     wire tracking=enabled && mode==12,region=enabled && mode==14;
     wire fs,sv,fe,abort;
@@ -25,17 +25,17 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     wire [7:0] tx,ty,tq,rx,ry,rw,rh,rcx,rcy;
     wire [14:0] ra;
     wire [1:0] t_lost;
-    wire twrite,rwrite;wire [13:0] twaddr,traddr;wire [14:0] rwaddr,rraddr;
+    wire twrite,rwrite;wire [14:0] twaddr,traddr;wire [14:0] rwaddr,rraddr;
     wire [7:0] twdata,rwdata;
     assign shared_write_en=tracking?twrite:region?rwrite:1'b0;
-    assign shared_write_addr=tracking?{1'b0,twaddr}:rwaddr;
-    assign shared_read_addr=tracking?{1'b0,traddr}:rraddr;
+    assign shared_write_addr=tracking?twaddr:rwaddr;
+    assign shared_read_addr=tracking?traddr:rraddr;
     assign shared_write_data=tracking?twdata:rwdata;
-    vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3),.EXTERNAL_FRAME(SHARED_TRACK_FRAME)) tracker(
+    vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3),.EXTERNAL_FRAME(SHARED_TRACK_FRAME),.EXTERNAL_TEMPLATES(SHARED_TRACK_FRAME),.EXTERNAL_SCORES(SHARED_TRACK_FRAME)) tracker(
         .clk(clk),.rst_n(rst_n&&tracking&&!abort),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.gray(gray),
         .result_valid(tv),.found(tf),.center_x(tx),.center_y(ty),.quality(tq),.best_sad(),.second_sad(),.busy(),.compute_cycles(),
         .lost_stage(t_lost),.shared_write_en(twrite),.shared_write_addr(twaddr),
-        .shared_read_addr(traddr),.shared_write_data(twdata),.shared_read_data(shared_read_data));
+        .shared_read_addr(traddr),.shared_write_data(twdata),.shared_read_data(shared_read_data),.shared_read_word(shared_read_word));
     vision_color_region #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.EXTERNAL_QUEUE(SHARED_TRACK_FRAME)) segmenter(
         .clk(clk),.rst_n(rst_n&&region),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.frame_abort(abort),
         .sample_x(sx),.sample_y(sy),.rgb(srgb),.result_valid(rv),.calibrated(rc),.found(rf),.overflow(ro),

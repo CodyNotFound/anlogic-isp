@@ -12,7 +12,7 @@ module yunet_network #(
  input wire load_valid,input wire [16:0] load_address,input wire [7:0] load_data,
  input wire [16:0] read_address,output wire [7:0] read_data,
  output wire busy,output reg done,operation_done,output reg [5:0] operation_index,
- output reg [31:0] cycles);
+ output reg [31:0] cycles,output wire [31:0] read_word);
  localparam IDLE=0,CONFIG_WAIT=1,CONFIG=2,INIT=3,META=4,DOT_START=5,
   CONV_READ=6,CONV_WAIT=7,CONV_FEED=8,CONV_RESULT=9,NEXT_OUTPUT=10,
   MISC_READ=11,MISC_WAIT=12,MISC_EVAL=13,ROW_PREP=14,ROW_READ=15,ROW_WAIT=16,ROW_WRITE=17,
@@ -118,6 +118,7 @@ module yunet_network #(
   .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap),.activations(dot_a),.weights(dot_w),
   .out_valid(dot_valid),.out_ready(state==CONV_RESULT),.accumulator(dot_acc),.value(dot_value));
  reg [1:0] debug_bank;
+ assign read_word={aq3,aq2,aq1,aq0};
  assign read_data=debug_bank==0?aq0:debug_bank==1?aq1:debug_bank==2?aq2:aq3;
  always @(posedge clk)begin
   operand_address<=calculated_address;weight_address<=conv_weight;

@@ -1,18 +1,30 @@
 // Frozen bilinear templates: 0,+/-6,+/-12,+/-18 deg, optional two scale banks.
 // Optional bounded recovery retries only the last local neighborhood; K4 reselects.
 (* dsp_style="no" *) module vision_sad_tracker #(
- parameter WIDTH=160,HEIGHT=90,RADIUS=8,MIN_TEXTURE=1024,MAX_SAD=6144,MIN_GAP=256,ROTATION_ENABLE=1,SCALE_ENABLE=0,RECOVERY_FRAMES=0,EXTERNAL_FRAME=0
+ parameter WIDTH=160,HEIGHT=90,RADIUS=8,MIN_TEXTURE=1024,MAX_SAD=6144,MIN_GAP=256,ROTATION_ENABLE=1,SCALE_ENABLE=0,RECOVERY_FRAMES=0,EXTERNAL_FRAME=0,EXTERNAL_TEMPLATES=0,EXTERNAL_SCORES=0
 )(input wire clk,rst_n,reseed,frame_start,sample_valid,frame_end,input wire [7:0] gray,
  output reg result_valid,found,output reg [7:0] center_x,center_y,quality,
  output reg [17:0] best_sad,second_sad,output wire busy,output reg [31:0] compute_cycles,output wire [1:0] lost_stage,
- output wire shared_write_en,output wire [13:0] shared_write_addr,shared_read_addr,
- output wire [7:0] shared_write_data,input wire [7:0] shared_read_data);
+ output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
+ output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word);
  localparam IDLE=0,CAPTURE=1,INIT=2,WA=3,RA=4,WB=5,RB=6,DONE=7,NEXT=8,PEAK=9,PWAIT=10,PREAD=11,DECIDE=12,
- COORD=13,ADDR=14,W0=15,R0=16,W1=17,R1=18,W2=19,R2=20,W3=21,R3=22,STORE=23,SEEDED=24,REDPAIR=25,REDMID=26,REDROOT=27,INTERP=28;
+ COORD=13,ADDR=14,W0=15,R0=16,W1=17,R1=18,W2=19,R2=20,W3=21,R3=22,STORE=23,SEEDED=24,REDPAIR=25,REDMID=26,REDROOT=27,INTERP=28,TPL_WAIT=29,TPL_CAPTURE=30,TPL_ACCUM=31,TPL_WRITE_HI=32,SCORE_WRITE=33;
  localparam LANES=SCALE_ENABLE?9:(ROTATION_ENABLE?7:1);
  localparam PAIRS=SCALE_ENABLE?8:4,MIDS=SCALE_ENABLE?4:2;
  localparam LAST_BANK=LANES-1;
- reg [4:0] state;
+ localparam SCORE_BASE=(WIDTH*HEIGHT+3)/4*4;
+ localparam SCORE_BYTES=((2*RADIUS+1)*(2*RADIUS+1)*3+3)/4*4;
+ localparam TEMPLATE_BASE=SCORE_BASE+SCORE_BYTES;
+ localparam TEMPLATE_WORDS=(LANES+1)/2,TEMPLATE_STRIDE=TEMPLATE_WORDS*4;
+ initial begin
+  if((EXTERNAL_TEMPLATES||EXTERNAL_SCORES)&&!EXTERNAL_FRAME)$error("Shared template/score storage requires external frame");
+  if(EXTERNAL_TEMPLATES&&TEMPLATE_BASE+256*TEMPLATE_STRIDE>32768)$error("Shared tracker arena exceeds address port");
+ end
+ reg [5:0] state;
+ reg [2:0] template_word;
+ reg [1:0] score_byte;
+ reg [7:0] score_lo_byte,score_mid_byte;
+ reg signed [8:0] search_gradient;
  reg pending,point_b;
  reg [2:0] missed_frames;
  reg [13:0] capture_addr,read_addr,pixel_addr;
@@ -23,10 +35,10 @@
  // Horizontal interpolation is <=255*16=4080. Preserve the original single
  // final rounding; the extra INTERP clock only affects template acquisition.
  wire [7:0] frame_q=EXTERNAL_FRAME?shared_read_data:frame_storage_q;
- assign shared_write_en=EXTERNAL_FRAME&&state==CAPTURE&&sample_valid;
- assign shared_write_addr=capture_addr;assign shared_read_addr=read_addr;assign shared_write_data=gray;
+
  reg [3:0] bank,best_bank;
- reg [17:0] score_q,energy,best,second;
+ reg [17:0] score_storage_q,energy,best,second;
+ wire [17:0] score_q=EXTERNAL_SCORES?{shared_read_data[1:0],score_mid_byte,score_lo_byte}:score_storage_q;
  reg [17:0] lane_sad[0:LANES-1],pair_score[0:PAIRS-1],mid_score[0:MIDS-1],root_score[0:1];
  reg [3:0] pair_bank[0:PAIRS-1],mid_bank[0:MIDS-1],root_bank[0:1];
  wire [LANES*10-1:0] lane_error;
@@ -59,23 +71,44 @@
  wire signed [15:0] xc=rotate_cos(dx,bank),ys=rotate_sin(dy,bank),xs=rotate_sin(dx,bank),yc=rotate_cos(dy,bank);
  wire signed [16:0] sx=$signed(WIDTH/2)+($signed(qx)>>>8),sy=$signed(HEIGHT/2)+($signed(qy)>>>8);
  wire signed [8:0] grad=$signed({1'b0,frame_q})-$signed({1'b0,a});
+ wire signed [8:0] scoring_gradient=EXTERNAL_TEMPLATES?search_gradient:grad;
  wire signed [8:0] sg=$signed({1'b0,seed_value})-$signed({1'b0,a});
  wire [8:0] texture=sg[8]?-sg:sg;
  wire [17:0] final_score=SCALE_ENABLE?(root_score[0]<=root_score[1]?root_score[0]:root_score[1]):(mid_score[0]<=mid_score[1]?mid_score[0]:mid_score[1]);
  wire [3:0] final_bank=SCALE_ENABLE?(root_score[0]<=root_score[1]?root_bank[0]:root_bank[1]):(mid_score[0]<=mid_score[1]?mid_bank[0]:mid_bank[1]);
  wire far_peak=px+2<bx||bx+2<px||py+2<byy||byy+2<py;
  wire [18:0] gap={1'b0,second}-{1'b0,best};
+ // One byte write port, existing four-bank word read. Mode 12 exclusively
+ // owns this arena; FACE reloads its full image before inference resumes.
+ wire tpl_low=EXTERNAL_TEMPLATES&&state==STORE&&point_b;
+ wire tpl_high=EXTERNAL_TEMPLATES&&state==TPL_WRITE_HI;
+ wire score_first=EXTERNAL_SCORES&&state==DONE;
+ wire score_more=EXTERNAL_SCORES&&state==SCORE_WRITE;
+ wire tpl_read=EXTERNAL_TEMPLATES&&(state==TPL_WAIT||state==TPL_CAPTURE);
+ wire score_read=EXTERNAL_SCORES&&(state==PEAK||state==PWAIT||state==PREAD);
+ wire [14:0] template_row=TEMPLATE_BASE+idx*TEMPLATE_STRIDE;
+ wire [14:0] template_write=template_row+({11'd0,bank}<<1)+tpl_high;
+ wire [14:0] score_write=SCORE_BASE+({6'd0,candidate_index}<<1)+candidate_index+(score_first?2'd0:score_byte);
+ wire [14:0] score_read_addr=SCORE_BASE+({6'd0,peak_index}<<1)+peak_index+score_byte;
+ assign shared_write_en=(EXTERNAL_FRAME&&state==CAPTURE&&sample_valid)||tpl_low||tpl_high||score_first||score_more;
+ assign shared_write_addr=(tpl_low||tpl_high)?template_write:(score_first||score_more)?score_write:{1'b0,capture_addr};
+ assign shared_write_data=(tpl_low||tpl_high)?(tpl_high?{7'd0,sg[8]}:sg[7:0]):
+  (score_first||score_more)?(score_first?final_score[7:0]:score_byte==1?final_score[15:8]:{6'd0,final_score[17:16]}):gray;
+ assign shared_read_addr=tpl_read?template_row+({12'd0,template_word}<<2):score_read?score_read_addr:{1'b0,read_addr};
  assign busy=state!=IDLE;
  assign lost_stage=0; // compatibility port; automatic reacquire is disabled
  genvar g;
  generate for(g=0;g<LANES;g=g+1)begin:g_template
   (* ram_style="dram" *) reg signed [8:0] mem[0:255];
-  reg signed [8:0] q;
-  wire signed [9:0] difference=$signed({grad[8],grad})-$signed({q[8],q});
+  reg signed [8:0] local_q,shared_q;
+  wire signed [8:0] q=EXTERNAL_TEMPLATES?shared_q:local_q;
+  wire signed [9:0] difference=$signed({scoring_gradient[8],scoring_gradient})-$signed({q[8],q});
   assign lane_error[g*10+:10]=difference[9]?-difference:difference;
   always @(posedge clk)begin
-   q<=mem[idx];
-   if(state==STORE&&point_b&&bank==g)mem[idx]<=sg;
+   if(!EXTERNAL_TEMPLATES)begin
+    local_q<=mem[idx];if(state==STORE&&point_b&&bank==g)mem[idx]<=sg;
+   end else if(state==TPL_CAPTURE&&template_word==g/2)
+    shared_q<=shared_read_word[(g%2)*16+:9];
   end
  end endgenerate
  function [7:0] bilinear;
@@ -84,10 +117,11 @@
  begin top=aa*(5'd16-{1'b0,xx})+bb*xx;bot=cc*(5'd16-{1'b0,xx})+dd*xx;
  total=top*(5'd16-{1'b0,yy})+bot*yy+18'd128;bilinear=total[15:8];end
  endfunction
- always @(posedge clk)begin
-  score_q<=scores[peak_index];
-  if(state==DONE)scores[candidate_index]<=final_score;
- end
+ generate if(!EXTERNAL_SCORES)begin: local_scores
+  always @(posedge clk)begin
+   score_storage_q<=scores[peak_index];if(state==DONE)scores[candidate_index]<=final_score;
+  end
+ end endgenerate
  generate if(!EXTERNAL_FRAME)begin: local_frame
   always @(posedge clk)begin
    frame_storage_q<=frame[read_addr];
@@ -98,6 +132,7 @@
   if(!rst_n)begin
    state<=IDLE;pending<=1;point_b<=0;missed_frames<=0;capture_addr<=0;read_addr<=0;pixel_addr<=0;
    a<=0;idx<=0;bank<=0;best_bank<=0;
+   template_word<=0;score_byte<=0;score_lo_byte<=0;score_mid_byte<=0;search_gradient<=0;
    p0<=0;p1<=0;p2<=0;seed_value<=0;seed_top<=0;seed_bottom<=0;qx<=0;qy<=0;fx<=0;fy<=0;
    energy<=0;best<=0;second<=0;candidate_index<=0;peak_index<=0;
    for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=0;
@@ -136,8 +171,10 @@
     W3:state<=R3;
     R3:begin seed_bottom<=p2*(5'd16-{1'b0,fx})+frame_q*fx;state<=INTERP;end
     INTERP:begin seed_value<=seed_blend[15:8];state<=STORE;end
-    STORE:begin
-     if(!point_b)begin a<=seed_value;point_b<=1;state<=COORD;end else begin
+    STORE,TPL_WRITE_HI:begin
+     if(state==STORE&&!point_b)begin a<=seed_value;point_b<=1;state<=COORD;end
+     else if(state==STORE&&EXTERNAL_TEMPLATES)state<=TPL_WRITE_HI;
+     else begin
       if(bank==0)energy<=energy+texture;point_b<=0;
       if(idx!=255)begin idx<=idx+1'b1;state<=COORD;end
       else if(bank!=LAST_BANK)begin bank<=bank+1'b1;idx<=0;state<=COORD;end else state<=SEEDED;
@@ -148,11 +185,20 @@
     WA:state<=RA;
     RA:begin a<=frame_q;read_addr<=pixel_addr+1'b1;state<=WB;end
     WB:state<=RB;
-    RB:begin
-     for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=lane_sad[lane]+lane_error[lane*10+:10];
-     if(idx==255)state<=REDPAIR;else begin
-     idx<=idx+1'b1;pixel_addr<=pixel_addr+(idx[3:0]==15?WIDTH-15:1);read_addr<=pixel_addr+(idx[3:0]==15?WIDTH-15:1);state<=WA;
-    end end
+    RB,TPL_ACCUM:begin
+     if(state==RB&&EXTERNAL_TEMPLATES)begin search_gradient<=grad;template_word<=0;state<=TPL_WAIT;end
+     else begin
+      for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=lane_sad[lane]+lane_error[lane*10+:10];
+      if(idx==255)state<=REDPAIR;else begin
+       idx<=idx+1'b1;pixel_addr<=pixel_addr+(idx[3:0]==15?WIDTH-15:1);read_addr<=pixel_addr+(idx[3:0]==15?WIDTH-15:1);state<=WA;
+      end
+     end
+    end
+    TPL_WAIT:state<=TPL_CAPTURE;
+    TPL_CAPTURE:begin
+     if(template_word==TEMPLATE_WORDS-1)state<=TPL_ACCUM;
+     else begin template_word<=template_word+1'b1;state<=TPL_WAIT;end
+    end
     REDPAIR:begin
      for(j=0;j<PAIRS;j=j+1)begin
       if(2*j+1<LANES)begin
@@ -176,8 +222,10 @@
      end state<=DONE;
     end
     DONE:begin
-     if(final_score<best)begin best<=final_score;bx<=cx;byy<=cy;best_bank<=final_bank;end state<=NEXT;
+     if(final_score<best)begin best<=final_score;bx<=cx;byy<=cy;best_bank<=final_bank;end
+     if(EXTERNAL_SCORES)begin score_byte<=1;state<=SCORE_WRITE;end else state<=NEXT;
     end
+    SCORE_WRITE:if(score_byte==2)state<=NEXT;else score_byte<=score_byte+1'b1;
     NEXT:begin
      if(cx==rx&&cy==by)state<=PEAK;else begin
       candidate_index<=candidate_index+1'b1;idx<=0;
@@ -186,12 +234,18 @@
       else begin cx<=cx+1'b1;pixel_addr<=cy*WIDTH+cx+1'b1;read_addr<=cy*WIDTH+cx+1'b1;end state<=WA;
      end
     end
-    PEAK:begin peak_index<=0;px<=lx;py<=ty;state<=PWAIT;end
+    PEAK:begin peak_index<=0;px<=lx;py<=ty;score_byte<=0;state<=PWAIT;end
     PWAIT:state<=PREAD;
     PREAD:begin
-     if(far_peak&&score_q<second)second<=score_q;
-     if(peak_index==candidate_index)state<=DECIDE;else begin peak_index<=peak_index+1'b1;
-      if(px==rx)begin px<=lx;py<=py+1'b1;end else px<=px+1'b1;state<=PWAIT;end
+     if(EXTERNAL_SCORES&&score_byte!=2)begin
+      if(score_byte==0)score_lo_byte<=shared_read_data;else score_mid_byte<=shared_read_data;
+      score_byte<=score_byte+1'b1;state<=PWAIT;
+     end else begin
+      score_byte<=0;
+      if(far_peak&&score_q<second)second<=score_q;
+      if(peak_index==candidate_index)state<=DECIDE;else begin peak_index<=peak_index+1'b1;
+       if(px==rx)begin px<=lx;py<=py+1'b1;end else px<=px+1'b1;state<=PWAIT;end
+     end
     end
     DECIDE:begin
      found<=best<=MAX_SAD&&second>=best+MIN_GAP;

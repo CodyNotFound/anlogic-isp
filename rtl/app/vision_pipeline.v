@@ -110,7 +110,7 @@ module vision_pipeline #(
     wire face_found,face_position_valid;
     wire shared_track_write;
     wire [14:0] shared_track_waddr,shared_track_raddr;
-    wire [7:0] shared_track_wdata,shared_track_rdata;
+    wire [7:0] shared_track_wdata,shared_track_rdata;wire [31:0] shared_track_word;
     wire [11:0] face_x,face_y,face_size,face_center_x,face_center_y;
     wire face_de,face_sof,face_eol,face_vsync,face_hsync;
     wire [23:0] face_pixel;
@@ -326,11 +326,11 @@ module vision_pipeline #(
             .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
             .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==14)),.shared_write_en(shared_track_write),
             .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
-            .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata));
+            .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word));
     end else begin: lbp_mode
         assign face_position_valid=lbp_valid;assign face_found=lbp_found;
         assign face_x=lbp_x;assign face_y=lbp_y;assign face_size=lbp_size;assign face_center_x=lbp_cx;assign face_center_y=lbp_cy;
-        assign shared_track_rdata=8'd0;
+        assign shared_track_rdata=8'd0;assign shared_track_word=32'd0;
     end endgenerate
     face_position_overlay u_face_overlay(
         .clk(clk),.rst_n(rst_n),.enable(face_enable && info_enabled_f),
@@ -347,7 +347,7 @@ module vision_pipeline #(
         .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode),
         .osd_enable(info_enabled_f),.hud_status(task_hud_status),
         .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
-        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata));
+        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word));
 
     // Existing OSD remains last; analytics never process their own overlays.
     // Its three-stage internal pipeline keeps RGB and HDMI timing aligned.

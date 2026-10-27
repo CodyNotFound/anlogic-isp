@@ -61,9 +61,7 @@ module color_tone4 #(
   min_rgb=r;if(g<min_rgb)min_rgb=g;if(b<min_rgb)min_rgb=b;
   // Suppress poorly conditioned shadow chroma before gamma lifts black noise.
   // Bright/color reference pixels retain the established saturation mapping.
-  if(y<8)saturation_pixel={y,y,y};
-  else if(y<16)saturation_pixel={shadow_r[8:1],shadow_g[8:1],shadow_b[8:1]};
-  else if(max_rgb-min_rgb<8||y<24)saturation_pixel=pixel;
+  if(max_rgb-min_rgb<8||y<24)saturation_pixel=pixel;
   else begin
    dr=$signed({1'b0,r})-$signed({1'b0,y});
    dg=$signed({1'b0,g})-$signed({1'b0,y});

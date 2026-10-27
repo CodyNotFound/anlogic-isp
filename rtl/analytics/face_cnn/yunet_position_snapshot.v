@@ -12,7 +12,7 @@ module yunet_position_snapshot #(
  output wire ready,busy,output reg result_valid,found,
  output reg [11:0] box_x,box_y,box_size,center_x,center_y,
  output reg [13:0] score_product,output wire [31:0] cycles,
- input wire external_read_enable,input wire [16:0] external_read_address,output wire [7:0] external_read_data);
+ input wire external_read_enable,input wire [16:0] external_read_address,output wire [7:0] external_read_data,output wire [31:0] external_read_word);
  `include "yunet_heads.vh"
  localparam IDLE=0,RUN=1,FRAME=2,ADDRESS=3,WAIT_READ=4,CAPTURE=5,SEND=6,WAIT_RESULT=7;
  reg [2:0] state;reg [1:0] level;reg [7:0] gx,gy;reg [2:0] field;
@@ -25,7 +25,7 @@ module yunet_position_snapshot #(
  wire [16:0] selected_address=SHARED_TRACK_FRAME&&external_read_enable?external_read_address:address;
  yunet_network #(.PROGRAM_FILE(PROGRAM_FILE),.W0_FILE(W0_FILE),.W1_FILE(W1_FILE),.W2_FILE(W2_FILE),.W3_FILE(W3_FILE),.BIAS_FILE(BIAS_FILE),.SHIFT_FILE(SHIFT_FILE)) network(
   .clk(clk),.rst_n(rst_n),.start(start&&ready),.load_valid(load_valid&&ready),.load_address(load_address),.load_data(load_data),
-  .read_address(selected_address),.read_data(data),.busy(nn_busy),.done(nn_done),.operation_done(nn_op_done),.operation_index(nn_op),.cycles(cycles));
+  .read_address(selected_address),.read_data(data),.busy(nn_busy),.done(nn_done),.operation_done(nn_op_done),.operation_index(nn_op),.cycles(cycles),.read_word(external_read_word));
  yunet_decode #(.SIGMOID_FILE(SIGMOID_FILE),.OFFSET_FILE(OFFSET_FILE),.SIZE_FILE(SIZE_FILE)) decoder(
   .clk(clk),.rst_n(rst_n),.frame_start(state==FRAME),.in_valid(state==SEND),.in_last(last_anchor),.level(level),.grid_x(gx),.grid_y(gy),
   .cls(cls),.obj(obj),.bx(bx),.by(by),.bw(bw),.bh(bh),.result_valid(decoded),.found(decode_found),.score_product(decode_score),
