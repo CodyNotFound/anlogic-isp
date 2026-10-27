@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='')
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$TrackerSource='')
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -6,12 +6,12 @@ $run=Join-Path $root "td_project/$RunName"
 if(Test-Path -LiteralPath $run){throw 'Preserve old probe; use a fresh run name'}
 New-Item -ItemType Directory -Path $run|Out-Null
 $utf8=[Text.UTF8Encoding]::new($false)
-$rtl=(Join-Path $root 'rtl/analytics/face_cnn/yunet_dot4.v').Replace('\','/')
-if($DotSource){
- $rtl=[IO.Path]::GetFullPath((Join-Path $root $DotSource))
- if(-not $rtl.StartsWith(($root+'\'),[StringComparison]::OrdinalIgnoreCase) -or -not(Test-Path -LiteralPath $rtl -PathType Leaf)){throw 'Arithmetic probe source must be a workspace file'}
- $rtl=$rtl.Replace('\','/')
+function Resolve-ProbeSource([string]$Default,[string]$Override){
+ $path=[IO.Path]::GetFullPath((Join-Path $root $(if($Override){$Override}else{$Default})))
+ if(-not $path.StartsWith(($root+'\'),[StringComparison]::OrdinalIgnoreCase) -or -not(Test-Path -LiteralPath $path -PathType Leaf)){throw 'Probe source must be a workspace file'}
+ return $path.Replace('\','/')
 }
+$rtl=if($Unit -eq 'tracker'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vision_sad_tracker.v' $TrackerSource}else{Resolve-ProbeSource 'rtl/analytics/face_cnn/yunet_dot4.v' $DotSource}
 $hash=(Get-FileHash -LiteralPath $rtl -Algorithm SHA256).Hash
 $files=@($rtl);$top='yunet_dot4'
 if($Unit -eq 'network'){
@@ -23,12 +23,25 @@ endmodule
 "@
  $wrapperPath=Join-Path $run 'network_probe.v'
  [IO.File]::WriteAllText($wrapperPath,$wrapper,$utf8)
- $networkFile="$cnn/yunet_network.v"
- if($NetworkSource){
-  $networkFile=[IO.Path]::GetFullPath((Join-Path $root $NetworkSource))
-  if(-not $networkFile.StartsWith(($root+'\'),[StringComparison]::OrdinalIgnoreCase) -or -not(Test-Path -LiteralPath $networkFile -PathType Leaf)){throw 'Network probe source must be a workspace file'}
- }
+ $networkFile=Resolve-ProbeSource 'rtl/analytics/face_cnn/yunet_network.v' $NetworkSource
  $files+=@($networkFile.Replace('\','/'),$wrapperPath.Replace('\','/'));$top='yunet_network_probe'
+}
+if($Unit -eq 'tracker'){
+ $wrapper=@'
+module vision_tracker_probe(input wire clk,rst_n,reseed,frame_start,sample_valid,frame_end,
+ input wire [7:0] gray,shared_read_data,output wire result_valid,found,busy,
+ output wire [7:0] center_x,center_y,quality,output wire [17:0] best_sad,second_sad,
+ output wire [31:0] compute_cycles,output wire [1:0] lost_stage,
+ output wire shared_write_en,output wire [13:0] shared_write_addr,shared_read_addr,output wire [7:0] shared_write_data);
+ vision_sad_tracker #(.WIDTH(160),.HEIGHT(90),.RADIUS(8),.SCALE_ENABLE(1),.EXTERNAL_FRAME(1)) tracker(
+ .clk(clk),.rst_n(rst_n),.reseed(reseed),.frame_start(frame_start),.sample_valid(sample_valid),.frame_end(frame_end),.gray(gray),
+ .result_valid(result_valid),.found(found),.center_x(center_x),.center_y(center_y),.quality(quality),.best_sad(best_sad),.second_sad(second_sad),
+ .busy(busy),.compute_cycles(compute_cycles),.lost_stage(lost_stage),.shared_write_en(shared_write_en),.shared_write_addr(shared_write_addr),
+ .shared_read_addr(shared_read_addr),.shared_write_data(shared_write_data),.shared_read_data(shared_read_data));
+endmodule
+'@
+ $wrapperPath=Join-Path $run 'tracker_probe.v';[IO.File]::WriteAllText($wrapperPath,$wrapper,$utf8)
+ $files+=$wrapperPath.Replace('\','/');$top='vision_tracker_probe'
 }
 $sourceFiles=@($files)
 if($Unit -eq 'network'){$sourceFiles+=Get-ChildItem -LiteralPath (Join-Path $root 'rtl/analytics/face_cnn') -Filter '*.hex'|ForEach-Object FullName}
@@ -64,8 +77,8 @@ set drHoldFix on
 [IO.File]::WriteAllText((Join-Path $run 'settings.cfg'),$settings,$utf8)
 [IO.File]::WriteAllText((Join-Path $run 'run.tcl'),"if {[catch {source {$flow}} message]} {puts stderr `$message; exit 1}`nexit 0",$utf8)
 $jobPath=Join-Path $root "reports/yunet_v45/${RunName}_job.json"
-$scope=if($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
-$job=[ordered]@{status='running';scope=$scope;run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');finished_utc=$null;source_sha256=$hashes;error=$null}
+$scope=if($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}elseif($Unit -eq 'tracker'){'Standalone nine-bank SAD tracker with external frame; CNN, camera and display excluded'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
+$job=[ordered]@{status='running';scope=$scope;unit=$Unit;verification_stage=$last;implemented=[bool]$Implement;run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');finished_utc=$null;source_sha256=$hashes;error=$null}
 [IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json),$utf8)
 Push-Location $run
 try{

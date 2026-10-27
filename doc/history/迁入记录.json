@@ -77,6 +77,13 @@
       "source_commit": "fef3fae6472846a900e0692d581744d3d48f1b71",
       "message": "perf: CNN量化算术——专用移位路径保持逐值等价",
       "changed_files": 10,
+      "removed_files": 0,
+      "destination_commit": "ab6a4dffc1f06c7f412ef6087bc9a7e006fecfce"
+    },
+    {
+      "source_commit": "5942b882f55042cfc28108b9aa7d9b12a82255ac",
+      "message": "perf: 模板插值流水——保持旋转采样结果一致",
+      "changed_files": 4,
       "removed_files": 0
     }
   ]

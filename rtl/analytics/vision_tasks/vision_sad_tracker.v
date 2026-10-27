@@ -8,7 +8,7 @@
  output wire shared_write_en,output wire [13:0] shared_write_addr,shared_read_addr,
  output wire [7:0] shared_write_data,input wire [7:0] shared_read_data);
  localparam IDLE=0,CAPTURE=1,INIT=2,WA=3,RA=4,WB=5,RB=6,DONE=7,NEXT=8,PEAK=9,PWAIT=10,PREAD=11,DECIDE=12,
- COORD=13,ADDR=14,W0=15,R0=16,W1=17,R1=18,W2=19,R2=20,W3=21,R3=22,STORE=23,SEEDED=24,REDPAIR=25,REDMID=26,REDROOT=27;
+ COORD=13,ADDR=14,W0=15,R0=16,W1=17,R1=18,W2=19,R2=20,W3=21,R3=22,STORE=23,SEEDED=24,REDPAIR=25,REDMID=26,REDROOT=27,INTERP=28;
  localparam LANES=SCALE_ENABLE?9:(ROTATION_ENABLE?7:1);
  localparam PAIRS=SCALE_ENABLE?8:4,MIDS=SCALE_ENABLE?4:2;
  localparam LAST_BANK=LANES-1;
@@ -19,6 +19,9 @@
  (* ram_style="bram" *) reg [7:0] frame[0:WIDTH*HEIGHT-1];
  (* ram_style="dram" *) reg [17:0] scores[0:(2*RADIUS+1)*(2*RADIUS+1)-1];
  reg [7:0] frame_storage_q,a,idx,p0,p1,p2,seed_value;
+ reg [11:0] seed_top,seed_bottom;
+ // Horizontal interpolation is <=255*16=4080. Preserve the original single
+ // final rounding; the extra INTERP clock only affects template acquisition.
  wire [7:0] frame_q=EXTERNAL_FRAME?shared_read_data:frame_storage_q;
  assign shared_write_en=EXTERNAL_FRAME&&state==CAPTURE&&sample_valid;
  assign shared_write_addr=capture_addr;assign shared_read_addr=read_addr;assign shared_write_data=gray;
@@ -33,6 +36,7 @@
  reg signed [9:0] cosine,sine;
  reg signed [14:0] qx,qy;
  reg [3:0] fx,fy;
+ wire [16:0] seed_blend=seed_top*(5'd16-{1'b0,fy})+seed_bottom*fy+17'd128;
  wire signed [5:0] dx=$signed({2'b0,idx[3:0]})-6'sd8+(point_b?6'sd1:6'sd0);
  wire signed [5:0] dy=$signed({2'b0,idx[7:4]})-6'sd8;
  wire signed [15:0] xc=dx*cosine,ys=dy*sine,xs=dx*sine,yc=dy*cosine;
@@ -84,7 +88,7 @@
   if(!rst_n)begin
    state<=IDLE;pending<=1;point_b<=0;missed_frames<=0;capture_addr<=0;read_addr<=0;pixel_addr<=0;
    a<=0;idx<=0;bank<=0;best_bank<=0;
-   p0<=0;p1<=0;p2<=0;seed_value<=0;qx<=0;qy<=0;fx<=0;fy<=0;
+   p0<=0;p1<=0;p2<=0;seed_value<=0;seed_top<=0;seed_bottom<=0;qx<=0;qy<=0;fx<=0;fy<=0;
    energy<=0;best<=0;second<=0;candidate_index<=0;peak_index<=0;
    for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=0;
    for(j=0;j<PAIRS;j=j+1)begin pair_score[j]<=0;pair_bank[j]<=0;end
@@ -116,11 +120,12 @@
     W0:state<=R0;
     R0:begin p0<=frame_q;read_addr<=read_addr+1'b1;state<=W1;end
     W1:state<=R1;
-    R1:begin p1<=frame_q;read_addr<=read_addr+WIDTH-1;state<=W2;end
+    R1:begin p1<=frame_q;seed_top<=p0*(5'd16-{1'b0,fx})+frame_q*fx;read_addr<=read_addr+WIDTH-1;state<=W2;end
     W2:state<=R2;
     R2:begin p2<=frame_q;read_addr<=read_addr+1'b1;state<=W3;end
     W3:state<=R3;
-    R3:begin seed_value<=bilinear(p0,p1,p2,frame_q,fx,fy);state<=STORE;end
+    R3:begin seed_bottom<=p2*(5'd16-{1'b0,fx})+frame_q*fx;state<=INTERP;end
+    INTERP:begin seed_value<=seed_blend[15:8];state<=STORE;end
     STORE:begin
      if(!point_b)begin a<=seed_value;point_b<=1;state<=COORD;end else begin
       if(bank==0)energy<=energy+texture;point_b<=0;
