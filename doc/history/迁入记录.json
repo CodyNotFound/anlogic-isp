@@ -189,6 +189,13 @@
       "source_commit": "3fb3ae401dc213c5222b543721302e3664419d12",
       "message": "fix: 控制权与模式循环——保持串口状态并流水化字库请求",
       "changed_files": 16,
+      "removed_files": 0,
+      "destination_commit": "55b235dc4370a03cfb0efbd6add6d08ef30a0151"
+    },
+    {
+      "source_commit": "15103d9a5270ea8b275daa998b707cc72f548c87",
+      "message": "test: 串口到PWM整链路——覆盖十五模式与普通处理耗时",
+      "changed_files": 0,
       "removed_files": 0
     }
   ]
