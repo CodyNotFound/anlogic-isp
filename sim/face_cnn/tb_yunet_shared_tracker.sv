@@ -20,12 +20,12 @@ module tb_yunet_shared_tracker;
   .SIGMOID_FILE("rtl/analytics/face_cnn/sigmoid.hex"),.OFFSET_FILE("rtl/analytics/face_cnn/offset.hex"),.SIZE_FILE("rtl/analytics/face_cnn/size.hex")) storage(
   .clk(clk),.rst_n(rst),.enable(1'b0),.sof(1'b0),.eol(1'b0),.de(1'b0),.rgb(24'd0),
   .position_valid(),.found(),.box_x(),.box_y(),.box_size(),.center_x(),.center_y(),.busy(),.stream_error(),.completed_frames(),
-  .shared_enable(owner),.shared_write_en(we),.shared_write_address(wa),.shared_read_address(ra),.shared_write_data(wd),.shared_read_data(rd));
+  .shared_enable(owner),.shared_write_en(we),.shared_write_address({1'b0,wa}),.shared_read_address({1'b0,ra}),.shared_write_data(wd),.shared_read_data(rd));
  integer x,y,phase,results=0,waits;reg monitoring=0;
  always @(posedge clk)begin #1;
   if(monitoring&&trst)begin
    if({rv0,f0,x0,y0,q0,best0,snd0,b0,c0,lost0}!=={rv1,f1,x1,y1,q1,best1,snd1,b1,c1,lost1})
-    $fatal(1,"shared tracker diverged phase%0d state%0d/%0d rv%0d/%0d center%0d,%0d/%0d,%0d",phase,local_tracker.state,shared_tracker.state,rv0,rv1,x0,y0,x1,y1);
+    $fatal(1,"shared tracker diverged phase%0d state%0d/%0d values %h/%h",phase,local_tracker.state,shared_tracker.state,{rv0,f0,x0,y0,q0,best0,snd0,b0,c0,lost0},{rv1,f1,x1,y1,q1,best1,snd1,b1,c1,lost1});
    if(rv0)results=results+1;
   end
  end

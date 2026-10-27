@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network')][string]$Unit='dot')
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='')
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -7,6 +7,11 @@ if(Test-Path -LiteralPath $run){throw 'Preserve old probe; use a fresh run name'
 New-Item -ItemType Directory -Path $run|Out-Null
 $utf8=[Text.UTF8Encoding]::new($false)
 $rtl=(Join-Path $root 'rtl/analytics/face_cnn/yunet_dot4.v').Replace('\','/')
+if($DotSource){
+ $rtl=[IO.Path]::GetFullPath((Join-Path $root $DotSource))
+ if(-not $rtl.StartsWith(($root+'\'),[StringComparison]::OrdinalIgnoreCase) -or -not(Test-Path -LiteralPath $rtl -PathType Leaf)){throw 'Arithmetic probe source must be a workspace file'}
+ $rtl=$rtl.Replace('\','/')
+}
 $hash=(Get-FileHash -LiteralPath $rtl -Algorithm SHA256).Hash
 $files=@($rtl);$top='yunet_dot4'
 if($Unit -eq 'network'){
@@ -18,7 +23,12 @@ endmodule
 "@
  $wrapperPath=Join-Path $run 'network_probe.v'
  [IO.File]::WriteAllText($wrapperPath,$wrapper,$utf8)
- $files+=@("$cnn/yunet_network.v",$wrapperPath.Replace('\','/'));$top='yunet_network_probe'
+ $networkFile="$cnn/yunet_network.v"
+ if($NetworkSource){
+  $networkFile=[IO.Path]::GetFullPath((Join-Path $root $NetworkSource))
+  if(-not $networkFile.StartsWith(($root+'\'),[StringComparison]::OrdinalIgnoreCase) -or -not(Test-Path -LiteralPath $networkFile -PathType Leaf)){throw 'Network probe source must be a workspace file'}
+ }
+ $files+=@($networkFile.Replace('\','/'),$wrapperPath.Replace('\','/'));$top='yunet_network_probe'
 }
 $sourceFiles=@($files)
 if($Unit -eq 'network'){$sourceFiles+=Get-ChildItem -LiteralPath (Join-Path $root 'rtl/analytics/face_cnn') -Filter '*.hex'|ForEach-Object FullName}

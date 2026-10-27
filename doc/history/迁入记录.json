@@ -63,6 +63,13 @@
       "source_commit": "616824f63c66c78b7acba9fb979869d5d3118476",
       "message": "perf: CNN缓存布局——调整存储银行并验证完整定点网络",
       "changed_files": 5,
+      "removed_files": 0,
+      "destination_commit": "59331bf1fb2703094912a14617541d0f66e6bdd9"
+    },
+    {
+      "source_commit": "08ae7d684c1f0e8743809cf2e207d5906407d2bc",
+      "message": "perf: 色区队列共享——复用CNN工作区并保持区域计算一致",
+      "changed_files": 10,
       "removed_files": 0
     }
   ]

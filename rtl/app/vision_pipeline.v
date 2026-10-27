@@ -110,7 +110,7 @@ module vision_pipeline #(
     wire face_enable=ENABLE_PIPELINE && !demo_active && mode==4'd11;
     wire face_found,face_position_valid;
     wire shared_track_write;
-    wire [13:0] shared_track_waddr,shared_track_raddr;
+    wire [14:0] shared_track_waddr,shared_track_raddr;
     wire [7:0] shared_track_wdata,shared_track_rdata;
     wire [11:0] face_x,face_y,face_size,face_center_x,face_center_y;
     wire face_de,face_sof,face_eol,face_vsync,face_hsync;
@@ -325,7 +325,7 @@ module vision_pipeline #(
             .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
             .position_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
             .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
-            .shared_enable(ENABLE_PIPELINE&&!demo_active&&mode==12),.shared_write_en(shared_track_write),
+            .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==14)),.shared_write_en(shared_track_write),
             .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
             .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata));
     end else begin: lbp_mode

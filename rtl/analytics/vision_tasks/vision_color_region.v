@@ -5,7 +5,7 @@
 (* dsp_style="no" *) module vision_color_region #(
     parameter WIDTH=160,HEIGHT=90,MIN_AREA=12,MAX_AREA=WIDTH*HEIGHT/2,
     parameter QUEUE_CAPACITY=WIDTH*HEIGHT,
-    parameter ASSOCIATION=1,MAX_STEP=16
+    parameter ASSOCIATION=1,MAX_STEP=16,EXTERNAL_QUEUE=0
 )(
     input wire clk,rst_n,reseed,frame_start,sample_valid,frame_end,
     input wire [7:0] sample_x,sample_y,
@@ -14,14 +14,17 @@
     output reg [7:0] box_x,box_y,box_w,box_h,center_x,center_y,
     output reg [14:0] area,
     output wire busy,
-    output reg [31:0] compute_cycles,output wire pick_pending,input wire frame_abort
+    output reg [31:0] compute_cycles,output wire pick_pending,input wire frame_abort,
+    output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
+    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data
 );
     localparam N=WIDTH*HEIGHT;
     localparam IDLE=0,CAPTURE=1,CALIBRATE=2,CLEAN_REQ=3,CLEAN_WAIT=4,CLEAN_READ=5,CLEAN_STORE=6,
         SCAN_REQ=7,SCAN_WAIT=8,SCAN_CHECK=9,POP_REQ=10,POP_WAIT=11,POP=12,
         NEIGH_REQ=13,NEIGH_WAIT=14,NEIGH_CHECK=15,NODE_DONE=16,COMP_DONE=17,
         SCAN_NEXT=18,FINAL=19,DIV_X=20,DIV_Y_START=21,DIV_Y=22,
-        CAL_R=23,CAL_B=24,CAL_Y=25,CAL_U=26,CAL_V=27,DRAIN=28;
+        CAL_R=23,CAL_B=24,CAL_Y=25,CAL_U=26,CAL_V=27,DRAIN=28,
+        POP_LOW=29,POP_HIGH_WAIT=30,WRITE_HIGH=31;
     reg [4:0] state;
     reg seed_pending,seeding;
     reg [13:0] capture_addr,scan_addr,raw_addr,work_addr,queue_addr;
@@ -29,7 +32,12 @@
     localparam QDEPTH=1<<$clog2(QUEUE_CAPACITY);
     (* ram_style="dram" *) reg [14:0] queue[0:QDEPTH-1];
     reg raw_q,work_q;
-    reg [14:0] queue_q,head,tail;
+    reg [14:0] local_queue_q,head,tail;
+    reg [7:0] queue_low;
+    reg [13:0] saved_write_addr;
+    reg [6:0] saved_write_high;
+    reg [4:0] queue_resume;
+    wire [14:0] queue_q=EXTERNAL_QUEUE?{shared_read_data[6:0],queue_low}:local_queue_q;
     reg [7:0] scan_x,scan_y,cur_x,cur_y;
     reg [3:0] tap,count9;
     reg [1:0] neighbor;
@@ -78,6 +86,10 @@
     wire queue_push=state==NEIGH_CHECK && neighbor_valid && work_q && tail<QUEUE_CAPACITY;
     wire [13:0] queue_write_addr=queue_seed?14'd0:tail[13:0];
     wire [14:0] queue_write_data=queue_seed?{scan_y[6:0],scan_x}:{ny[6:0],nx[7:0]};
+    assign shared_write_en=EXTERNAL_QUEUE&&(queue_seed||queue_push||state==WRITE_HIGH);
+    assign shared_write_addr=state==WRITE_HIGH?{saved_write_addr,1'b1}:{queue_write_addr,1'b0};
+    assign shared_write_data=state==WRITE_HIGH?{1'b0,saved_write_high}:queue_write_data[7:0];
+    assign shared_read_addr={queue_addr,state==POP_HIGH_WAIT||state==POP};
     always @* begin
         clean_x=$signed({2'd0,scan_x});clean_y=$signed({2'd0,scan_y});
         case(tap)
@@ -146,21 +158,27 @@
         end
     end
     always @(posedge clk)begin
-        raw_q<=raw_mask[raw_addr];work_q<=work_mask[work_addr];queue_q<=queue[queue_addr];
+        raw_q<=raw_mask[raw_addr];work_q<=work_mask[work_addr];
         if(g_valid && !reseed && !frame_abort)raw_mask[g_addr]<=selected;
         if(state==CLEAN_STORE)work_mask[scan_addr]<=count9>=5;
         else if(state==SCAN_CHECK && work_q)work_mask[scan_addr]<=0;
         else if(state==NEIGH_CHECK && neighbor_valid && work_q && tail<QUEUE_CAPACITY)work_mask[neighbor_addr]<=0;
         // One physical write port. A separate constant-address assignment for
         // queue[0] makes TD expand this large queue into flip-flops.
-        if(queue_seed || queue_push)queue[queue_write_addr]<=queue_write_data;
     end
+    generate if(!EXTERNAL_QUEUE)begin: local_queue
+        always @(posedge clk)begin
+            local_queue_q<=queue[queue_addr];
+            if(queue_seed||queue_push)queue[queue_write_addr]<=queue_write_data;
+        end
+    end endgenerate
     always @(posedge clk or negedge rst_n)begin
         if(!rst_n)begin state<=IDLE;seed_pending<=1;seeding<=0;capture_addr<=0;scan_addr<=0;raw_addr<=0;work_addr<=0;queue_addr<=0;
             seed_neutral<=0;seed_luma<=0;locked<=0;locked_area<=0;
             seed_u<=0;seed_v<=0;lost_frames<=0;reacq_pending<=0;reacq_x<=0;reacq_y<=0;reacq_area<=0;
             component_seed<=0;best_distance<=511;best_ambiguous<=0;
             head<=0;tail<=0;scan_x<=0;scan_y<=0;cur_x<=0;cur_y<=0;tap<=0;count9<=0;neighbor<=0;
+            queue_low<=0;saved_write_addr<=0;saved_write_high<=0;queue_resume<=IDLE;
             sum_r<=0;sum_g<=0;sum_b<=0;seed_count<=0;seed_rg<=0;seed_bg<=0;min_rg<=255;min_bg<=255;max_rg<=-255;max_bg<=-255;tolerance<=24;
             component_count<=0;best_count<=0;sum_x<=0;sum_y<=0;best_sum_x<=0;best_sum_y<=0;
             min_x<=0;min_y<=0;max_x<=0;max_y<=0;best_min_x<=0;best_min_y<=0;best_max_x<=0;best_max_y<=0;
@@ -248,9 +266,13 @@
                 SCAN_WAIT:state<=SCAN_CHECK;
                 SCAN_CHECK:if(work_q)begin
                     head<=0;tail<=1;component_count<=0;component_seed<=0;sum_x<=0;sum_y<=0;min_x<=255;min_y<=255;max_x<=0;max_y<=0;state<=POP_REQ;
+                    if(EXTERNAL_QUEUE)begin state<=WRITE_HIGH;queue_resume<=POP_REQ;saved_write_addr<=queue_write_addr;saved_write_high<=queue_write_data[14:8];end
                 end else state<=SCAN_NEXT;
                 POP_REQ:begin queue_addr<=head[13:0];state<=POP_WAIT;end
-                POP_WAIT:state<=POP;
+                POP_WAIT:state<=EXTERNAL_QUEUE?POP_LOW:POP;
+                POP_LOW:begin queue_low<=shared_read_data;state<=POP_HIGH_WAIT;end
+                POP_HIGH_WAIT:state<=POP;
+                WRITE_HIGH:state<=queue_resume;
                 POP:begin
                     if(queue_q[7:0]>=WIDTH/2-1 && queue_q[7:0]<=WIDTH/2+1 &&
                        queue_q[14:8]>=HEIGHT/2-1 && queue_q[14:8]<=HEIGHT/2+1)component_seed<=1;
@@ -266,7 +288,10 @@
                     if(neighbor_valid && work_q)begin
                         if(tail>=QUEUE_CAPACITY)begin overflow<=1;found<=0;area<=0;result_valid<=1;state<=IDLE;reacq_pending<=0;
                             if(locked && lost_frames<15)lost_frames<=lost_frames+1'b1;end
-                        else begin tail<=tail+1'b1;if(neighbor==3)state<=NODE_DONE;else begin neighbor<=neighbor+1'b1;state<=NEIGH_REQ;end end
+                        else begin
+                            tail<=tail+1'b1;if(neighbor==3)state<=NODE_DONE;else begin neighbor<=neighbor+1'b1;state<=NEIGH_REQ;end
+                            if(EXTERNAL_QUEUE)begin state<=WRITE_HIGH;queue_resume<=neighbor==3?NODE_DONE:NEIGH_REQ;saved_write_addr<=queue_write_addr;saved_write_high<=queue_write_data[14:8];end
+                        end
                     end else if(neighbor==3)state<=NODE_DONE;
                     else begin neighbor<=neighbor+1'b1;state<=NEIGH_REQ;end
                 end
