@@ -208,7 +208,7 @@ module vision_pipeline #(
         else if (video_sof) osd_frame_toggle <= ~osd_frame_toggle;
     end
 
-    algorithm_mode_ctrl #(.ENABLE_ISP_DEMO(0)) u_mode_ctrl (
+    algorithm_mode_ctrl #(.ENABLE_ISP_DEMO(0),.LAST_MODE(4'd15)) u_mode_ctrl (
         .clk         (clk),
         .rst_n       (rst_n),
         .buttons_n   (normal_buttons_n),
@@ -325,7 +325,7 @@ module vision_pipeline #(
             .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
             .position_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
             .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
-            .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==14)),.shared_write_en(shared_track_write),
+            .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==14||mode==15)),.shared_write_en(shared_track_write),
             .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
             .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.inference_cycles(face_compute_cycles));
     end else begin: lbp_mode
@@ -340,6 +340,16 @@ module vision_pipeline #(
         .box_x(face_x),.box_y(face_y),.box_size(face_size),.center_x(face_center_x),.center_y(face_center_y),
         .out_vsync(face_vsync),.out_hsync(face_hsync),.out_de(face_de),.out_sof(face_sof),.out_eol(face_eol),.out_rgb(face_pixel));
 
+    reg [11:0] motion_last_h,motion_last_v;reg [3:0] motion_settle_frames;
+    wire motion_camera_moving=manual_mode||motion_settle_frames!=0;
+    always @(posedge clk or negedge rst_n)begin
+     if(!rst_n)begin motion_last_h<=1500;motion_last_v<=1500;motion_settle_frames<=15;end
+     else begin
+      motion_last_h<=pulse_h;motion_last_v<=pulse_v;
+      if(pulse_h!=motion_last_h||pulse_v!=motion_last_v)motion_settle_frames<=15;
+      else if(video_sof&&motion_settle_frames!=0)motion_settle_frames<=motion_settle_frames-1'b1;
+     end
+    end
     vision_task_suite #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.HUD_TEXT_ENABLE(0),.SHARED_TRACK_FRAME(FACE_CNN_ENABLE)) u_tasks(
         .clk(clk),.rst_n(rst_n),.enabled(ENABLE_PIPELINE && !demo_active),.action(task_action),.mode(mode),
         .source_sof(video_sof),.source_eol(video_eol),.source_de(video_de),.source_rgb(pixel_in),
@@ -348,9 +358,9 @@ module vision_pipeline #(
         .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode),
         .osd_enable(info_enabled_f),.hud_status(task_hud_status),
         .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
-        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles));
+        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles),.camera_moving(motion_camera_moving));
 
-    wire tracking_mode=mode==11||mode==12||mode==14;
+    wire tracking_mode=mode==11||mode==12||mode==14||mode==15;
     wire coordinate_found=tracking_mode&&(face_enable?face_found:track_found);
     wire [11:0] coordinate_x=face_enable?face_center_x:{1'b0,track_x,3'b0};
     wire [11:0] coordinate_y=face_enable?face_center_y:{1'b0,track_y,3'b0};

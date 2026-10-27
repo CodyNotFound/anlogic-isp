@@ -87,6 +87,14 @@
                     <Attr Name="CompileOrder" Val="81"/>
                 </FileInfo>
             </File>
+            <File Path="../rtl/analytics/vision_tasks/vision_motion_diff.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="81"/>
+                </FileInfo>
+            </File>
             <File Path="../rtl/analytics/vision_tasks/vision_rgb_sampler.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

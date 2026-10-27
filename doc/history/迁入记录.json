@@ -112,6 +112,13 @@
       "source_commit": "526bd75648548666de2985defce60c20717ebd4f",
       "message": "feat: 定位遥测——显示目标坐标与算法计算耗时",
       "changed_files": 10,
+      "removed_files": 0,
+      "destination_commit": "3854ae12df4bcb43615f40a4938144f9fa79a81d"
+    },
+    {
+      "source_commit": "12751d7e4095b29280f28c122804f2582cf7242b",
+      "message": "feat: 固定机位运动检测——共享特征存储并抑制云台运动干扰",
+      "changed_files": 12,
       "removed_files": 0
     }
   ]

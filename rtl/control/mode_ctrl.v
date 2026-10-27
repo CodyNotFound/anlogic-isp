@@ -6,7 +6,8 @@
 module algorithm_mode_ctrl #(
     parameter integer DEBOUNCE_CYCLES = 750000,
     parameter [2:0] DEMO_STEP_LAST = 3'd5,
-    parameter integer ENABLE_ISP_DEMO = 1
+    parameter integer ENABLE_ISP_DEMO = 1,
+    parameter [3:0] LAST_MODE=4'd14
 )(
     input  wire       clk,
     input  wire       rst_n,
@@ -17,7 +18,7 @@ module algorithm_mode_ctrl #(
     output reg        action_pulse
 );
     localparam integer CW = (DEBOUNCE_CYCLES < 2) ? 1 : $clog2(DEBOUNCE_CYCLES);
-    localparam [3:0] MODE_LAST = 4'd14;
+    localparam [3:0] MODE_LAST = LAST_MODE;
 
     reg [3:0] sync1, sync2, stable, stable_d;
     reg [CW-1:0] count0, count1, count2, count3;
@@ -76,7 +77,7 @@ module algorithm_mode_ctrl #(
             // K4: 上一步(到0不动), 非演示状态无动作
             if (stable_d[3] && !stable[3]) begin
                 if (demo_active && demo_step != 3'd0) demo_step <= demo_step - 1'b1;
-                else if(!demo_active && (mode==12 || mode==14))action_pulse<=1'b1;
+                else if(!demo_active && (mode==12 || mode==14 || mode==15))action_pulse<=1'b1;
             end
         end
     end

@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$TrackerSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage)
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage)
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -11,7 +11,7 @@ function Resolve-ProbeSource([string]$Default,[string]$Override){
  if(-not $path.StartsWith(($root+'\'),[StringComparison]::OrdinalIgnoreCase) -or -not(Test-Path -LiteralPath $path -PathType Leaf)){throw 'Probe source must be a workspace file'}
  return $path.Replace('\','/')
 }
-$rtl=if($Unit -eq 'tracker'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vision_sad_tracker.v' $TrackerSource}else{Resolve-ProbeSource 'rtl/analytics/face_cnn/yunet_dot4.v' $DotSource}
+$rtl=if($Unit -eq 'tracker'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vision_sad_tracker.v' $TrackerSource}elseif($Unit -eq 'motion'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vision_motion_diff.v' $MotionSource}else{Resolve-ProbeSource 'rtl/analytics/face_cnn/yunet_dot4.v' $DotSource}
 $hash=(Get-FileHash -LiteralPath $rtl -Algorithm SHA256).Hash
 $files=@($rtl);$top='yunet_dot4'
 if($Unit -eq 'network'){
@@ -54,6 +54,23 @@ endmodule
  $wrapperPath=Join-Path $run 'tracker_probe.v';[IO.File]::WriteAllText($wrapperPath,$wrapper,$utf8)
  $files+=$wrapperPath.Replace('\','/');$top='vision_tracker_probe'
 }
+if($Unit -eq 'motion'){
+ $wrapper=@"
+module motion_probe(input wire clk,rst_n,enable,reseed,suppress,frame_start,sample_valid,frame_end,frame_error,
+ input wire[7:0] sample_x,sample_y,gray,shared_read_data,
+ output wire result_valid,found,initialized,output wire[2:0] status,output wire[7:0] center_x,center_y,
+ output wire[14:0] changed_pixels,output wire[15:0] cycles_debug,
+ output wire shared_write_en,output wire[14:0] shared_write_addr,shared_read_addr,output wire[7:0] shared_write_data);
+ wire[31:0] cycles;assign cycles_debug=cycles[15:0];
+ vision_motion_diff dut(.clk(clk),.rst_n(rst_n),.enable(enable),.reseed(reseed),.suppress(suppress),.frame_start(frame_start),
+ .sample_valid(sample_valid),.frame_end(frame_end),.frame_error(frame_error),.sample_x(sample_x),.sample_y(sample_y),.gray(gray),
+ .result_valid(result_valid),.found(found),.initialized(initialized),.status(status),.box_x(),.box_y(),.box_w(),.box_h(),.center_x(center_x),.center_y(center_y),
+ .changed_pixels(changed_pixels),.compute_cycles(cycles),.shared_write_en(shared_write_en),.shared_write_addr(shared_write_addr),.shared_read_addr(shared_read_addr),.shared_write_data(shared_write_data),.shared_read_data(shared_read_data));
+endmodule
+"@
+ $wp=Join-Path $run 'motion_probe.v';[IO.File]::WriteAllText($wp,$wrapper,$utf8)
+ $files+=$wp.Replace('\','/');$top='motion_probe'
+}
 $sourceFiles=@($files)
 if($Unit -eq 'network'){$sourceFiles+=Get-ChildItem -LiteralPath (Join-Path $root 'rtl/analytics/face_cnn') -Filter '*.hex'|ForEach-Object FullName}
 $hashes=@($sourceFiles|ForEach-Object{[pscustomobject]@{path=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})
@@ -88,7 +105,7 @@ set drHoldFix on
 [IO.File]::WriteAllText((Join-Path $run 'settings.cfg'),$settings,$utf8)
 [IO.File]::WriteAllText((Join-Path $run 'run.tcl'),"if {[catch {source {$flow}} message]} {puts stderr `$message; exit 1}`nexit 0",$utf8)
 $jobPath=Join-Path $root "reports/yunet_v45/${RunName}_job.json"
-$scope=if($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}elseif($Unit -eq 'tracker'){'Standalone nine-bank SAD tracker with external frame; CNN, camera and display excluded'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
+$scope=if($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}elseif($Unit -eq 'motion'){'Standalone fixed-camera frame difference with external previous-frame RAM; no video or CNN included'}elseif($Unit -eq 'tracker'){'Standalone nine-bank SAD tracker with external frame; CNN, camera and display excluded'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
 $job=[ordered]@{status='running';scope=$scope;unit=$Unit;verification_stage=$last;implemented=[bool]$Implement;run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');finished_utc=$null;source_sha256=$hashes;error=$null}
 [IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json),$utf8)
 Push-Location $run

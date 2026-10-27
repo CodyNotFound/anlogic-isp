@@ -385,6 +385,7 @@ module hdmi_mixer #(
                 4'd12: case (I_idx) 4'd0: F_mode_name_char=8'h8c; 4'd1: F_mode_name_char=8'h8d; default: F_mode_name_char=8'h00; endcase // 跟踪
                 4'd13: case (I_idx) 4'd0: F_mode_name_char=8'h88; 4'd1: F_mode_name_char=8'h89; default: F_mode_name_char=8'h00; endcase // 均衡
                 4'd14: case (I_idx) 4'd0: F_mode_name_char=8'h9c; 4'd1: F_mode_name_char=8'hce; default: F_mode_name_char=8'h00; endcase // 色区
+                4'd15: case(I_idx)0:F_mode_name_char="M";1:F_mode_name_char="O";2:F_mode_name_char="V";3:F_mode_name_char="E";default:F_mode_name_char=0;endcase
                 default: case (I_idx) 4'd0: F_mode_name_char=8'h00; 4'd1: F_mode_name_char=8'h00; default: F_mode_name_char=8'h00; endcase // 空白
             endcase
         end
@@ -449,6 +450,15 @@ module hdmi_mixer #(
                     v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-50;
                     c_text="IDLE                    ";
                     if(panel_f[3])c_text="MANUAL H J K L          ";
+                    else if(mode_f==15)begin
+                        case(task_f)
+                         8:c_text="MOTION DETECTED         ";
+                         10:c_text="LIGHT CHANGE            ";
+                         11:c_text="CAMERA MOVING           ";
+                         12:c_text="BUILDING REFERENCE      ";
+                         default:c_text="NO MOTION               ";
+                        endcase
+                    end
                     else if(mode_f==11 || mode_f==12 || mode_f==14)begin
                         case(state_f)
                             1:begin c_text="AUTO TRACK              ";v_compact_color=24'h60ff90;end
@@ -466,7 +476,7 @@ module hdmi_mixer #(
                         endcase
                         if(!panel_f[2])c_text="AUTO OFF K4 PICK        ";
                     end
-                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14) && S_x_1d>=192 && S_x_1d<392 && S_y_1d>=72 && S_y_1d<112)begin
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<392 && S_y_1d>=72 && S_y_1d<112)begin
                     v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-74;
                     if(S_y_1d<92)begin
                      c_text="X:---- Y:----           ";
@@ -502,7 +512,7 @@ module hdmi_mixer #(
                             2:c_label="K2 K UP     ";3:c_label="K1 L RIGHT  ";
                         endcase
                         else case(c_group)
-                            0:c_label=(mode_f==12||mode_f==14)?"K4 PICK     ":"K4 NONE     ";
+                            0:c_label=(mode_f==15)?"K4 RESET    ":(mode_f==12||mode_f==14)?"K4 PICK     ":"K4 NONE     ";
                             1:c_label="K3 NONE     ";2:c_label="K2 PREV MODE";3:c_label="K1 NEXT MODE";
                         endcase
                     end
