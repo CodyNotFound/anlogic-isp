@@ -42,6 +42,13 @@
       "source_commit": "7ff643988c9e2fcd458a151267d697c3a2f3ea28",
       "message": "fix: CNN相加量化流水——拆分关键算术路径",
       "changed_files": 7,
+      "removed_files": 0,
+      "destination_commit": "a426b5c91461d4d998e20252658e1613c28c8dc2"
+    },
+    {
+      "source_commit": "69a16fad61b161422820660f5f8bf6722a7fda2d",
+      "message": "perf: 模板存储复用——共享CNN闲置特征空间",
+      "changed_files": 17,
       "removed_files": 0
     }
   ]

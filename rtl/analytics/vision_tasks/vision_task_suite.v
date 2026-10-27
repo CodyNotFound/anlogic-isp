@@ -1,5 +1,5 @@
 // All analytics observe clean ISP pixels; video never waits for analytics.
-module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,HUD_TEXT_ENABLE=1)(
+module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,HUD_TEXT_ENABLE=1,SHARED_TRACK_FRAME=0)(
     input wire clk,rst_n,enabled,action,
     input wire [3:0] mode,
     input wire source_sof,source_eol,source_de,
@@ -10,7 +10,9 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     output wire [23:0] out_rgb,
     output wire target_valid,target_found,output wire [7:0] target_x,target_y,
     input wire manual_mode,osd_enable,
-    output wire [3:0] hud_status
+    output wire [3:0] hud_status,
+    output wire shared_write_en,output wire [13:0] shared_write_addr,shared_read_addr,
+    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data
 );
     wire tracking=enabled && mode==12,region=enabled && mode==14;
     wire fs,sv,fe,abort;
@@ -23,10 +25,11 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     wire [7:0] tx,ty,tq,rx,ry,rw,rh,rcx,rcy;
     wire [14:0] ra;
     wire [1:0] t_lost;
-    vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3)) tracker(
+    vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3),.EXTERNAL_FRAME(SHARED_TRACK_FRAME)) tracker(
         .clk(clk),.rst_n(rst_n&&tracking&&!abort),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.gray(gray),
         .result_valid(tv),.found(tf),.center_x(tx),.center_y(ty),.quality(tq),.best_sad(),.second_sad(),.busy(),.compute_cycles(),
-        .lost_stage(t_lost));
+        .lost_stage(t_lost),.shared_write_en(shared_write_en),.shared_write_addr(shared_write_addr),
+        .shared_read_addr(shared_read_addr),.shared_write_data(shared_write_data),.shared_read_data(shared_read_data));
     vision_color_region #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8)) segmenter(
         .clk(clk),.rst_n(rst_n&&region),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.frame_abort(abort),
         .sample_x(sx),.sample_y(sy),.rgb(srgb),.result_valid(rv),.calibrated(rc),.found(rf),.overflow(ro),

@@ -3,7 +3,7 @@ module tb_vision_rotation #(parameter CASE_FILE="sim/vision_tasks/rotation/cases
  reg clk=0;always #5 clk=~clk;
  reg rst_n=0,reseed=0,fs=0,sv=0,fe=0;reg [7:0] gray;
  wire rv,found,busy;wire [7:0] cx,cy,quality;wire [17:0] best,second;wire [31:0] cycles;wire [1:0] lost;
- vision_sad_tracker #(.WIDTH(WIDTH),.HEIGHT(HEIGHT),.RADIUS(RADIUS)) dut(clk,rst_n,reseed,fs,sv,fe,gray,rv,found,cx,cy,quality,best,second,busy,cycles,lost);
+ vision_sad_tracker #(.WIDTH(WIDTH),.HEIGHT(HEIGHT),.RADIUS(RADIUS)) dut(clk,rst_n,reseed,fs,sv,fe,gray,rv,found,cx,cy,quality,best,second,busy,cycles,lost,,,,,8'd0);
  reg [7:0] image[0:WIDTH*HEIGHT-1];reg [8:0] templates[0:1791];
  string name;integer f,csv,n,reset_case,ef,ex,ey,eb,es,eq,i,j,waits,count=0,previous_state=0;
  function [8:0] template_at;input integer addr;

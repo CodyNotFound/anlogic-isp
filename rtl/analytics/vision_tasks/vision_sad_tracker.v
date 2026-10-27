@@ -1,10 +1,12 @@
 // Frozen bilinear templates: 0,+/-6,+/-12,+/-18 deg, optional two scale banks.
 // Optional bounded recovery retries only the last local neighborhood; K4 reselects.
 (* dsp_style="no" *) module vision_sad_tracker #(
- parameter WIDTH=160,HEIGHT=90,RADIUS=8,MIN_TEXTURE=1024,MAX_SAD=6144,MIN_GAP=256,ROTATION_ENABLE=1,SCALE_ENABLE=0,RECOVERY_FRAMES=0
+ parameter WIDTH=160,HEIGHT=90,RADIUS=8,MIN_TEXTURE=1024,MAX_SAD=6144,MIN_GAP=256,ROTATION_ENABLE=1,SCALE_ENABLE=0,RECOVERY_FRAMES=0,EXTERNAL_FRAME=0
 )(input wire clk,rst_n,reseed,frame_start,sample_valid,frame_end,input wire [7:0] gray,
  output reg result_valid,found,output reg [7:0] center_x,center_y,quality,
- output reg [17:0] best_sad,second_sad,output wire busy,output reg [31:0] compute_cycles,output wire [1:0] lost_stage);
+ output reg [17:0] best_sad,second_sad,output wire busy,output reg [31:0] compute_cycles,output wire [1:0] lost_stage,
+ output wire shared_write_en,output wire [13:0] shared_write_addr,shared_read_addr,
+ output wire [7:0] shared_write_data,input wire [7:0] shared_read_data);
  localparam IDLE=0,CAPTURE=1,INIT=2,WA=3,RA=4,WB=5,RB=6,DONE=7,NEXT=8,PEAK=9,PWAIT=10,PREAD=11,DECIDE=12,
  COORD=13,ADDR=14,W0=15,R0=16,W1=17,R1=18,W2=19,R2=20,W3=21,R3=22,STORE=23,SEEDED=24,REDPAIR=25,REDMID=26,REDROOT=27;
  localparam LANES=SCALE_ENABLE?9:(ROTATION_ENABLE?7:1);
@@ -16,7 +18,10 @@
  reg [13:0] capture_addr,read_addr,pixel_addr;
  (* ram_style="bram" *) reg [7:0] frame[0:WIDTH*HEIGHT-1];
  (* ram_style="bram" *) reg [17:0] scores[0:(2*RADIUS+1)*(2*RADIUS+1)-1];
- reg [7:0] frame_q,a,idx,p0,p1,p2,seed_value;
+ reg [7:0] frame_storage_q,a,idx,p0,p1,p2,seed_value;
+ wire [7:0] frame_q=EXTERNAL_FRAME?shared_read_data:frame_storage_q;
+ assign shared_write_en=EXTERNAL_FRAME&&state==CAPTURE&&sample_valid;
+ assign shared_write_addr=capture_addr;assign shared_read_addr=read_addr;assign shared_write_data=gray;
  reg [3:0] bank,best_bank;
  reg [17:0] score_q,energy,best,second;
  reg [17:0] lane_sad[0:LANES-1],pair_score[0:PAIRS-1],mid_score[0:MIDS-1],root_score[0:1];
@@ -66,10 +71,15 @@
  total=top*(5'd16-{1'b0,yy})+bot*yy+18'd128;bilinear=total[15:8];end
  endfunction
  always @(posedge clk)begin
-  frame_q<=frame[read_addr];score_q<=scores[peak_index];
-  if(state==CAPTURE&&sample_valid)frame[capture_addr]<=gray;
+  score_q<=scores[peak_index];
   if(state==DONE)scores[candidate_index]<=final_score;
  end
+ generate if(!EXTERNAL_FRAME)begin: local_frame
+  always @(posedge clk)begin
+   frame_storage_q<=frame[read_addr];
+   if(state==CAPTURE&&sample_valid)frame[capture_addr]<=gray;
+  end
+ end endgenerate
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    state<=IDLE;pending<=1;point_b<=0;missed_frames<=0;capture_addr<=0;read_addr<=0;pixel_addr<=0;

@@ -3,7 +3,7 @@ module tb_yunet_position;
  reg clk=0;always #5 clk=~clk;
  reg rst=0,start=0,load=0;reg [16:0] addr;reg [7:0] data;
  wire ready,busy,result,found;wire [11:0] x,y,size,cx,cy;wire [13:0] score;wire [31:0] cycles;
- yunet_position_snapshot dut(clk,rst,start,load,addr,data,ready,busy,result,found,x,y,size,cx,cy,score,cycles);
+ yunet_position_snapshot dut(clk,rst,start,load,addr,data,ready,busy,result,found,x,y,size,cx,cy,score,cycles,1'b0,17'd0,);
  reg [7:0] pixels[0:61439];integer fd,rc,ef,es,ex,ey,ez,ecx,ecy;string name,path;
  initial begin
   if(!$value$plusargs("CASE=%s",name))name="lena";

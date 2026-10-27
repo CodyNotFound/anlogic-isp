@@ -109,6 +109,9 @@ module vision_pipeline #(
     reg ab_de_reg,ab_sof_reg,ab_eol_reg,ab_vsync_reg,ab_hsync_reg;
     wire face_enable=ENABLE_PIPELINE && !demo_active && mode==4'd11;
     wire face_found,face_position_valid;
+    wire shared_track_write;
+    wire [13:0] shared_track_waddr,shared_track_raddr;
+    wire [7:0] shared_track_wdata,shared_track_rdata;
     wire [11:0] face_x,face_y,face_size,face_center_x,face_center_y;
     wire face_de,face_sof,face_eol,face_vsync,face_hsync;
     wire [23:0] face_pixel;
@@ -318,13 +321,17 @@ module vision_pipeline #(
         .box_x(lbp_x),.box_y(lbp_y),.box_size(lbp_size),.center_x(lbp_cx),.center_y(lbp_cy),
         .busy(),.stream_error(),.timeout_error(),.accepted_frames(),.completed_frames());
     generate if(FACE_CNN_ENABLE)begin: cnn_mode
-        face_video_cnn #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT)) u_cnn(
+        face_video_cnn #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.SHARED_TRACK_FRAME(1)) u_cnn(
             .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
             .position_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
-            .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames());
+            .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
+            .shared_enable(ENABLE_PIPELINE&&!demo_active&&mode==12),.shared_write_en(shared_track_write),
+            .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
+            .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata));
     end else begin: lbp_mode
         assign face_position_valid=lbp_valid;assign face_found=lbp_found;
         assign face_x=lbp_x;assign face_y=lbp_y;assign face_size=lbp_size;assign face_center_x=lbp_cx;assign face_center_y=lbp_cy;
+        assign shared_track_rdata=8'd0;
     end endgenerate
     face_position_overlay u_face_overlay(
         .clk(clk),.rst_n(rst_n),.enable(face_enable && info_enabled_f),
@@ -333,13 +340,15 @@ module vision_pipeline #(
         .box_x(face_x),.box_y(face_y),.box_size(face_size),.center_x(face_center_x),.center_y(face_center_y),
         .out_vsync(face_vsync),.out_hsync(face_hsync),.out_de(face_de),.out_sof(face_sof),.out_eol(face_eol),.out_rgb(face_pixel));
 
-    vision_task_suite #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.HUD_TEXT_ENABLE(0)) u_tasks(
+    vision_task_suite #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.HUD_TEXT_ENABLE(0),.SHARED_TRACK_FRAME(FACE_CNN_ENABLE)) u_tasks(
         .clk(clk),.rst_n(rst_n),.enabled(ENABLE_PIPELINE && !demo_active),.action(task_action),.mode(mode),
         .source_sof(video_sof),.source_eol(video_eol),.source_de(video_de),.source_rgb(pixel_in),
         .vsync(face_vsync),.hsync(face_hsync),.de(face_de),.sof(face_sof),.eol(face_eol),.rgb(face_pixel),
         .out_vsync(task_vsync),.out_hsync(task_hsync),.out_de(task_de),.out_sof(task_sof),.out_eol(task_eol),.out_rgb(task_pixel),
         .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode),
-        .osd_enable(info_enabled_f),.hud_status(task_hud_status));
+        .osd_enable(info_enabled_f),.hud_status(task_hud_status),
+        .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
+        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata));
 
     // Existing OSD remains last; analytics never process their own overlays.
     // Its three-stage internal pipeline keeps RGB and HDMI timing aligned.

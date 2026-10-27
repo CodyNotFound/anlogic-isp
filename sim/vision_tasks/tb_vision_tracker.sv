@@ -3,7 +3,7 @@ module tb_vision_tracker;
  reg clk=0;always #5 clk=~clk;
  reg rst_n=0,reseed=0,fs=0,sv=0,fe=0;reg [7:0] gray;
  wire [1:0] unused_lost;wire rv,found,busy;wire [7:0] cx,cy,quality;wire [17:0] best,second;wire [31:0] cycles;
- vision_sad_tracker #(.WIDTH(64),.HEIGHT(48),.ROTATION_ENABLE(0)) dut(clk,rst_n,reseed,fs,sv,fe,gray,rv,found,cx,cy,quality,best,second,busy,cycles,unused_lost);
+ vision_sad_tracker #(.WIDTH(64),.HEIGHT(48),.ROTATION_ENABLE(0)) dut(clk,rst_n,reseed,fs,sv,fe,gray,rv,found,cx,cy,quality,best,second,busy,cycles,unused_lost,,,,,8'd0);
  reg [7:0] pixels[0:3071];string name;integer f,csv,n,action,er,ef,ex,ey,eb,es,eq,i,waits,checked=0;
  initial begin
   f=$fopen("sim/vision_tasks/tracker_cases.txt","r");csv=$fopen("reports/vision_tasks/tracker_rtl.csv","w");

@@ -3,7 +3,7 @@ param([string]$RunName='colorshading_runs_20261014_v9',
 [switch]$AllowSlicePackingProbe)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if($root -notin @('[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]')){throw 'Run an explicitly isolated project checkout'}
+if($root -notin @('[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]')){throw 'Run an explicitly isolated project checkout'}
 if($RunName -notmatch '^colorshading_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}
 $jobPath=Join-Path $root "doc/compile/${version}_job.json"

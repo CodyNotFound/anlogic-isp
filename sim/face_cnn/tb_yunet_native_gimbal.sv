@@ -5,12 +5,12 @@ module tb_yunet_native_gimbal;
  reg clk=0;always #5 clk=~clk;
  reg rst=0,en=0,sof=0,eol=0,de=0;reg [23:0] rgb=0;
  wire rv,found,busy,error;wire [11:0] x,y,size,cx,cy;wire [31:0] completed;
- face_video_cnn #(.PROGRAM_FILE("rtl/analytics/face_cnn/program.hex"),
+ face_video_cnn #(.SHARED_TRACK_FRAME(1),.PROGRAM_FILE("rtl/analytics/face_cnn/program.hex"),
   .W0_FILE("rtl/analytics/face_cnn/weights0.hex"),.W1_FILE("rtl/analytics/face_cnn/weights1.hex"),.W2_FILE("rtl/analytics/face_cnn/weights2.hex"),.W3_FILE("rtl/analytics/face_cnn/weights3.hex"),
   .BIAS_FILE("rtl/analytics/face_cnn/bias.hex"),.SHIFT_FILE("rtl/analytics/face_cnn/shift.hex"),
   .SIGMOID_FILE("rtl/analytics/face_cnn/sigmoid.hex"),.OFFSET_FILE("rtl/analytics/face_cnn/offset.hex"),.SIZE_FILE("rtl/analytics/face_cnn/size.hex")) face(
   .clk(clk),.rst_n(rst),.enable(en),.sof(sof),.eol(eol),.de(de),.rgb(rgb),.position_valid(rv),.found(found),
-  .box_x(x),.box_y(y),.box_size(size),.center_x(cx),.center_y(cy),.busy(busy),.stream_error(error),.completed_frames(completed));
+  .box_x(x),.box_y(y),.box_size(size),.center_x(cx),.center_y(cy),.busy(busy),.stream_error(error),.completed_frames(completed),.shared_enable(1'b0),.shared_write_en(1'b0),.shared_write_address(14'd0),.shared_read_address(14'd0),.shared_write_data(8'd0),.shared_read_data());
  wire ph,pv;wire [11:0] h,v;wire [1:0] state;
  servo_gimbal_ctrl servo(.clk(clk),.rst_n(rst),.enable(en),.result_valid(rv),.found(found),.cx(cx[10:3]),.cy(cy[10:3]),
   .manual_mode(1'b0),.keys_pressed(4'b0),.pwm_h(ph),.pwm_v(pv),.pulse_h_us(h),.pulse_v_us(v),.ctl_state(state));

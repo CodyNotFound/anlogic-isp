@@ -4,7 +4,7 @@ module tb_vision_tracker_reacquire;
  reg clk=0;always #5 clk=~clk;
  reg rst_n=0,reseed=0,fs=0,sv=0,fe=0;reg [7:0] gray;
  wire rv,found,busy;wire [7:0] cx,cy,quality;wire [17:0] best,second;wire [31:0] cycles;wire [1:0] lost;
- vision_sad_tracker #(.WIDTH(64),.HEIGHT(48)) dut(clk,rst_n,reseed,fs,sv,fe,gray,rv,found,cx,cy,quality,best,second,busy,cycles,lost);
+ vision_sad_tracker #(.WIDTH(64),.HEIGHT(48)) dut(clk,rst_n,reseed,fs,sv,fe,gray,rv,found,cx,cy,quality,best,second,busy,cycles,lost,,,,,8'd0);
  reg [7:0] pixels[0:3071];integer i,j,waits,dbg_n=0,dbg_f;
  task send_frame(input [8*32-1:0] hex);
   begin
