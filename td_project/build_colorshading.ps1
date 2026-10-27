@@ -131,8 +131,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "TD $Stage failed with exit $LASTEXITCODE" }
     if($Stage -eq 'Check'){
         $checkText=[IO.File]::ReadAllText((Join-Path $dir 'check.log'))
-        if($checkText -match 'HDL-5105[^\r\n]*(weak|stage|geometry)\.hex'){
+        if($checkText -match 'HDL-5105[^\r\n]*\.hex'){
             throw 'Face model ROM not loaded; refuse synthesis with uninitialized weights.'
+        }
+        if($checkText -match 'elaborate module yunet_network\('){
+            foreach($rom in @('program','weights0','weights1','weights2','weights3','bias','shift','sigmoid','offset','size')){
+                if($checkText -notmatch ("readmemh: reading from file '"+$rom+"\.hex'")){throw "CNN ROM load confirmation missing: $rom"}
+            }
         }
     }
     if (-not (Test-Path -LiteralPath ('.'+$end+'.end.f'))) { throw "TD $end success marker missing." }

@@ -3,7 +3,7 @@
 // The scheduler supplies flattened OHWI products, padding and unused lanes = 0.
 // Accept one four-product beat per clock; the last beat drains before publication.
 // No floating point, vendor simulator primitive, or CPU classifier is required.
-module yunet_dot4(
+module yunet_dot4 #(parameter MODEL_SHIFT=0)(
  input wire clk,rst_n,
  input wire start,input wire signed [31:0] bias,
  input wire signed [6:0] shift,input wire relu,
@@ -32,6 +32,15 @@ module yunet_dot4(
   requant=(r&&wide<0)?8'sd0:wide>127?8'sd127:wide< -128?-8'sd128:wide[7:0];
  end
  endfunction
+ // The exported graph uses positive right shifts only. 33 bits retain
+ // exact rounding for every signed-int32 accumulator without a 64-bit shifter.
+ function signed [7:0] requant_model;
+ input signed [31:0] a;input signed [6:0] s;input r;
+ reg signed [32:0] q;
+ begin
+  q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
+  requant_model=(r&&q<0)?8'sd0:q>127?8'sd127:q< -128?-8'sd128:q[7:0];
+ end endfunction
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;
@@ -48,7 +57,7 @@ module yunet_dot4(
    end
    if(p_valid)begin
     sum<=next_sum;
-    if(p_last)begin accumulator<=next_sum;value<=requant(next_sum,shift_q,relu_q);out_valid<=1;end
+    if(p_last)begin accumulator<=next_sum;value<=MODEL_SHIFT?requant_model(next_sum,shift_q,relu_q):requant(next_sum,shift_q,relu_q);out_valid<=1;end
    end
    if(out_valid&&out_ready)begin out_valid<=0;busy<=0;closing<=0;end
   end

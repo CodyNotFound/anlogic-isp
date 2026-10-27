@@ -7,7 +7,7 @@ module tb_yunet_region_capacity;
  vision_color_region #(.WIDTH(160),.HEIGHT(90)) dut(.clk(clk),.rst_n(rst_n),.reseed(reseed),.frame_abort(frame_abort),
  .frame_start(fs),.sample_valid(sv),.frame_end(fe),.sample_x(sx),.sample_y(sy),.rgb(rgb),
  .result_valid(rv),.calibrated(cal),.found(found),.overflow(overflow),.center_x(cx),.center_y(cy),
- .box_x(),.box_y(),.box_w(),.box_h(),.area(area),.busy(busy),.compute_cycles(),.pick_pending());
+ .box_x(),.box_y(),.box_w(),.box_h(),.area(area),.busy(busy),.compute_cycles(),.pick_pending(),.shared_write_en(),.shared_write_addr(),.shared_read_addr(),.shared_write_data(),.shared_read_data(8'd0));
  wire erv,ecal,efound,eoverflow,ebusy;wire [7:0] ecx,ecy;wire [14:0] earea;
  wire we;wire [14:0] wa,ra;wire [7:0] wd,rd;
  reg local_done=0,external_done=0;

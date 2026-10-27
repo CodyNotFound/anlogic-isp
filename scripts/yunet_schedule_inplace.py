@@ -10,6 +10,7 @@ def main():
     plan=json.loads((ROOT/'reports/yunet_v46/inplace_plan.json').read_text())
     bases={'input':0};words=[];checks=[]
     for old,step,op in zip(original['schedule'],plan['steps'],net['operations']):
+        if op['op']=='conv':assert all(1<=s<=31 for s in op['shift']), 'Update RTL positive-convolution-shift contract'
         if op['op']=='add':assert all(s in (0,1) for s in op['shifts']), 'Update RTL misc-scale contract'
         elif op['op']!='conv':assert op['shifts']==[0], 'Update RTL pool/resize-scale contract'
         srcs=[op['src']] if isinstance(op['src'],str) else op['src'];word=int(old['descriptor'],16)

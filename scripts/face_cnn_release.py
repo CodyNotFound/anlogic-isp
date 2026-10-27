@@ -32,8 +32,9 @@ def main():
             errors.append('Active input differs from tested baseline: '+rel)
     if 'td_project/camera_to_dsi_display.al' not in inputs:errors.append('Missing active-project definition hash')
     checks={
-        'full_integer_network':('reports/yunet_v52/network_sim.log','PASS tb_yunet_network'),
-        'native_rgb_to_pwm':('reports/yunet_v53/native_sim.log','PASS tb_yunet_native_gimbal'),
+        'full_integer_network':('reports/yunet_v55/network_sim.log','PASS tb_yunet_network'),
+        'native_rgb_to_pwm':('reports/yunet_v55/native_sim.log','PASS tb_yunet_native_gimbal'),
+        'positive_shift_equivalence':('reports/yunet_v55/shift_sim.log','PASS tb_yunet_shift_exact'),
         'shared_frame':('reports/yunet_v53/shared_tracker_r2.log','PASS tb_yunet_shared_tracker'),
         'shared_color_queue':('reports/yunet_v53/shared_region.log','PASS tb_yunet_shared_region'),
         'full_color_queue':('reports/yunet_v53/region_capacity.log','PASS tb_yunet_region_capacity'),
@@ -65,6 +66,8 @@ def main():
         if not (run/'phy'/marker).exists():errors.append('Missing physical success marker: '+marker)
     model=ROOT/'models/yunet/face_detection_yunet_2023mar.onnx'
     if digest(model.read_bytes())!='8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4':errors.append('Original model mismatch')
+    shifts=[int(s,16) for s in (ROOT/'rtl/analytics/face_cnn/shift.hex').read_text(encoding='ascii').split()]
+    if len(shifts)!=1524 or not all(1<=s<=31 for s in shifts):errors.append('Positive-convolution-shift contract violated')
     report=dict(status='passed' if not errors else 'incomplete',errors=errors,run=a.run,build=build,explicit_inputs=len(inputs),
         functional_baseline=BASE,input_differences=changes,tests=evidence,
         scope='Complete YuNet integer inference on FPGA; FACE11, compact OSD, preserved template/color tracking and gimbal controls',
@@ -83,6 +86,8 @@ def main():
     for rel in inputs:
         target=destination/'source'/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/rel,target)
     shutil.copy2(run/'source_sha256.txt',destination/'source_sha256.txt')
+    for rel in ('td_project/build_colorshading.ps1','td_project/camera_to_dsi_display.sdc','scripts/run_td_verified.ps1','scripts/on_td_complete.ps1'):
+        target=destination/'source'/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/rel,target)
     for folder in ('models/yunet','scripts','sim/face_cnn'):
         for source in (ROOT/folder).glob('*'):
             if source.is_file() and (folder!='scripts' or source.name.startswith(('yunet_','run_yunet','build_yunet','face_cnn_release'))):
@@ -92,9 +97,13 @@ def main():
     for rel,data in logs.items():
         target=destination/'evidence/pinned_functional'/rel;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
     for folder in ('reports/yunet_v45','reports/yunet_v48'):
-        for pattern in ('input.hex','op_*.hex','op_checks.txt','native_shift.hex','native_expected.txt'):
+        for pattern in ('*.hex','*.txt','network.json','schedule.json','evaluation.json','integer_model.npz'):
             for source in (ROOT/folder).glob(pattern):
                 target=destination/'evidence'/folder/source.name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
+    fixture_list=subprocess.run(['git','-c','safe.directory='+ROOT.as_posix(),'ls-tree','-r','--name-only',BASE,'--','sim/vision_tasks'],cwd=ROOT,capture_output=True,check=True).stdout.decode().splitlines()
+    for rel in fixture_list:
+        if Path(rel).suffix not in ('.sv','.txt','.hex','.csv'):continue
+        target=destination/'evidence'/rel;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(git_blob(rel))
     for pattern in ('*.bit','*.ts','*.timing','*.area','*.log','*.sdc','*.adc','*.cfg'):
         for source in (run/'phy').glob(pattern):
             target=destination/'build/phy'/source.name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)

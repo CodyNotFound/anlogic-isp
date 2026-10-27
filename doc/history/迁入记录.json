@@ -70,6 +70,13 @@
       "source_commit": "08ae7d684c1f0e8743809cf2e207d5906407d2bc",
       "message": "perf: 色区队列共享——复用CNN工作区并保持区域计算一致",
       "changed_files": 10,
+      "removed_files": 0,
+      "destination_commit": "0959e84acc6116cc04b723097b528998394b98df"
+    },
+    {
+      "source_commit": "fef3fae6472846a900e0692d581744d3d48f1b71",
+      "message": "perf: CNN量化算术——专用移位路径保持逐值等价",
+      "changed_files": 10,
       "removed_files": 0
     }
   ]

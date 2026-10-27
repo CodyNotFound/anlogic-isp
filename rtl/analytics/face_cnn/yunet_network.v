@@ -114,7 +114,7 @@ module yunet_network #(
   {input_unsigned?{1'b0,a3}:{a3[7],a3},input_unsigned?{1'b0,a2}:{a2[7],a2},input_unsigned?{1'b0,a1}:{a1[7],a1},input_unsigned?{1'b0,a0}:{a0[7],a0}};
  wire [31:0] dot_w=single_lane?{24'd0,selected_w}:{wq3,wq2,wq1,wq0};
  wire dot_ready,dot_in_ready,dot_valid;wire signed [31:0] dot_acc;wire signed [7:0] dot_value;
- yunet_dot4 mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
+ yunet_dot4 #(.MODEL_SHIFT(1)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
   .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap),.activations(dot_a),.weights(dot_w),
   .out_valid(dot_valid),.out_ready(state==CONV_RESULT),.accumulator(dot_acc),.value(dot_value));
  reg [1:0] debug_bank;
