@@ -38,6 +38,7 @@ def main():
             ih,iw,ci=shapes[src];oh,ow,co=o['shape'];b,old=live[src]
             if o['op']=='conv':
                 spatial=o['pad']!=0
+                if spatial and ci<4:continue
                 if spatial and ow*co>o['stride']*iw*ci:continue
                 mode='three source rows' if spatial else 'pixel cache, reverse traversal' if co>ci else 'pixel cache, forward traversal'
             elif o['op']=='maxpool':mode='four reads before compacted write'

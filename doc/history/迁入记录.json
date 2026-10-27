@@ -28,6 +28,13 @@
       "source_commit": "c20ef9be66c7728cea8c873b3dd91cd2d39c9305",
       "message": "perf: CNN地址计算——按固定图像尺寸简化行地址",
       "changed_files": 3,
+      "removed_files": 0,
+      "destination_commit": "35f67db66d2192c8a08d9d0d1e9f8aac60d936ff"
+    },
+    {
+      "source_commit": "b13422a48f823981142855a219dbd9b038c600a7",
+      "message": "perf: CNN特征缓存——按生命周期复用张量与行像素缓存",
+      "changed_files": 12,
       "removed_files": 0
     }
   ]

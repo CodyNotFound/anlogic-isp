@@ -31,6 +31,7 @@ $sources = foreach ($match in [regex]::Matches($alText,'<File Path="([^"]+)"')) 
     if (-not (Test-Path -LiteralPath $resolved)) { throw "Project source missing: $resolved" }
     $resolved
 }
+$sources += $alFile # The active source-set definition is a reproducibility input too.
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/isp') -Filter 'colorshading_*.vh' | ForEach-Object { $_.FullName }
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/config') -Filter '*.vh' | ForEach-Object { $_.FullName }
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'user_source/hdl_source') -Filter '*.mif' | ForEach-Object { $_.FullName }

@@ -62,6 +62,17 @@ try{
  & $td run.tcl *> build_console.log
  if($LASTEXITCODE -or -not(Test-Path ".$last.end.f")){throw 'TD probe failed'}
  foreach($inputFile in $hashes){if((Get-FileHash -LiteralPath $inputFile.path -Algorithm SHA256).Hash -ne $inputFile.sha256){throw "Probe source changed during build: $($inputFile.path)"}}
+ if($Implement){
+  $timing=[IO.File]::ReadAllText((Join-Path $run 'yunet_probe_phy.ts'))
+  $metrics=@{}
+  foreach($name in @('SWNS','STNS','HWNS','HTNS')){
+   $match=[regex]::Match($timing,($name+':\s*([-0-9.]+)ns'))
+   if(-not $match.Success){throw "Missing routed metric: $name"}
+   $metrics[$name]=[double]::Parse($match.Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
+  }
+  $job['timing']=$metrics
+  if($metrics.SWNS -lt 0 -or $metrics.HWNS -lt 0 -or $metrics.STNS -ne 0 -or $metrics.HTNS -ne 0){throw 'Routed timing failed; tool completion alone is not a passing probe'}
+ }
  $job.status='passed'
 }catch{$job.status='failed';$job.error=$_.Exception.Message}
 finally{

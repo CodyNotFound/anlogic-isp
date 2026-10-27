@@ -130,3 +130,5 @@ user_source/ip_source/PLL/PLL.xml -text
 user_source/ip_source/w128_d512_fifo/w128_d512_fifo.xml -text
 user_source/ip_source/w155_d512_fifo/w155_d512_fifo.xml -text
 vendor_reference/rtl/vendor_lab1_core.v -text
+
+td_project/camera_to_dsi_display.al -text
