@@ -1,5 +1,5 @@
 // All analytics observe clean ISP pixels; video never waits for analytics.
-module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000)(
+module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,HUD_TEXT_ENABLE=1)(
     input wire clk,rst_n,enabled,action,
     input wire [3:0] mode,
     input wire source_sof,source_eol,source_de,
@@ -9,7 +9,8 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000)(
     output wire out_vsync,out_hsync,out_de,out_sof,out_eol,
     output wire [23:0] out_rgb,
     output wire target_valid,target_found,output wire [7:0] target_x,target_y,
-    input wire manual_mode
+    input wire manual_mode,osd_enable,
+    output wire [3:0] hud_status
 );
     wire tracking=enabled && mode==12,region=enabled && mode==14;
     wire fs,sv,fe,abort;
@@ -38,6 +39,10 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000)(
         else if(age<RESULT_TTL)age<=age+1'b1;
     end
     wire valid=age<RESULT_TTL;
+    // Compact compositor status. These are states, not classifier confidence.
+    assign hud_status=tracking ? (valid&&tf ? 4'd1 : t_lost!=0 ? 4'd6 : 4'd2) :
+        region ? (manual_mode ? 4'd7 : picking ? 4'd3 : ro ? 4'd5 : !rc ? 4'd4 :
+                  valid&&rf ? 4'd1 : 4'd2) : 4'd0;
     assign target_valid=(tracking && tv) || (region && rv);
     assign target_found=!abort && !action && (tracking?((valid || tv) && tf):region && (valid || rv) && rc && rf && !ro);
     assign target_x=tracking?tx:rcx;assign target_y=tracking?ty:rcy;
@@ -48,8 +53,8 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000)(
     // Local histogram enhancement retired from the application. Preserve the
     // standalone reference module for historical comparisons, not runtime use.
     assign {cv,ch,cd,cs,ce,cp}={vsync,hsync,de,sof,eol,rgb};
-    vision_task_hud #(.WIDTH(WIDTH),.HEIGHT(HEIGHT)) hud(
-        .clk(clk),.rst_n(rst_n),.mode(mode),.enable(tracking||region),.result_valid(tv||rv),
+    vision_task_hud #(.WIDTH(WIDTH),.HEIGHT(HEIGHT),.TEXT_ENABLE(HUD_TEXT_ENABLE)) hud(
+        .clk(clk),.rst_n(rst_n),.mode(mode),.enable((tracking||region)&&osd_enable),.result_valid(tv||rv),
         .found(valid&&(tracking?tf:rf)),.calibrated(tracking?1'b1:rc),.overflow(region&&ro),
         .lost(tracking?t_lost:2'd0),
         .box_x(bx),.box_y(by),.box_w(tracking?12'd128:{1'b0,rw,3'd0}),.box_h(tracking?12'd128:{1'b0,rh,3'd0}),

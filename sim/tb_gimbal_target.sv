@@ -8,7 +8,7 @@ module tb_gimbal_target;
  .source_sof(1'b0),.source_eol(1'b0),.source_de(1'b0),.source_rgb(24'b0),
  .vsync(1'b0),.hsync(1'b0),.de(1'b0),.sof(1'b0),.eol(1'b0),.rgb(24'b0),
  .out_vsync(),.out_hsync(),.out_de(),.out_sof(),.out_eol(),.out_rgb(),
- .target_valid(tv),.target_found(tf),.target_x(tx),.target_y(ty),.manual_mode(1'b0));
+ .target_valid(tv),.target_found(tf),.target_x(tx),.target_y(ty),.manual_mode(1'b0),.osd_enable(1'b1),.hud_status());
  task clock;begin @(posedge clk);#1;end endtask
  initial begin
   force dut.tv=0;force dut.tf=0;repeat(4)clock;rst=1;clock;

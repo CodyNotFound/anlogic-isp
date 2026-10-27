@@ -36,6 +36,9 @@ module tb_face_pipeline;
         // The existing histogram block initializes 256 RAM entries after reset.
         repeat(5)@(negedge clk);rst_n=1;repeat(300)@(negedge clk);
         force dut.u_mode_ctrl.mode=4'd11;
+        // Isolate box rendering with compositor disabled; SW3 behavior has its
+        // own full-RGB regression, rather than changing this injected-box test.
+        force dut.info_enabled_f=1'b1;
         force dut.u_mode_ctrl.demo_active=1'b0;
         force dut.u_face_position.found=1'b1;
         force dut.u_face_position.box_x=12'd400;force dut.u_face_position.box_y=12'd224;

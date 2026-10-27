@@ -13,8 +13,8 @@ module tb_vision_task_osd #(parameter MODE=12,OUTPUT_FILE="reports/vision_tasks/
   12'd576,12'd296,12'd128,12'd128,12'd640,12'd360,(MODE==14?20'd30464:20'd123),
   sof,eol,de,sof,eol,24'h102030,rv,rh,rde,rs,re,ref_pixel,1'b0,1'b0);
  reg [23:0] reference_pixels[0:921599];
- reg [23:0] logo_palette[0:255];
- initial $readmemh("sim/logo_pal.hex",logo_palette);
+ reg [23:0] logo_palette[0:255];reg [7:0] logo_indices[0:16383];reg [23:0] want;
+ initial begin $readmemh("sim/logo_pal.hex",logo_palette);$readmemh("sim/logo_idx.hex",logo_indices);end
  integer x,y,ref_count=0,count=0,starts=0,white=0,logo=0,f,ox,oy;reg checking=0;
  always @(posedge clk)begin
   #1;
@@ -24,10 +24,12 @@ module tb_vision_task_osd #(parameter MODE=12,OUTPUT_FILE="reports/vision_tasks/
    if((^pixel)===1'bx)$fatal(1,"unknown composed pixel");
    if(dut.mixer_sof)starts=starts+1;
    if(vs!==(count==0)||hs!==(ox==1279))$fatal(1,"composed qualifier alignment");
-   if(ox>=200&&ox<584&&oy>=48&&oy<84)begin
-    if(pixel!==reference_pixels[count])$fatal(1,"task HUD overwritten/misaligned at %0d,%0d got%h expected%h",ox,oy,pixel,reference_pixels[count]);
-    if(pixel==24'hf0ffff)white=white+1;
-   end
+   // SW3 is physically OFF in this fixture: every non-logo pixel must be
+   // untouched, including injected target boxes and former HUD locations.
+   want=24'h102030;
+   if(ox>=24&&ox<170&&oy>=24&&oy<118 && logo_indices[(oy-24)*146+ox-24]!=0)
+    want=logo_palette[logo_indices[(oy-24)*146+ox-24]];
+   if(pixel!==want)$fatal(1,"OSD OFF altered camera/logo at %0d,%0d got%h expected%h",ox,oy,pixel,want);
    if(ox>=24&&ox<170&&oy>=24&&oy<118&&(pixel==logo_palette[1]||pixel==logo_palette[2]))logo=logo+1;
    $fwrite(f,"%c%c%c",pixel[23:16],pixel[15:8],pixel[7:0]);count=count+1;
   end
@@ -46,8 +48,8 @@ module tb_vision_task_osd #(parameter MODE=12,OUTPUT_FILE="reports/vision_tasks/
    @(negedge clk);de=0;sof=0;eol=0;repeat(16)@(negedge clk);
   end
   repeat(40)@(negedge clk);checking=0;$fclose(f);
-  if(count!=921600||ref_count!=921600||starts!=1||white<100||logo<100)$fatal(1,"composed counts pixels%0d ref%0d SOF%0d text%0d logo%0d",count,ref_count,starts,white,logo);
-  $display("PASS tb_vision_task_osd: 921600 pixels, actual logo/font, task text unobscured, complete timing; injected interface only");$finish;
+  if(count!=921600||ref_count!=921600||starts!=1||logo<100)$fatal(1,"composed counts pixels%0d ref%0d SOF%0d logo%0d",count,ref_count,starts,logo);
+  $display("PASS tb_vision_task_osd: 921600 exact logo-only pixels with SW3 OFF, analytics retained and complete timing; injected interface only");$finish;
  end
  initial begin #30000000;$fatal(1,"composed OSD timeout");end
 endmodule

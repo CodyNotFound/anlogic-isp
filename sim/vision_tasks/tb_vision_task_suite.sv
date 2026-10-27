@@ -5,7 +5,7 @@ module tb_vision_task_suite;
  reg vs=0,hs=0,de=0,sof=0,eol=0;reg [23:0] rgb;
  wire ov,oh,od,os,oe;wire [23:0] op;
  vision_task_suite #(.WIDTH(512),.HEIGHT(384),.RESULT_TTL(3000000)) dut(
-  clk,rst_n,enabled,action,mode,sof,eol,de,rgb,vs,hs,de,sof,eol,rgb,ov,oh,od,os,oe,op,,,,,1'b0);
+  clk,rst_n,enabled,action,mode,sof,eol,de,rgb,vs,hs,de,sof,eol,rgb,ov,oh,od,os,oe,op,,,,,1'b0,1'b1,);
  reg [7:0] track_image[0:3071];reg [23:0] region_image[0:3071];
  reg [23:0] clahe_image[0:196607],clahe_expected[0:196607];
  integer x,y,idx,phase,checked=0,frames=0,track_results=0,region_results=0,prior,waits;

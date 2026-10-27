@@ -44,6 +44,13 @@ module vision_pipeline #(
     wire [3:0] feature_requested;
     wire [3:0] normal_buttons_n,keys_pressed;
     wire manual_mode=feature_requested[3];
+    // SW3 is a display switch. Detection and automatic control never depend
+    // on it. Commit at input SOF, before the delayed overlay stages see SOF.
+    reg info_enabled_f;
+    always @(posedge clk or negedge rst_n)begin
+        if(!rst_n)info_enabled_f<=0;
+        else if(video_sof)info_enabled_f<=ENABLE_OSD && feature_requested[2];
+    end
     wire [11:0] pulse_h,pulse_v,display_h,display_v;
     wire [1:0] gimbal_state;
     wire [23:0] h_digits,v_digits;
@@ -106,6 +113,7 @@ module vision_pipeline #(
     wire [23:0] face_pixel;
     wire task_vsync,task_hsync,task_de,task_sof,task_eol;
     wire [23:0] task_pixel;
+    wire [3:0] task_hud_status;
 
     wire pipeline_de        = de_pipe[2];
     wire pipeline_sof       = sof_pipe[2];
@@ -307,18 +315,19 @@ module vision_pipeline #(
         .box_x(face_x),.box_y(face_y),.box_size(face_size),.center_x(face_center_x),.center_y(face_center_y),
         .busy(),.stream_error(),.timeout_error(),.accepted_frames(),.completed_frames());
     face_position_overlay u_face_overlay(
-        .clk(clk),.rst_n(rst_n),.enable(face_enable),
+        .clk(clk),.rst_n(rst_n),.enable(face_enable && info_enabled_f),
         .vsync(post_alg_vsync),.hsync(post_alg_hsync),.de(post_alg_de),.sof(post_alg_sof),.eol(post_alg_eol),
         .rgb(algorithm_pixel),.found(face_found),
         .box_x(face_x),.box_y(face_y),.box_size(face_size),.center_x(face_center_x),.center_y(face_center_y),
         .out_vsync(face_vsync),.out_hsync(face_hsync),.out_de(face_de),.out_sof(face_sof),.out_eol(face_eol),.out_rgb(face_pixel));
 
-    vision_task_suite #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT)) u_tasks(
+    vision_task_suite #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.HUD_TEXT_ENABLE(0)) u_tasks(
         .clk(clk),.rst_n(rst_n),.enabled(ENABLE_PIPELINE && !demo_active),.action(task_action),.mode(mode),
         .source_sof(video_sof),.source_eol(video_eol),.source_de(video_de),.source_rgb(pixel_in),
         .vsync(face_vsync),.hsync(face_hsync),.de(face_de),.sof(face_sof),.eol(face_eol),.rgb(face_pixel),
         .out_vsync(task_vsync),.out_hsync(task_hsync),.out_de(task_de),.out_sof(task_sof),.out_eol(task_eol),.out_rgb(task_pixel),
-        .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode));
+        .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode),
+        .osd_enable(info_enabled_f),.hud_status(task_hud_status));
 
     // Existing OSD remains last; analytics never process their own overlays.
     // Its three-stage internal pipeline keeps RGB and HDMI timing aligned.
@@ -329,7 +338,7 @@ module vision_pipeline #(
         .IMG_HEIGHT (IMG_HEIGHT),
         .DEBUG_MODE (DEBUG_MODE),
         .ENABLE_OSD (ENABLE_OSD),
-        .ENABLE_SWITCH_OSD(0)
+        .ENABLE_SWITCH_OSD(0),.COMPACT_OSD(1)
     ) u_hdmi_mixer (
         .I_clk            (clk),
         .I_rst_n          (rst_n),
@@ -344,6 +353,9 @@ module vision_pipeline #(
         .I_mode           (mode),
         .I_isp_demo       ({demo_active, demo_step}),
         .I_feature_enable (4'b0),
+        .I_info_enable(info_enabled_f),.I_panel_features(feature_requested),
+        .I_ctl_state(gimbal_state),.I_task_status(task_hud_status),
+        .I_pulse_h(display_h),.I_pulse_v(display_v),.I_h_digits(h_digits),.I_v_digits(v_digits),
         .O_video_rd_en    (),
         .I_video_rd_data  (task_pixel),
         .O_hdmi_vsync     (mix_vsync),
@@ -357,7 +369,7 @@ module vision_pipeline #(
     always @(posedge clk or negedge rst_n)begin
         if(!rst_n)gimbal_mode_d<=0;else gimbal_mode_d<=mode;
     end
-    wire gimbal_auto_enable=ENABLE_PIPELINE && !demo_active && feature_requested[2] &&
+    wire gimbal_auto_enable=ENABLE_PIPELINE && !demo_active &&
         gimbal_mode_d==mode && (mode==11 || mode==12 || mode==14);
     servo_gimbal_ctrl #(.IMG_W(IMG_WIDTH/8),.IMG_H(IMG_HEIGHT/8)) u_gimbal(.clk(clk),.rst_n(rst_n),
         .enable(gimbal_auto_enable),
@@ -367,7 +379,9 @@ module vision_pipeline #(
         .pulse_h_us(pulse_h),.pulse_v_us(pulse_v),.ctl_state(gimbal_state));
     gimbal_panel u_panel(.clk(clk),.rst_n(rst_n),.features(feature_requested),.pulse_h(pulse_h),.pulse_v(pulse_v),
         .leds(panel_leds),.segments(panel_segments),.selects(panel_selects),.h_digits(h_digits),.v_digits(v_digits),.display_h(display_h),.display_v(display_v));
-    gimbal_osd #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.ENABLE(ENABLE_OSD)) u_gimbal_osd(
+    // Keep the existing two registered video clocks. All text/position drawing
+    // now shares hdmi_mixer's font ROM and compositor; this instance is delay only.
+    gimbal_osd #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.ENABLE(0)) u_gimbal_osd(
         .clk(clk),.rst_n(rst_n),.features(feature_requested),.mode(mode),.demo_active(demo_active),
         .ctl_state(gimbal_state),.pulse_h(display_h),.pulse_v(display_v),.h_digits(h_digits),.v_digits(v_digits),
         .vsync(mix_vsync),.hsync(mix_hsync),.de(mix_de),.sof(mixer_sof_raw),.rgb(mixed_pixel),

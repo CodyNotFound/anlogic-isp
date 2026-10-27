@@ -48,13 +48,13 @@ module tb_region_buttons;
   if(!dut.u_tasks.rf || dut.track_x<24 || dut.track_y<16)$fatal(1,"REGION position not exported");
   if(dut.pulse_h>=1500 || dut.pulse_v<=1500)$fatal(1,"REGION target did not move gimbal %0d,%0d",dut.pulse_h,dut.pulse_v);
   sw=15;waitc(40);oldh=dut.pulse_h;oldv=dut.pulse_v;waitc(250000);
-  if(dut.pulse_h!=oldh||dut.pulse_v!=oldv||dut.u_gimbal.seen)$fatal(1,"AUTO OFF moved/home'd gimbal");
+  if(dut.pulse_h!=oldh||dut.pulse_v!=oldv||!dut.gimbal_auto_enable)$fatal(1,"OSD OFF must retain auto enable and hold without fresh results");
   color=24'h646464;press(3);frame(0);frame(0);
   if(!dut.u_tasks.rc || !dut.u_tasks.rf)$fatal(1,"gray clothing against white wall failed");
   sw=7;waitc(40);i=actions;press(3);
   if(actions!=i)$fatal(1,"manual left unexpectedly repicked");
   sw=15;waitc(40);press(3);if(actions!=i+1)$fatal(1,"K4 did not resume after manual exit");
-  $display("PASS tb_region_buttons: actual K4, low-chroma/gray sample, REGION centroid to PWM, SW3 auto OFF holds, manual isolation");$finish;
+  $display("PASS tb_region_buttons: actual K4, low-chroma/gray sample, REGION centroid to PWM, SW3 OSD OFF keeps auto enabled without homing, manual isolation");$finish;
  end
  initial begin #14000000;$fatal(1,"timeout");end
 endmodule

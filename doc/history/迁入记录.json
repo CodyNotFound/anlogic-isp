@@ -7,6 +7,13 @@
       "source_commit": "1a7348f9b11c83b33d75c2c810be613b37bc147f",
       "message": "fix: 色区跟踪与显示链路对齐——保持丢失位置并修正亮度统计顺序",
       "changed_files": 0,
+      "removed_files": 0,
+      "destination_commit": "ba206aee5ad66fd208f1a2d9daa45a8f3eff4b43"
+    },
+    {
+      "source_commit": "57ea5c1c11d981aa74af3cb8cf0b02f354649884",
+      "message": "feat: 中文紧凑面板——统一模式状态与云台位置显示",
+      "changed_files": 19,
       "removed_files": 0
     }
   ]

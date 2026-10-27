@@ -9,10 +9,10 @@ module face_position_overlay(
     output reg [23:0] out_rgb
 );
     reg [11:0] x,y;
-    reg display_found;
+    reg display_found,display_enable;
     reg [11:0] bx,by,bs,cx,cy;
     wire [11:0] px=sof ? 12'd0 : x, py=sof ? 12'd0 : y;
-    wire active=enable && (sof ? found : display_found);
+    wire active=(sof?enable:display_enable) && (sof ? found : display_found);
     wire [11:0] left=sof ? box_x : bx, top=sof ? box_y : by;
     wire [11:0] size=sof ? box_size : bs;
     wire [11:0] mid_x=sof ? center_x : cx, mid_y=sof ? center_y : cy;
@@ -25,15 +25,14 @@ module face_position_overlay(
                    (py==mid_y && px+7>=mid_x && px<=mid_x+7);
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
-            x<=0;y<=0;display_found<=0;bx<=0;by<=0;bs<=0;cx<=0;cy<=0;
+            x<=0;y<=0;display_found<=0;display_enable<=0;bx<=0;by<=0;bs<=0;cx<=0;cy<=0;
             out_vsync<=0;out_hsync<=0;out_de<=0;out_sof<=0;out_eol<=0;out_rgb<=0;
         end else begin
             out_vsync<=vsync;out_hsync<=hsync;out_de<=de;out_sof<=sof;out_eol<=eol;
             out_rgb<=de ? (active && crosshair ? 24'hff4040 :
                           active && border ? 24'h00ff40 : rgb) : 24'd0;
-            if(!enable) display_found<=0;
             if(sof) begin
-                x<=0;y<=0;display_found<=enable && found;
+                x<=0;y<=0;display_found<=enable && found;display_enable<=enable;
                 bx<=box_x;by<=box_y;bs<=box_size;cx<=center_x;cy<=center_y;
             end
             if(de) begin

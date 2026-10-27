@@ -15,7 +15,7 @@
 - 实施依据见[模式价值审查](doc/mode_value_review.md)。旧00～11保留，新功能接续编号。
 - 当前应用禁用旧ISP分步演示入口；K3在手动云台模式下向下，非手动时无操作。
 - 蜂鸣器（C12，板上SW5使能）：开机大疆式三音上行 D5-A5-D6；任意按键哔一声
-- 功能拨码：SW1 AB自适应亮度、SW2 AE自动曝光、SW3自动跟踪、SW4手动云台；RAW域AWB固定常开
+- 功能拨码：SW1 AB自适应亮度、SW2 AE自动曝光、SW3 OSD信息显示、SW4手动云台；RAW域AWB固定常开。SW3关闭仍保留安路Logo，后台跟踪继续；FACE/TRACK/REGION模式自动使用有效位置驱动云台，SW4手动优先。
 - 顶层：`design_top_wrapper`
 - TD 工程：`td_project/camera_to_dsi_display.al`
 
@@ -50,7 +50,7 @@
 ### HX1P35A 云台与操作面板（2026-10-21）
 
 双TBSK15使用J1-1/C18、J1-2/D15输出PWM，J1-12共地，舵机使用独立6V电源。
-AWB固定常开，SW1=AB、SW2=AE、SW3=自动跟踪、SW4=手动；K4/K3/K2/K1对应Vim的h/j/k/l。
+AWB固定常开，SW1=AB、SW2=AE、SW3=OSD信息显示、SW4=手动；K4/K3/K2/K1对应Vim的h/j/k/l。当前控制与紧凑布局见[v43说明](doc/osd_v43.md)，以下旧版本归档保留各自的历史开关定义。
 LED1～4显示开关状态，SW6选数码管时显示水平/竖直PWM微秒值。
 接线、限位和全部操作见[云台接线说明](doc/gimbal_wiring_hx1p35a.md)；最终编译/时序结论以对应v38 completion记录为准。
 

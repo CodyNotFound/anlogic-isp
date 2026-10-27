@@ -19,7 +19,12 @@ module tb_gimbal_pipeline;
   waitc(5);rst=1;waitc(40);
   sw=14;waitc(40);if(leds!=1 || dut.feature_enable!=10)$fatal(1,"SW1 AB mapping");
   sw=13;waitc(40);if(leds!=2 || dut.feature_enable!=3)$fatal(1,"SW2 AE mapping");
-  sw=11;waitc(40);if(leds!=4 || dut.feature_enable!=2 || dut.gimbal_auto_enable)$fatal(1,"SW3 AUTO mapping");
+  sw=11;waitc(40);if(leds!=4 || dut.feature_enable!=2 || dut.gimbal_auto_enable)$fatal(1,"SW3 OSD mapping");
+  force dut.u_mode_ctrl.mode=12;waitc(3);
+  if(!dut.gimbal_auto_enable)$fatal(1,"TRACK must automatically enable gimbal");
+  sw=15;waitc(40);if(!dut.gimbal_auto_enable)$fatal(1,"OSD OFF disabled tracking control");
+  release dut.u_mode_ctrl.mode;
+  force dut.u_mode_ctrl.mode=0;waitc(3);release dut.u_mode_ctrl.mode;
   sw=7;waitc(40);keys=3;waitc(40);
   if(!dut.manual_mode || dut.mode!=0 || dut.demo_active || dut.task_action)$fatal(1,"manual key leak");
   waitc(20000);
@@ -28,7 +33,7 @@ module tb_gimbal_pipeline;
   keys=15;waitc(40);keys=14;waitc(40);
   if(dut.mode!=1)$fatal(1,"normal K1 did not resume");
   keys=15;waitc(40);keys=11;waitc(40);if(dut.demo_active)$fatal(1,"K3 must not enter hidden ISP demo");
-  $display("PASS tb_gimbal_pipeline: SW1 AB/SW2 AE/SW3 AUTO/SW4 manual/AWB fixed ON, Vim motion, key isolation and release interlock");$finish;
+  $display("PASS tb_gimbal_pipeline: SW1 AB/SW2 AE/SW3 OSD/SW4 manual/AWB fixed ON, automatic TRACK independent of SW3, Vim keys and release interlock");$finish;
  end
  initial begin #18000000;$fatal(1,"timeout");end
 endmodule

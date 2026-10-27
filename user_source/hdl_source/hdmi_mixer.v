@@ -5,7 +5,8 @@ module hdmi_mixer #(
     parameter IMG_HEIGHT = 720,
     parameter integer DEBUG_MODE = 0,
     parameter integer ENABLE_OSD = 1,
-    parameter integer ENABLE_SWITCH_OSD = 1
+    parameter integer ENABLE_SWITCH_OSD = 1,
+    parameter integer COMPACT_OSD = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -22,6 +23,13 @@ module hdmi_mixer #(
     input wire[3:0]   I_mode,            //0=色彩还原,1..10=效果,11=FACE人脸定位
     input wire[3:0]   I_isp_demo,        //{active, step[2:0]} ISP分步演示状态, 底栏切"ISP:N 名称"
     input wire[3:0]   I_feature_enable,  //AE/AWB/HE/AB, HDMI像素域
+    // Production compact HUD shares the existing character ROM/compositor.
+    // Legacy callers leave these unused with COMPACT_OSD=0.
+    input wire I_info_enable,
+    input wire [3:0] I_panel_features,I_task_status,
+    input wire [1:0] I_ctl_state,
+    input wire [11:0] I_pulse_h,I_pulse_v,
+    input wire [23:0] I_h_digits,I_v_digits,
 
     output wire       O_video_rd_en,
     input wire[23:0]  I_video_rd_data,
@@ -110,6 +118,28 @@ module hdmi_mixer #(
     reg [11:0] v_lx;
     reg [11:0] v_ly;
     reg [3:0]  v_idx;
+    reg v_blend;
+    reg [23:0] v_compact_color,r1_compact_color;
+    reg info_f;
+    reg [3:0] panel_f,mode_f,task_f;
+    reg [1:0] state_f;
+    reg [11:0] ph_f,pv_f;
+    reg [23:0] hd_f,vd_f;
+    localparam CPX=IMG_WIDTH-400,CPY=IMG_HEIGHT-44;
+    localparam CBX=IMG_WIDTH-112,CBY=IMG_HEIGHT-152;
+    integer c_x,c_y,c_slot,c_group,c_mx,c_my;
+    reg [95:0] c_label;
+    reg [191:0] c_text;
+    always @(posedge I_clk or negedge I_rst_n)begin
+        if(!I_rst_n)begin
+            info_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;
+            ph_f<=1500;pv_f<=1500;hd_f<=24'h001500;vd_f<=24'h001500;
+        end else if(I_video_user)begin
+            info_f<=I_info_enable;panel_f<=I_panel_features;mode_f<=I_mode;
+            task_f<=I_task_status;state_f<=I_ctl_state;
+            ph_f<=I_pulse_h;pv_f<=I_pulse_v;hd_f<=I_h_digits;vd_f<=I_v_digits;
+        end
+    end
 
     localparam LOGO_X = 12'd0;
     localparam LOGO_Y = 12'd0;
@@ -191,7 +221,7 @@ module hdmi_mixer #(
             S_y <= 12'd0;
         end
         else if(I_video_user) begin
-            S_x <= 12'd0;
+            S_x <= (COMPACT_OSD && I_video_de)?12'd1:12'd0;
             S_y <= 12'd0;
         end
         else if(I_video_de) begin
@@ -308,9 +338,9 @@ module hdmi_mixer #(
             S_y_2d <= 12'd0;
         end
         else begin
-            S_x_1d <= S_x;
+            S_x_1d <= (COMPACT_OSD && I_video_user)?12'd0:S_x;
             S_x_2d <= S_x_1d;
-            S_y_1d <= S_y;
+            S_y_1d <= (COMPACT_OSD && I_video_user)?12'd0:S_y;
             S_y_2d <= S_y_1d;
         end
     end
@@ -384,8 +414,104 @@ module hdmi_mixer #(
         v_region = 3'd0; v_addr = 15'd0; v_char = 8'd0;
         v_row = 4'd0; v_col = 4'd0;
         v_lx = 12'd0; v_ly = 12'd0; v_idx = 4'd0;
+        v_blend=0;v_compact_color=24'hf0f5f5;
+        c_x=0;c_y=0;c_slot=0;c_group=0;c_label=0;c_text=0;
+        c_mx=CBX+16+((2500-ph_f)>>5);c_my=CBY+4+((pv_f-500)>>5);
 
-        if (S_video_de_1d) begin
+        if(COMPACT_OSD && S_video_de_1d)begin
+            // Logo always survives SW3 OFF. Preserve every original ROM pixel,
+            // position, palette and transparent index; no panel behind it.
+            if(S_x_1d>=24 && S_x_1d<170 && S_y_1d>=24 && S_y_1d<118)begin
+                v_region=1;
+                v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
+            end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
+                if(S_x_1d>=IMG_WIDTH-80 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<44)begin
+                    v_blend=1;c_x=S_x_1d-(IMG_WIDTH-76);c_y=S_y_1d-26;
+                    c_label="00 FPS      ";c_label[95:88]="0"+S_fps_d1;c_label[87:80]="0"+S_fps_d0;
+                    c_text={c_label,96'd0};v_region=6;
+                end else if(S_x_1d>=192 && S_x_1d<296 && S_y_1d>=24 && S_y_1d<44)begin
+                    v_blend=1;c_x=S_x_1d-196;c_y=S_y_1d-26;
+                    v_region=5;v_row=c_y[3:0];
+                    if(c_x>=0 && c_x<16)begin
+                        v_char=c_x<8 ? (mode_f>=10?"1":"0") : "0"+(mode_f>=10?mode_f-10:mode_f);
+                        v_col=c_x&7;
+                    end else if(c_x>=24 && c_x<88)begin
+                        v_char=F_mode_name_char(mode_f,(c_x-24)>>4);v_col=(c_x-24)&15;
+                    end
+                    if(c_y<0 || c_y>=16)v_char=0;
+                end else if(S_x_1d>=192 && S_x_1d<392 && S_y_1d>=48 && S_y_1d<68)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-50;
+                    c_text="IDLE                    ";
+                    if(panel_f[3])c_text="MANUAL H J K L          ";
+                    else if(mode_f==11 || mode_f==12 || mode_f==14)begin
+                        case(state_f)
+                            1:begin c_text="AUTO TRACK              ";v_compact_color=24'h60ff90;end
+                            2:c_text="AUTO HOLD               ";
+                            3:c_text="LOST HOLD POSITION      ";
+                            default:c_text="AUTO WAIT               ";
+                        endcase
+                        if(mode_f==12 || mode_f==14)case(task_f)
+                            2:c_text="SEARCH K4 PICK          ";
+                            3:c_text="SAMPLING CENTER         ";
+                            4:c_text="SAMPLE BAD K4 TRY       ";
+                            5:c_text="OVERFLOW K4 PICK        ";
+                            6:c_text="REACQUIRE K4 PICK       ";
+                            default:begin end
+                        endcase
+                    end
+                end else if(S_x_1d>=CPX && S_x_1d<CPX+384 && S_y_1d>=CPY && S_y_1d<CPY+36)begin
+                    v_blend=1;v_region=6;
+                    c_group=S_x_1d<CPX+96?0:S_x_1d<CPX+192?1:S_x_1d<CPX+288?2:3;
+                    c_x=S_x_1d-CPX-(c_group<<6)-(c_group<<5);c_y=S_y_1d-CPY;
+                    if(c_y<16)begin
+                        case(c_group)
+                            0:c_label=panel_f[3]?"SW4 MAN ON  ":"SW4 MAN OFF ";
+                            1:c_label="SW3 OSD ON  ";
+                            2:c_label=panel_f[1]?"SW2 AE ON   ":"SW2 AE OFF  ";
+                            3:c_label=panel_f[0]?"SW1 AB ON   ":"SW1 AB OFF  ";
+                        endcase
+                        v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
+                    end else if(c_y>=20)begin
+                        c_y=c_y-20;
+                        if(panel_f[3])case(c_group)
+                            0:c_label="K4 H LEFT   ";1:c_label="K3 J DOWN   ";
+                            2:c_label="K2 K UP     ";3:c_label="K1 L RIGHT  ";
+                        endcase
+                        else case(c_group)
+                            0:c_label=(mode_f==12||mode_f==14)?"K4 PICK     ":"K4 NONE     ";
+                            1:c_label="K3 NONE     ";2:c_label="K2 PREV MODE";3:c_label="K1 NEXT MODE";
+                        endcase
+                    end
+                    c_text={c_label,96'd0};
+                end else if(S_x_1d>=CBX && S_x_1d<CBX+96 && S_y_1d>=CBY && S_y_1d<CBY+100)begin
+                    v_blend=1;c_x=S_x_1d-CBX;c_y=S_y_1d-CBY;
+                    if(c_y>=76 && c_y<92)begin
+                        v_region=6;c_y=c_y-76;
+                        c_label="H0000 V0000 ";
+                        c_label[87:80]="0"+hd_f[15:12];c_label[79:72]="0"+hd_f[11:8];
+                        c_label[71:64]="0"+hd_f[7:4];c_label[63:56]="0"+hd_f[3:0];
+                        c_label[39:32]="0"+vd_f[15:12];c_label[31:24]="0"+vd_f[11:8];
+                        c_label[23:16]="0"+vd_f[7:4];c_label[15:8]="0"+vd_f[3:0];
+                        c_text={c_label,96'd0};
+                    end else begin
+                        if(((c_x==16 || c_x==80) && c_y>=4 && c_y<=68) ||
+                           ((c_y==4 || c_y==68) && c_x>=16 && c_x<=80) ||
+                           (c_x==48 && c_y>=4 && c_y<=68) ||
+                           ((c_y==36 || c_y==21 || c_y==55) && c_x>=16 && c_x<=80))begin
+                            v_region=7;v_compact_color=24'h606870;
+                        end
+                        if(S_x_1d+2>=c_mx && S_x_1d<=c_mx+2 && S_y_1d+2>=c_my && S_y_1d<=c_my+2)begin
+                            v_region=7;v_compact_color=panel_f[3]?24'h30e0ff:24'hffb050;
+                            if(ph_f==500 || ph_f==2500 || pv_f==1050 || pv_f==2150)v_compact_color=24'hff4040;
+                        end
+                    end
+                end
+                if(v_region==6)begin
+                    c_slot=c_x>>3;v_col=c_x&7;v_row=c_y[3:0];
+                    if(c_x>=0 && c_y>=0 && c_y<16 && c_slot<24)v_char=c_text>>(8*(23-c_slot));
+                end
+            end
+        end else if (!COMPACT_OSD && S_video_de_1d) begin
             if ((S_x_1d >= LOGO_X + LOGO_EX) && (S_x_1d < (LOGO_X + LOGO_EX + LOGO_EW)) &&
                 (S_y_1d >= LOGO_Y + LOGO_EY) && (S_y_1d < (LOGO_Y + LOGO_EY + LOGO_EH))) begin
                 v_region = 3'd1;
@@ -535,6 +661,7 @@ module hdmi_mixer #(
             r1_region <= 3'd0;  r1_char <= 8'd0;
             r1_row <= 4'd0;  r1_col <= 4'd0;  r1_blend <= 1'b0;
             r1_sw_idx <= 4'd0;
+            r1_compact_color<=0;
         end
         else begin
             r1_region <= v_region;
@@ -542,8 +669,9 @@ module hdmi_mixer #(
             r1_row     <= v_row;
             r1_col     <= v_col;
             r1_sw_idx  <= v_idx;
+            r1_compact_color<=v_compact_color;
             // 半透明背景: HUD侧栏(Logo+CNT/FPS两行状态)、底部模式栏整条
-            r1_blend   <= S_video_de_1d &&
+            r1_blend   <= COMPACT_OSD ? v_blend : S_video_de_1d &&
                           (((S_x_1d >= HUD_X) && (S_x_1d < (HUD_X + HUD_W)) &&
                             (S_y_1d >= HUD_Y) && (S_y_1d < (HUD_Y + HUD_H))) ||
                            ((S_y_1d >= BAN_Y) && (S_y_1d < (BAN_Y + BAN_H))));
@@ -566,10 +694,13 @@ module hdmi_mixer #(
                 v2_is_logo = 1'b1;
             end
         end
-        else if (r1_region != 3'd0) begin
+        else if(COMPACT_OSD && r1_region==7)begin
+            v2_hit=1;v2_color=r1_compact_color;
+        end else if (r1_region != 3'd0) begin
             if ((r1_char != 8'd0) && v2_text_bit) begin
                 v2_hit = 1'b1;
-                case (r1_region)
+                if(COMPACT_OSD)v2_color=r1_compact_color;
+                else case (r1_region)
                     3'd2:    v2_color = COLOR_DYN_TEXT;
                     3'd3:    v2_color = COLOR_FPS_TEXT;
                     3'd6: begin

@@ -1,6 +1,6 @@
 // Task information is drawn before the existing logo/mode OSD. Numeric values
 // are source-image coordinates and segmented pixel area, not class scores.
-(* dsp_style="no" *) module vision_task_hud # (parameter WIDTH=1280,HEIGHT=720)(
+(* dsp_style="no" *) module vision_task_hud # (parameter WIDTH=1280,HEIGHT=720,TEXT_ENABLE=1)(
     input wire clk,rst_n,
     input wire [3:0] mode,
     input wire enable,result_valid,found,calibrated,overflow,
@@ -89,7 +89,7 @@
         else if(!c)header="REGION SAMPLE BAD K4 TRY";
         else header=f?"REGION FOUND            ":"REGION SEARCH           ";
         slot=0;col=0;row=0;character=0;
-        panel=px>=LEFT && px<LEFT+24*16 && py>=48 && py<84;
+        panel=TEXT_ENABLE && px>=LEFT && px<LEFT+24*16 && py>=48 && py<84;
         if(panel)begin
             slot=text_x[8:4];col=text_x[3:1];
             if(py<62)begin row=(py-48)/2;character=header>>(8*(23-slot));end
@@ -112,22 +112,24 @@
     reg [23:0] rgb_a;
     reg [4:0] ctl_a;
     reg enable_a,panel_a,cross_a,border_a,reticle_a;
+    reg enable_f;
     wire [34:0] font_bits=glyph(char_a);
     wire [5:0] font_index=6'd34-{row_a,2'd0}-{3'd0,row_a}-{3'd0,col_a};
     wire text_bit=col_a<5 && row_a<7 && font_bits[font_index];
     always @(posedge clk or negedge rst_n)begin
         if(!rst_n)begin x<=0;y<=0;bx<=0;by<=0;bw<=0;bh<=0;cx<=0;cy<=0;df<=0;dc<=0;derr<=0;xd<=0;yd<=0;md<=0;
-            char_a<=0;row_a<=0;col_a<=0;rgb_a<=0;ctl_a<=0;enable_a<=0;panel_a<=0;cross_a<=0;border_a<=0;reticle_a<=0;
+            char_a<=0;row_a<=0;col_a<=0;rgb_a<=0;ctl_a<=0;enable_a<=0;enable_f<=0;panel_a<=0;cross_a<=0;border_a<=0;reticle_a<=0;
             out_vsync<=0;out_hsync<=0;out_de<=0;out_sof<=0;out_eol<=0;out_rgb<=0;end
         else begin
             if(sof)begin
+                enable_f<=enable;
                 x<=0;y<=0;df<=found;dc<=calibrated;derr<=overflow;
                 bx<=box_x;by<=box_y;bw<=box_w;bh<=box_h;cx<=center_x;cy<=center_y;
                 xd<=x_digits;yd<=y_digits;md<=m_digits;
             end
             if(de)begin x<=eol?0:px+1'b1;y<=eol?py+1'b1:py;end
             char_a<=character;row_a<=row[2:0];col_a<=col[2:0];rgb_a<=rgb;ctl_a<={vsync,hsync,de,sof,eol};
-            enable_a<=enable;panel_a<=panel;cross_a<=crosshair;border_a<=border;reticle_a<=reticle || sample_box;
+            enable_a<=sof?enable:enable_f;panel_a<=panel;cross_a<=crosshair;border_a<=border;reticle_a<=reticle || sample_box;
             {out_vsync,out_hsync,out_de,out_sof,out_eol}<=ctl_a;
             if(!ctl_a[2])out_rgb<=0;
             else if(!enable_a)out_rgb<=rgb_a;
