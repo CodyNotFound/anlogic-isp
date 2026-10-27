@@ -16,7 +16,7 @@ module yunet_network #(
  localparam IDLE=0,CONFIG_WAIT=1,CONFIG=2,INIT=3,META=4,DOT_START=5,
   CONV_READ=6,CONV_WAIT=7,CONV_FEED=8,CONV_RESULT=9,NEXT_OUTPUT=10,
   MISC_READ=11,MISC_WAIT=12,MISC_EVAL=13,ROW_PREP=14,ROW_READ=15,ROW_WAIT=16,ROW_WRITE=17,
-  PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20;
+  PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21;
  reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="bram" *) reg [7:0] cache0[0:1919],cache1[0:1919],cache2[0:1919],cache3[0:1919];
@@ -43,7 +43,8 @@ module yunet_network #(
  reg pad_q;reg [1:0] a_bank_q,w_bank_q;
  reg [7:0] aq0,aq1,aq2,aq3;reg signed [7:0] wq0,wq1,wq2,wq3;
  reg signed [31:0] bias_q;reg signed [6:0] shift_q;
- reg signed [31:0] misc_temp;reg write_pending;reg [16:0] write_address;reg [7:0] write_data;
+ reg signed [7:0] misc_temp;reg signed [9:0] misc_sum_q;reg misc_half_q;
+ reg write_pending;reg [16:0] write_address;reg [7:0] write_data;
  function [15:0] multiply8;
  input [7:0] a,b;reg [15:0] aa;
  // The generated 160x96 graph has only these six row widths. A general
@@ -132,15 +133,19 @@ module yunet_network #(
    case(write_address[1:0])0:fm0[write_address[15:2]]<=write_data;1:fm1[write_address[15:2]]<=write_data;2:fm2[write_address[15:2]]<=write_data;3:fm3[write_address[15:2]]<=write_data;endcase
   end
  end
- function signed [7:0] quantize;
- input signed [63:0] v;input signed [6:0] s;reg signed [63:0] q;
- begin q=s>0?(v+(64'sd1<<(s-1)))>>>s:v<<<(-s);quantize=q>127?8'sd127:q< -128?-8'sd128:q[7:0];end
+ function signed [7:0] quantize_misc;
+ input signed [9:0] v;input half;reg signed [10:0] q;
+ begin q={{1{v[9]}},v};if(half)q=(q+11'sd1)>>>1;quantize_misc=q>127?8'sd127:q< -128?-8'sd128:q[7:0];end
  endfunction
- wire signed [31:0] misc_a={{24{selected_memory_a[7]}},selected_memory_a};
- wire signed [31:0] pool_max=misc_step==0||misc_a>misc_temp?misc_a:misc_temp;
- wire signed [6:0] align_shift=shift1>shift2?shift1:shift2;
- wire signed [63:0] aligned_a=$signed({{32{misc_temp[31]}},misc_temp})<<<(align_shift-shift1);
- wire signed [63:0] aligned_b=$signed({{32{misc_a[31]}},misc_a})<<<(align_shift-shift2);
+ wire signed [7:0] misc_a=$signed(selected_memory_a);
+ wire signed [7:0] pool_max=misc_step==0||misc_a>misc_temp?misc_a:misc_temp;
+ // The fixed exported graph has zero shifts for pool/resize and shifts 0/1
+ // for Add. The exporter checks this contract; no 64-bit variable barrel
+ // shifter is needed on a BRAM-read -> output-write timing path.
+ wire align_half=shift1[0]||shift2[0];
+ wire signed [9:0] extended_a={{2{misc_temp[7]}},misc_temp},extended_b={{2{misc_a[7]}},misc_a};
+ wire signed [9:0] aligned_a=align_half&&!shift1[0]?extended_a<<<1:extended_a;
+ wire signed [9:0] aligned_b=align_half&&!shift2[0]?extended_b<<<1:extended_b;
  wire [16:0] output_address=feature_index(dst_base,oy,ox,ow,oc,channel_shift(co));
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
@@ -149,7 +154,7 @@ module yunet_network #(
    kernel3<=0;stride2<=0;pad1<=0;depthwise<=0;relu<=0;input_unsigned<=0;weight_base<=0;bias_base<=0;shift1<=0;shift2<=0;
    in_place<=0;reverse_order<=0;row_ready<=0;pixel_ready<=0;row_valid<=0;prep_row<=0;fill_slot<=0;fill_y<=0;fill_offset<=0;pixel_offset<=0;
    ox<=0;oy<=0;oc<=0;ic<=0;kx<=0;ky<=0;misc_step<=0;cshift<=0;pad_q<=0;a_bank_q<=0;w_bank_q<=0;
-   misc_temp<=0;write_pending<=0;write_address<=0;write_data<=0;
+   misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_data<=0;
   end else begin
    done<=0;operation_done<=0;write_pending<=0;
    if(busy)cycles<=cycles+1'b1;
@@ -206,10 +211,13 @@ module yunet_network #(
      if(opcode==2&&misc_step!=3)begin misc_temp<=pool_max;misc_step<=misc_step+1'b1;state<=MISC_READ;end
      else if(opcode==4&&misc_step==0)begin misc_temp<=misc_a;misc_step<=1;state<=MISC_READ;end
      else begin
-      write_pending<=1;write_address<=output_address;
-      write_data<=opcode==2?quantize({{32{pool_max[31]}},pool_max},shift1):opcode==4?quantize(aligned_a+aligned_b,align_shift):quantize({{32{misc_a[31]}},misc_a},shift1);
-      state<=NEXT_OUTPUT;
+      misc_sum_q<=opcode==2?{{2{pool_max[7]}},pool_max}:opcode==4?aligned_a+aligned_b:extended_b;
+      misc_half_q<=opcode==4&&align_half;
+      state<=MISC_QUANT;
      end
+    end
+    MISC_QUANT:begin
+     write_pending<=1;write_address<=output_address;write_data<=quantize_misc(misc_sum_q,misc_half_q);state<=NEXT_OUTPUT;
     end
     NEXT_OUTPUT:begin
      if(oc==co-1)begin

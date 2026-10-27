@@ -35,6 +35,13 @@
       "source_commit": "b13422a48f823981142855a219dbd9b038c600a7",
       "message": "perf: CNN特征缓存——按生命周期复用张量与行像素缓存",
       "changed_files": 12,
+      "removed_files": 0,
+      "destination_commit": "5861c4ea859f3756d9f9d26f167b11fad7d03be1"
+    },
+    {
+      "source_commit": "7ff643988c9e2fcd458a151267d697c3a2f3ea28",
+      "message": "fix: CNN相加量化流水——拆分关键算术路径",
+      "changed_files": 7,
       "removed_files": 0
     }
   ]
