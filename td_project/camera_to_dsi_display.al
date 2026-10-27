@@ -14,6 +14,22 @@
     </MiscSettings>
     <Source_Files>
         <Verilog>
+            <File Path="../rtl/control/vision_uart_8n1.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="120"/>
+                </FileInfo>
+            </File>
+            <File Path="../rtl/control/hmi_control_link.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="121"/>
+                </FileInfo>
+            </File>
             <File Path="../rtl/control/servo_gimbal_ctrl.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

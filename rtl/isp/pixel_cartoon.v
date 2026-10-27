@@ -5,9 +5,9 @@
 module pixel_cartoon #(
  parameter integer IMG_WIDTH=1280,IMG_HEIGHT=720,
  parameter integer SMOOTH_TH=24,INK_TH=40,INK_DARK_TH=56,INK_SOLID_TH=80,
- parameter integer SHADE_SHIFT=5
+ parameter integer SHADE_SHIFT=5,EXTRA_EFFECTS=0
 )(input wire clk,rst_n,frame_start,line_end,de,input wire [23:0] pixel_in,
- output reg [23:0] pixel_out,output reg out_de,out_sof,out_eol,output reg [23:0] edge_out);
+ output reg [23:0] pixel_out,output reg out_de,out_sof,out_eol,output reg [23:0] edge_out,output reg[23:0] sharpen_out,blur_out,emboss_out);
  localparam AW=IMG_WIDTH<2?1:$clog2(IMG_WIDTH);
  reg [AW-1:0] x;reg [10:0] y;
  wire [AW-1:0] rx=frame_start?0:x;
@@ -41,6 +41,27 @@ module pixel_cartoon #(
  wire [31:0] bn=s1_pixel;
  wire [31:0] t1=s1_x==0?tn:th1,m1=s1_x==0?mn:mh1,b1=s1_x==0?bn:bh1;
  wire [31:0] t2=s1_x<2?t1:th2,m2=s1_x<2?m1:mh2,b2=s1_x<2?b1:bh2;
+ // All spatial modes use this existing RGB/Y window. Only strong blur
+ // needs one additional scalar row for its vertical recursive state.
+ wire[9:0] ytop={2'd0,t2[31:24]}+{2'd0,t1[31:24]}+{2'd0,tn[31:24]};
+ wire[9:0] ymid={2'd0,m2[31:24]}+{2'd0,m1[31:24]}+{2'd0,mn[31:24]};
+ wire[9:0] ybot={2'd0,b2[31:24]}+{2'd0,b1[31:24]}+{2'd0,bn[31:24]};
+ wire[11:0] ysum={2'd0,ytop}+{2'd0,ymid}+{2'd0,ybot};
+ wire[11:0] neighbor_y=(ysum-{4'd0,m1[31:24]})>>3;
+ wire signed[11:0] detail_y=$signed({4'd0,m1[31:24]})-$signed(neighbor_y);
+ wire signed[11:0] sharpen_y=$signed({4'd0,m1[31:24]})+((detail_y>6||detail_y< -6)?(detail_y<<<2):12'sd0);
+ wire signed[11:0] emboss_d=$signed({4'd0,m1[31:24]})-$signed({4'd0,t2[31:24]});
+ wire signed[11:0] emboss_y=12'sd128+((emboss_d>6||emboss_d< -6)?emboss_d:12'sd0);
+ function[7:0] clip_y;input signed[11:0] value;begin clip_y=value<0?0:value>255?255:value[7:0];end endfunction
+ (* ram_style="bram" *) reg[7:0] blur_row[0:IMG_WIDTH-1];
+ reg[7:0] blur_q,blur_horizontal,blur_h1,sharp2,sharp3,emboss2,emboss3,blur2,blur3;
+ wire[9:0] hsum={2'd0,raw_y}+{2'd0,blur_horizontal}+{1'b0,blur_horizontal,1'b0}+10'd2;
+ wire[7:0] blur_h=rx==0?raw_y:hsum[9:2];
+ wire[9:0] vsum={2'd0,blur_h1}+{2'd0,blur_q}+{1'b0,blur_q,1'b0}+10'd2;
+ wire[7:0] blur_v=s1_y==0?blur_h1:vsum[9:2];
+ always @(posedge clk)if(EXTRA_EFFECTS)begin
+  blur_q<=blur_row[rx];if(d1)blur_row[s1_x]<=blur_v;
+ end
  function [11:0] gauss;
  input [7:0] a,b,c,d,e,f,g,h,i;
  reg [9:0] corners,sides;
@@ -102,8 +123,9 @@ module pixel_cartoon #(
    d1<=0;f1<=0;l1<=0;d2<=0;f2<=0;l2<=0;d3<=0;f3<=0;l3<=0;
    th1<=0;th2<=0;mh1<=0;mh2<=0;bh1<=0;bh2<=0;
    gx2<=0;gy2<=0;color_gradient2<=0;r2<=0;g2<=0;b2sum<=0;center2<=0;color3<=0;strength3<=0;
-   pixel_out<=0;edge_out<=0;out_de<=0;out_sof<=0;out_eol<=0;
+   pixel_out<=0;edge_out<=0;sharpen_out<=0;blur_out<=0;emboss_out<=0;blur_horizontal<=0;blur_h1<=0;sharp2<=0;sharp3<=0;emboss2<=0;emboss3<=0;blur2<=0;blur3<=0;out_de<=0;out_sof<=0;out_eol<=0;
   end else begin
+   if(EXTRA_EFFECTS&&de)begin blur_horizontal<=blur_h;blur_h1<=blur_h;end
    d1<=de;f1<=frame_start;l1<=line_end;s1_x<=rx;s1_y<=ry;s1_pixel<={raw_y,filtered};
    if(frame_start)begin
     x<=de&&!line_end?1:0;y<=de&&line_end?1:0;
@@ -113,6 +135,7 @@ module pixel_cartoon #(
    end
    d2<=d1;f2<=f1;l2<=l1;
    if(d1)begin
+    if(EXTRA_EFFECTS)begin sharp2<=clip_y(sharpen_y);emboss2<=clip_y(emboss_y);blur2<=blur_v;end
     r2<=gauss(t2[23:16],t1[23:16],tn[23:16],m2[23:16],m1[23:16],mn[23:16],b2[23:16],b1[23:16],bn[23:16]);
     g2<=gauss(t2[15:8],t1[15:8],tn[15:8],m2[15:8],m1[15:8],mn[15:8],b2[15:8],b1[15:8],bn[15:8]);
     b2sum<=gauss(t2[7:0],t1[7:0],tn[7:0],m2[7:0],m1[7:0],mn[7:0],b2[7:0],b1[7:0],bn[7:0]);
@@ -122,9 +145,13 @@ module pixel_cartoon #(
    end
    d3<=d2;f3<=f2;l3<=l2;
    if(d2)begin
+    if(EXTRA_EFFECTS)begin sharp3<=sharp2;emboss3<=emboss2;blur3<=blur2;end
     strength3<=strength;color3<=strength<=SMOOTH_TH?{r2[11:4],g2[11:4],b2sum[11:4]}:center2;
    end
    out_de<=d3;out_sof<=f3;out_eol<=l3;
+   sharpen_out<=EXTRA_EFFECTS&&d3?{sharp3,sharp3,sharp3}:24'd0;
+   emboss_out<=EXTRA_EFFECTS&&d3?{emboss3,emboss3,emboss3}:24'd0;
+   blur_out<=EXTRA_EFFECTS&&d3?{blur3,blur3,blur3}:24'd0;
    edge_out<=d3?{edge_level,edge_level,edge_level}:24'd0;
    if(!d3)pixel_out<=0;
    else if(strength3>=INK_SOLID_TH+ink_noise_allowance)pixel_out<=24'h101018;

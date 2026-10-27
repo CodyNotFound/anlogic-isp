@@ -9,6 +9,7 @@ module vision_pipeline #(
     parameter integer ENABLE_EDGE = `VISION_ENABLE_EDGE,
     parameter integer ENABLE_OSD = `VISION_ENABLE_OSD,
     parameter integer FACE_CNN_ENABLE = 0,
+    parameter integer ENABLE_HMI = 0,
     parameter integer DEBUG_MODE = `VISION_DEBUG_MODE,
     // TD resolves readmemh beside the source file containing that statement.
     // RTL simulation from the repo root can override these three parameters.
@@ -40,10 +41,15 @@ module vision_pipeline #(
     // the staged demo (0 raw gray .. 6 full chain); normal modes keep full chain.
     output wire [3:0]  isp_demo_sel,
     output wire servo_pwm_h,servo_pwm_v,
-    output wire [3:0] panel_leds,output wire [7:0] panel_segments,panel_selects
+    output wire [3:0] panel_leds,output wire [7:0] panel_segments,panel_selects,
+    input wire hmi_rx,output wire hmi_tx
 );
-    wire [3:0] feature_requested;
+    wire [3:0] feature_requested,physical_features;
+    wire [3:0] physical_keys,hmi_keys,hmi_mode;
+    wire hmi_mode_set,hmi_action;
+    wire [7:0] fps_digits;
     wire [3:0] normal_buttons_n,keys_pressed;
+    assign keys_pressed=(|physical_keys) ? physical_keys : hmi_keys;
     wire manual_mode=feature_requested[3];
     // SW3 gates automatic motion only. Analytics and compact OSD stay active.
     reg info_enabled_f;
@@ -57,8 +63,8 @@ module vision_pipeline #(
     wire [31:0] face_compute_cycles,task_compute_cycles;
     wire track_valid,track_found;wire [7:0] track_x,track_y;
     wire mix_vsync,mix_hsync,mix_de;
-    gimbal_button_router u_button_router(.clk(clk),.rst_n(rst_n),.manual_mode(manual_mode),
-        .buttons_n(buttons_n),.keys_pressed(keys_pressed),.normal_buttons_n(normal_buttons_n));
+    gimbal_button_router #(.SAMPLE_CYCLES(75000)) u_button_router(.clk(clk),.rst_n(rst_n),.manual_mode(manual_mode),
+        .buttons_n(buttons_n),.keys_pressed(physical_keys),.normal_buttons_n(normal_buttons_n));
     wire [3:0] mode;
     wire [3:0] effective_mode;
     wire       demo_active;
@@ -208,21 +214,22 @@ module vision_pipeline #(
         else if (video_sof) osd_frame_toggle <= ~osd_frame_toggle;
     end
 
-    algorithm_mode_ctrl #(.ENABLE_ISP_DEMO(0),.LAST_MODE(4'd15)) u_mode_ctrl (
+    algorithm_mode_ctrl #(.ENABLE_ISP_DEMO(0),.LAST_MODE(4'd15),.BUTTONS_DEBOUNCED(1),.ENABLE_REMOTE(ENABLE_HMI)) u_mode_ctrl (
         .clk         (clk),
         .rst_n       (rst_n),
         .buttons_n   (normal_buttons_n),
         .mode        (mode),
         .demo_active (demo_active),
         .demo_step   (demo_step),
-        .action_pulse(task_action)
+        .action_pulse(task_action),
+        .remote_set(hmi_mode_set),.remote_mode(hmi_mode),.remote_action(hmi_action)
     );
 
-    vision_switch_ctrl u_switch_ctrl (
+    vision_switch_ctrl #(.SAMPLE_CYCLES(75000)) u_switch_ctrl (
         .clk            (clk),
         .rst_n          (rst_n),
         .switches_n     (switches_n),
-        .feature_enable (feature_requested)
+        .feature_enable (physical_features)
     );
 
     auto_exposure #(
@@ -384,6 +391,19 @@ module vision_pipeline #(
      .packet_mode(telemetry_mode),.packet_found(telemetry_found),.packet_compute_valid(telemetry_compute_valid),.packet_tick(),
      .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(compute_ms_digits));
 
+    generate if(ENABLE_HMI)begin: g_hmi
+     hmi_control_link u_link(.clk(clk),.rst_n(rst_n),.rx(hmi_rx),.tx(hmi_tx),
+      .physical_features(physical_features),.features(feature_requested),.mode(mode),
+      .mode_set(hmi_mode_set),.mode_value(hmi_mode),.action(hmi_action),.keys(hmi_keys),
+      .target_found(telemetry_found&&telemetry_mode==mode&&coordinate_found),
+      .compute_valid(telemetry_compute_valid&&telemetry_mode==mode),.task_status(task_hud_status),.ctl_state(gimbal_state),
+      .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(compute_ms_digits),
+      .h_digits(h_digits[15:0]),.v_digits(v_digits[15:0]),.fps_digits(fps_digits));
+    end else begin: g_no_hmi
+     assign feature_requested=physical_features;assign hmi_tx=1'b1;
+     assign hmi_mode_set=0;assign hmi_mode=0;assign hmi_action=0;assign hmi_keys=0;
+    end endgenerate
+
     // Existing OSD remains last; analytics never process their own overlays.
     // Its three-stage internal pipeline keeps RGB and HDMI timing aligned.
     hdmi_mixer #(
@@ -420,7 +440,7 @@ module vision_pipeline #(
         .O_hdmi_hsync     (mix_hsync),
         .O_hdmi_de        (mix_de),
         .O_hdmi_data      (mixed_pixel),
-        .O_hdmi_sof       (mixer_sof_raw)
+        .O_hdmi_sof       (mixer_sof_raw),.O_fps_digits(fps_digits)
     );
 
     reg [3:0] gimbal_mode_d;

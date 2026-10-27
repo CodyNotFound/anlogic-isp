@@ -20,40 +20,21 @@ module pixel_algorithm #(
     input  wire [23:0] pixel_in,
     output wire [23:0] pixel_out
 );
-    reg [10:0] x;
-    reg [10:0] y;
-    (* ram_style = "bram" *) reg [7:0] line1 [0:IMG_WIDTH-1];
-    (* ram_style = "bram" *) reg [7:0] line2 [0:IMG_WIDTH-1];
-    reg [7:0] top_prev2, top_prev1, mid_prev2, mid_prev1, bot_prev2, bot_prev1;
-    reg [31:0] binary_luma_sum;
-    reg [21:0] binary_pixel_count;
-    reg [7:0]  binary_threshold;
-
-    // Split the expensive luma conversion from the spatial operator.  The
-    // source stream is registered here; all spatial state below consumes the
-    // same delayed pixel and delayed qualifiers.
-    reg [7:0]  gray_reg,spatial_gray_reg;
-    reg [7:0] gray_prev1,gray_prev2;reg [1:0] history_count;
-    reg [23:0] pixel_in_reg;
-    reg        de_reg;
-    reg        frame_start_reg;
-    reg        line_end_reg;
-    reg [3:0]  mode_reg;
-
-    localparam [7:0] BINARY_TH_MIN = 8'd24;
-    localparam [7:0] BINARY_TH_MAX = 8'd224;
-
+    localparam SUM_BITS=$clog2(IMG_WIDTH*IMG_HEIGHT*256+1);
+    reg[SUM_BITS-1:0]binary_luma_sum;reg binary_any;
+    reg[7:0]binary_threshold,gray_reg;reg[23:0]pixel_in_reg;
+    reg de_reg,frame_start_reg;reg[3:0]mode_reg;
+    localparam[7:0] BINARY_TH_MIN=24,BINARY_TH_MAX=224;
     // R/4 + G/2 + B/4 (maximum 253 after per-channel truncation).
 
 
     wire [7:0] gray = {2'b0,pixel_in[23:18]} + {1'b0,pixel_in[15:9]} + {2'b0,pixel_in[7:2]};
-    wire [7:0] filtered_gray=(frame_start?gray:gray_prev1)>gray?((gray_prev2>gray)?(gray_prev2<gray_prev1?gray_prev2:gray_prev1):gray):((gray_prev2<gray)?(gray_prev2>gray_prev1?gray_prev2:gray_prev1):gray);
     // 1280x720 has 921600 active pixels.  146/2^27 is its reciprocal to
     // better than 0.2%; the shift/add form avoids a run-time divider.
     wire [39:0] binary_avg_product =
-                         ({8'd0,binary_luma_sum} << 7) +
-                         ({8'd0,binary_luma_sum} << 4) +
-                         ({8'd0,binary_luma_sum} << 1);
+                         ({{(40-SUM_BITS){1'b0}},binary_luma_sum} << 7) +
+                         ({{(40-SUM_BITS){1'b0}},binary_luma_sum} << 4) +
+                         ({{(40-SUM_BITS){1'b0}},binary_luma_sum} << 1);
     wire [8:0] binary_avg_calc = (IMG_WIDTH==1280 && IMG_HEIGHT==720) ?
         binary_avg_product[35:27] : binary_luma_sum/(IMG_WIDTH*IMG_HEIGHT);
 
@@ -75,200 +56,43 @@ module pixel_algorithm #(
                          make_binary_threshold(binary_avg_calc);
     wire [7:0] binary_threshold_used = ADAPTIVE_BINARY ?
                                         binary_threshold : BINARY_TH;
-    wire [10:0] spatial_x=frame_start_reg?11'd0:x;
-    wire [10:0] spatial_y=frame_start_reg?11'd0:y;
-    // Prefetch the address that spatial_x will take after this clock.
-    // The synchronous RAM output then belongs to the new gray_reg sample.
-    wire [10:0] next_read_x=frame_start?11'd0:
-        frame_start_reg?(de_reg&&!line_end_reg?11'd1:11'd0):
-        de_reg?(line_end_reg||x==IMG_WIDTH-1?11'd0:x+1'b1):x;
-    reg [7:0] top_q,mid_q;
-    always @(posedge clk)begin top_q<=line2[next_read_x];mid_q<=line1[next_read_x];end
-    wire [7:0] top_now = top_q;
-    wire [7:0] mid_now = mid_q;
-    wire [7:0] bot_now = spatial_gray_reg;
-    // ref Scharr kernel, expressed as shifts to avoid multipliers.
-    wire signed [8:0] sch_gx_d0 = $signed({1'b0,top_now}) - $signed({1'b0,top_prev2});
-    wire signed [8:0] sch_gx_d1 = $signed({1'b0,mid_now}) - $signed({1'b0,mid_prev2});
-    wire signed [8:0] sch_gx_d2 = $signed({1'b0,bot_now}) - $signed({1'b0,bot_prev2});
-    wire signed [8:0] sch_gy_d0 = $signed({1'b0,bot_prev2}) - $signed({1'b0,top_prev2});
-    wire signed [8:0] sch_gy_d1 = $signed({1'b0,bot_prev1}) - $signed({1'b0,top_prev1});
-    wire signed [8:0] sch_gy_d2 = $signed({1'b0,bot_now}) - $signed({1'b0,top_now});
-    wire signed [10:0] sch_gx_t0 = (sch_gx_d0 <<< 1) + sch_gx_d0;
-    wire signed [12:0] sch_gx_t1 = (sch_gx_d1 <<< 3) + (sch_gx_d1 <<< 1);
-    wire signed [10:0] sch_gx_t2 = (sch_gx_d2 <<< 1) + sch_gx_d2;
-    wire signed [10:0] sch_gy_t0 = (sch_gy_d0 <<< 1) + sch_gy_d0;
-    wire signed [12:0] sch_gy_t1 = (sch_gy_d1 <<< 3) + (sch_gy_d1 <<< 1);
-    wire signed [10:0] sch_gy_t2 = (sch_gy_d2 <<< 1) + sch_gy_d2;
-    wire signed [12:0] sch_gx = $signed({{2{sch_gx_t0[10]}},sch_gx_t0}) + sch_gx_t1 +
-                                 $signed({{2{sch_gx_t2[10]}},sch_gx_t2});
-    wire signed [12:0] sch_gy = $signed({{2{sch_gy_t0[10]}},sch_gy_t0}) + sch_gy_t1 +
-                                 $signed({{2{sch_gy_t2[10]}},sch_gy_t2});
-    wire [12:0] abs_sch_gx = sch_gx[12] ? (~sch_gx + 13'd1) : sch_gx;
-    wire [12:0] abs_sch_gy = sch_gy[12] ? (~sch_gy + 13'd1) : sch_gy;
-    wire [13:0] magnitude = {1'b0,abs_sch_gx} + {1'b0,abs_sch_gy};
-    wire [12:0] scharr_scaled = magnitude[13:4];
-    wire edge_valid = de_reg && (spatial_y >= 11'd2) && (spatial_x >= 11'd2);
-    wire [11:0] window_sum9 = {4'd0,top_prev2}+{4'd0,top_prev1}+{4'd0,top_now}+
-                               {4'd0,mid_prev2}+{4'd0,mid_now}+{4'd0,mid_prev1}+
-                               {4'd0,bot_prev2}+{4'd0,bot_prev1}+{4'd0,bot_now};
-    wire [11:0] neighbor_sum = window_sum9-{4'd0,mid_prev1};
-    wire [11:0] neighbor_avg = neighbor_sum>>3;
-    wire signed [11:0] detail=$signed({4'd0,mid_prev1})-$signed({4'd0,neighbor_avg});
-    wire signed [11:0] sharpen_value=$signed({4'd0,mid_prev1})+((detail>6||detail< -6)?(detail<<<2):12'sd0);
-    wire signed [11:0] emboss_delta=$signed({4'd0,mid_prev1})-$signed({4'd0,top_prev2});
-    wire signed [11:0] emboss_value=12'sd128+((emboss_delta>6||emboss_delta< -6)?emboss_delta:12'sd0);
 
-    function [7:0] clip9;
-        input [8:0] value;
-        begin clip9=(value>9'd255)?8'd255:value[7:0]; end
-    endfunction
-    function [7:0] clip_signed12;
-        input signed [11:0] value;
-        begin
-            if(value<0) clip_signed12=8'd0;
-            else if(value>12'sd255) clip_signed12=8'd255;
-            else clip_signed12=value[7:0];
-        end
-    endfunction
-    function [7:0] bright8;
-        input [7:0] value;
-        reg [8:0] sum;
-        begin sum={1'b0,value}+9'd32; bright8=clip9(sum); end
-    endfunction
-    // [2026-10-14] 模式0改名"色彩还原": 增色(1.5x饱和度sat_boost8)逻辑按用户指示移除,
-    // 模式0与模式1同为直通, 区别只在ISP链是否被bypass(见vision_pipeline/isp_top)。
-    // Separable [1 2 1]^T[1 2 1]/16 Gaussian. Balanced sums avoid a
-    // constant-divide chain on the 75MHz pixel path and preserve DC exactly.
-    wire [8:0] gc0={1'b0,top_prev2}+{1'b0,top_now},gc1={1'b0,bot_prev2}+{1'b0,bot_now};
-    wire [8:0] ge0={1'b0,top_prev1}+{1'b0,mid_prev2},ge1={1'b0,mid_now}+{1'b0,bot_prev1};
-    wire [9:0] corners={1'b0,gc0}+{1'b0,gc1},sides={1'b0,ge0}+{1'b0,ge1};
-    wire [11:0] gaussian_sum={2'd0,corners}+{1'b0,sides,1'b0}+{2'd0,mid_prev1,2'd0}+12'd8;
-    wire [23:0] box_scaled=({12'd0,window_sum9}<<9)-({12'd0,window_sum9}<<6)+({12'd0,window_sum9}<<2)+({12'd0,window_sum9}<<1)+window_sum9+24'd2048;
-    // Strong separable recursive low-pass: reuse line1 for vertical state in
-    // mode 6; no extra frame/line RAM. First row/column initialize from input.
-    reg [7:0] blur_horizontal;
-    wire [9:0] blur_h_sum={2'd0,spatial_gray_reg}+{2'd0,blur_horizontal}+{1'b0,blur_horizontal,1'b0}+10'd2;
-    wire [7:0] blur_h=spatial_x==0?spatial_gray_reg:blur_h_sum[9:2];
-    wire [9:0] blur_v_sum={2'd0,blur_h}+{2'd0,mid_now}+{1'b0,mid_now,1'b0}+10'd2;
-    wire [7:0] blur_value=spatial_y==0?blur_h:blur_v_sum[9:2];
+    function[7:0] bright8;input[7:0]value;reg[8:0]sum;begin sum={1'b0,value}+32;bright8=sum>255?255:sum[7:0];end endfunction
+    reg[23:0]legacy_pixel,pixel_d2,pixel_d3,pixel_d4;
+    reg[3:0]mode_d2,mode_d3,mode_d4;
+    wire[23:0]cartoon_pixel,cartoon_edge,sharp_pixel,blur_pixel,emboss_pixel;wire cartoon_de;
+    pixel_cartoon #(.IMG_WIDTH(IMG_WIDTH),.IMG_HEIGHT(IMG_HEIGHT),.EXTRA_EFFECTS(1)) u_cartoon(
+     .clk(clk),.rst_n(rst_n),.frame_start(frame_start),.line_end(line_end),.de(de),.pixel_in(pixel_in),
+     .pixel_out(cartoon_pixel),.out_de(cartoon_de),.out_sof(),.out_eol(),.edge_out(cartoon_edge),.sharpen_out(sharp_pixel),.blur_out(blur_pixel),.emboss_out(emboss_pixel));
+    assign pixel_out=!cartoon_de?24'd0:mode_d4==9?cartoon_pixel:mode_d4==7?cartoon_edge:
+                     mode_d4==5?sharp_pixel:mode_d4==6?blur_pixel:mode_d4==8?emboss_pixel:pixel_d4;
+    always @*begin
+     case(mode_reg)
+      1:legacy_pixel={gray_reg,gray_reg,gray_reg};
+      2:legacy_pixel=~pixel_in_reg;
+      3:legacy_pixel=gray_reg>=binary_threshold_used?24'hffffff:24'd0;
+      4:legacy_pixel={bright8(pixel_in_reg[23:16]),bright8(pixel_in_reg[15:8]),bright8(pixel_in_reg[7:0])};
+      10:legacy_pixel={pixel_in_reg[7:0],pixel_in_reg[23:16],pixel_in_reg[15:8]};
+      default:legacy_pixel=pixel_in_reg;
+     endcase
+     if(!de_reg)legacy_pixel=0;
+    end
     always @(posedge clk or negedge rst_n)begin
-     if(!rst_n)blur_horizontal<=0;
-     else if(de_reg)blur_horizontal<=blur_h;
-    end
-    wire [7:0] sharpen_value8=edge_valid?clip_signed12(sharpen_value):gray_reg;
-    wire [7:0] emboss_value8=edge_valid?clip_signed12(emboss_value):gray_reg;
-    wire [23:0] binary_pixel = (gray_reg >= binary_threshold_used) ? 24'hffffff : 24'h000000;
-    wire [23:0] gray_pixel = {gray_reg,gray_reg,gray_reg};
-    wire [23:0] invert_pixel = {~pixel_in_reg[23:16],~pixel_in_reg[15:8],~pixel_in_reg[7:0]};
-    wire [23:0] bright_pixel = {bright8(pixel_in_reg[23:16]),bright8(pixel_in_reg[15:8]),bright8(pixel_in_reg[7:0])};
-    wire [23:0] sharpen_pixel={sharpen_value8,sharpen_value8,sharpen_value8};
-    wire [23:0] blur_pixel={blur_value,blur_value,blur_value};
-    wire [23:0] edge_pixel = (edge_valid && scharr_scaled >= EDGE_TH) ? 24'hffffff : 24'h000000;
-    wire [23:0] emboss_pixel={emboss_value8,emboss_value8,emboss_value8};
-    wire [23:0] rgb_swap_pixel={pixel_in_reg[7:0],pixel_in_reg[23:16],pixel_in_reg[15:8]};
-
-    reg [23:0] legacy_pixel,pixel_d2,pixel_d3,pixel_d4;
-    reg [3:0] mode_d2,mode_d3,mode_d4;
-    wire [23:0] cartoon_pixel,cartoon_edge;wire cartoon_de;
-    pixel_cartoon #(.IMG_WIDTH(IMG_WIDTH),.IMG_HEIGHT(IMG_HEIGHT)) u_cartoon(
-        .clk(clk),.rst_n(rst_n),.frame_start(frame_start),.line_end(line_end),.de(de),
-        .pixel_in(pixel_in),.pixel_out(cartoon_pixel),.out_de(cartoon_de),.out_sof(),.out_eol(),.edge_out(cartoon_edge));
-    // Match the legacy single-clock effects to the four-clock cartoon path.
-    // This preserves the pixel/qualifier relationship across live mode changes.
-    assign pixel_out=!cartoon_de?24'd0:mode_d4==9?cartoon_pixel:mode_d4==7?cartoon_edge:pixel_d4;
-    always @(posedge clk or negedge rst_n)begin
-        if(!rst_n)begin pixel_d2<=0;pixel_d3<=0;pixel_d4<=0;mode_d2<=0;mode_d3<=0;mode_d4<=0;end
-        else begin pixel_d2<=legacy_pixel;pixel_d3<=pixel_d2;pixel_d4<=pixel_d3;
-            mode_d2<=mode_reg;mode_d3<=mode_d2;mode_d4<=mode_d3;end
-    end
-    always @* begin
-        case (mode_reg)
-            4'd0: legacy_pixel=pixel_in_reg;   // 色彩还原: ISP链输出直通
-            4'd1: legacy_pixel=gray_pixel;
-            4'd2: legacy_pixel=invert_pixel;
-            4'd3: legacy_pixel=binary_pixel;
-            4'd4: legacy_pixel=bright_pixel;
-            4'd5: legacy_pixel=sharpen_pixel;
-            4'd6: legacy_pixel=blur_pixel;
-            4'd7: legacy_pixel=24'd0; // shared RGB/Y gradient output selected above
-            4'd8: legacy_pixel=emboss_pixel;
-            4'd9: legacy_pixel=pixel_in_reg; // renderer selected after matching pipelines
-            4'd10: legacy_pixel=rgb_swap_pixel;
-            default: legacy_pixel=pixel_in_reg;
-        endcase
-        if (!de_reg) legacy_pixel = 24'd0;
-    end
-
-    // One explicit write port per line RAM, including coincident SOF+DE.
-    always @(posedge clk)begin
-        if(de_reg)begin line2[spatial_x]<=mid_now;line1[spatial_x]<=mode_reg==6?blur_value:bot_now;end
-    end
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            x <= 0; y <= 0;
-            top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= 0;
-            binary_luma_sum <= 32'd0;
-            binary_pixel_count <= 22'd0;
-            binary_threshold <= BINARY_TH;
-            gray_reg <= 8'd0;spatial_gray_reg<=0;gray_prev1<=0;gray_prev2<=0;history_count<=0;
-            pixel_in_reg <= 24'd0;
-            de_reg <= 1'b0;
-            frame_start_reg <= 1'b0;
-            line_end_reg <= 1'b0;
-            mode_reg <= 4'd0;
-        end else begin
-            // Stage 1: register the exact BT.601 Y value and stream control.
-            // Stage 2 below performs the line-buffer/Sobel operation on the
-            // previous registered sample.
-            gray_reg        <= gray;
-            spatial_gray_reg <= frame_start||history_count<2?gray:filtered_gray;
-            if(de)begin gray_prev2<=frame_start?gray:gray_prev1;gray_prev1<=gray;
-             if(line_end)history_count<=0;else if(frame_start)history_count<=1;else if(history_count<2)history_count<=history_count+1'b1;end
-            pixel_in_reg    <= pixel_in;
-            de_reg          <= de;
-            frame_start_reg <= frame_start;
-            line_end_reg    <= line_end;
-            mode_reg        <= mode;
-
-            if (frame_start_reg) begin
-            x <= de_reg && !line_end_reg ? 11'd1 : 11'd0; y <= de_reg && line_end_reg ? 11'd1 : 11'd0;
-            top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= de_reg?spatial_gray_reg:8'd0;
-            if (binary_pixel_count != 0) begin
-                // Limit movement to eight levels per frame so illumination
-                // changes do not flip the whole binary image immediately.
-                if (!ADAPTIVE_BINARY)
-                    binary_threshold <= BINARY_TH;
-                else if (binary_threshold < binary_threshold_target) begin
-                    if ((binary_threshold_target - binary_threshold) > 8)
-                        binary_threshold <= binary_threshold + 8;
-                    else
-                        binary_threshold <= binary_threshold_target;
-                end else if (binary_threshold > binary_threshold_target) begin
-                    if ((binary_threshold - binary_threshold_target) > 8)
-                        binary_threshold <= binary_threshold - 8;
-                    else
-                        binary_threshold <= binary_threshold_target;
-                end
-            end
-            binary_luma_sum <= de_reg ? {{24{1'b0}},gray_reg} : 32'd0;
-            binary_pixel_count <= de_reg ? 22'd1 : 22'd0;
-            end else if (de_reg) begin
-            binary_luma_sum <= binary_luma_sum + gray_reg;
-            if (binary_pixel_count != 22'h3fffff)
-                binary_pixel_count <= binary_pixel_count + 1'b1;
-            top_prev2 <= top_prev1; top_prev1 <= top_now;
-            mid_prev2 <= mid_prev1; mid_prev1 <= mid_now;
-            bot_prev2 <= bot_prev1; bot_prev1 <= bot_now;
-            if (line_end_reg) begin
-                x <= 0;
-                if (y == IMG_HEIGHT-1) y <= 0; else y <= y + 1'b1;
-                top_prev2 <= 0; top_prev1 <= 0; mid_prev2 <= 0; mid_prev1 <= 0; bot_prev2 <= 0; bot_prev1 <= 0;
-            end else if (x == IMG_WIDTH-1) x <= 0;
-            else x <= x + 1'b1;
-            end
-        end
+     if(!rst_n)begin
+      pixel_d2<=0;pixel_d3<=0;pixel_d4<=0;mode_d2<=0;mode_d3<=0;mode_d4<=0;
+      gray_reg<=0;pixel_in_reg<=0;de_reg<=0;frame_start_reg<=0;mode_reg<=0;
+      binary_threshold<=BINARY_TH;binary_luma_sum<=0;binary_any<=0;
+     end else begin
+      pixel_d2<=legacy_pixel;pixel_d3<=pixel_d2;pixel_d4<=pixel_d3;mode_d2<=mode_reg;mode_d3<=mode_d2;mode_d4<=mode_d3;
+      gray_reg<=gray;pixel_in_reg<=pixel_in;de_reg<=de;frame_start_reg<=frame_start;mode_reg<=mode;
+      if(frame_start_reg)begin
+       if(binary_any)begin
+        if(!ADAPTIVE_BINARY)binary_threshold<=BINARY_TH;
+        else if(binary_threshold<binary_threshold_target)binary_threshold<=binary_threshold_target-binary_threshold>8?binary_threshold+8:binary_threshold_target;
+        else if(binary_threshold>binary_threshold_target)binary_threshold<=binary_threshold-binary_threshold_target>8?binary_threshold-8:binary_threshold_target;
+       end
+       binary_luma_sum<=de_reg?gray_reg:0;binary_any<=de_reg;
+      end else if(de_reg)begin binary_luma_sum<=binary_luma_sum+gray_reg;binary_any<=1;end
+     end
     end
 endmodule
-
-

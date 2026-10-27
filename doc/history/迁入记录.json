@@ -133,6 +133,13 @@
       "source_commit": "cb6251b3392a07041a9a4d8129b99eba46729935",
       "message": "feat: 模板分块重捕——全图搜索确认与共享状态格式化",
       "changed_files": 21,
+      "removed_files": 0,
+      "destination_commit": "0d732a9bcd7ad92b4a21a277886410300149124f"
+    },
+    {
+      "source_commit": "631f5af0eaec6bde5756a5c4901bc1882c940fca",
+      "message": "feat: 串口屏控制——集成模式方向与功能状态协议",
+      "changed_files": 29,
       "removed_files": 0
     }
   ]

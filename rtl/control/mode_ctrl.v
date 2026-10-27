@@ -6,7 +6,7 @@
 module algorithm_mode_ctrl #(
     parameter integer DEBOUNCE_CYCLES = 750000,
     parameter [2:0] DEMO_STEP_LAST = 3'd5,
-    parameter integer ENABLE_ISP_DEMO = 1,
+    parameter integer ENABLE_ISP_DEMO = 1,BUTTONS_DEBOUNCED=0,ENABLE_REMOTE=0,
     parameter [3:0] LAST_MODE=4'd14
 )(
     input  wire       clk,
@@ -15,7 +15,8 @@ module algorithm_mode_ctrl #(
     output reg  [3:0] mode,
     output reg        demo_active,
     output reg  [2:0] demo_step,
-    output reg        action_pulse
+    output reg        action_pulse,
+    input wire remote_set,remote_action,input wire[3:0]remote_mode
 );
     localparam integer CW = (DEBOUNCE_CYCLES < 2) ? 1 : $clog2(DEBOUNCE_CYCLES);
     localparam [3:0] MODE_LAST = LAST_MODE;
@@ -38,6 +39,9 @@ module algorithm_mode_ctrl #(
             sync1 <= buttons_n;
             sync2 <= sync1;
             stable_d <= stable;
+            if(BUTTONS_DEBOUNCED)begin
+             stable<=buttons_n;count0<=0;count1<=0;count2<=0;count3<=0;
+            end else begin
             if (sync2[0] != stable[0]) begin
                 if (count0 == DEBOUNCE_CYCLES-1) begin stable[0] <= sync2[0]; count0 <= 0; end
                 else count0 <= count0 + 1'b1;
@@ -55,6 +59,12 @@ module algorithm_mode_ctrl #(
                 else count3 <= count3 + 1'b1;
             end else count3 <= 0;
 
+            end
+
+            if(ENABLE_REMOTE)begin
+                if(remote_set && remote_mode<=MODE_LAST && remote_mode!=13)begin mode<=remote_mode;demo_active<=0;end
+                if(remote_action && !demo_active && (mode==12||mode==14||mode==15))action_pulse<=1;
+            end
             // K1/K2: 演示模式下仅退出; 正常模式下加减模式
             if (stable_d[0] && !stable[0]) begin
                 if (demo_active) demo_active <= 1'b0;

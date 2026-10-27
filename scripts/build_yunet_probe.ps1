@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage,[switch]$TrackerReacquire)
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion','pixel','hmi')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[string]$PixelSource='',[string]$CartoonSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage,[switch]$TrackerReacquire)
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -14,6 +14,11 @@ function Resolve-ProbeSource([string]$Default,[string]$Override){
 $rtl=if($Unit -eq 'tracker'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vision_sad_tracker.v' $TrackerSource}elseif($Unit -eq 'motion'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vision_motion_diff.v' $MotionSource}else{Resolve-ProbeSource 'rtl/analytics/face_cnn/yunet_dot4.v' $DotSource}
 $hash=(Get-FileHash -LiteralPath $rtl -Algorithm SHA256).Hash
 $files=@($rtl);$top='yunet_dot4'
+if($Unit -eq 'hmi'){$files=@((Resolve-ProbeSource 'rtl/control/hmi_control_link.v' ''),(Resolve-ProbeSource 'rtl/control/vision_uart_8n1.v' ''));$top='hmi_control_link'}
+if($Unit -eq 'pixel'){
+ $rtl=Resolve-ProbeSource 'rtl/isp/pixel_algorithm.v' $PixelSource
+ $files=@($rtl,(Resolve-ProbeSource 'rtl/isp/pixel_cartoon.v' $CartoonSource));$top='pixel_algorithm'
+}
 if($Unit -eq 'network'){
  $cnn=(Join-Path $root 'rtl/analytics/face_cnn').Replace('\','/')
  $wrapper=@"
@@ -106,7 +111,7 @@ set drHoldFix on
 [IO.File]::WriteAllText((Join-Path $run 'settings.cfg'),$settings,$utf8)
 [IO.File]::WriteAllText((Join-Path $run 'run.tcl'),"if {[catch {source {$flow}} message]} {puts stderr `$message; exit 1}`nexit 0",$utf8)
 $jobPath=Join-Path $root "reports/yunet_v45/${RunName}_job.json"
-$scope=if($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}elseif($Unit -eq 'motion'){'Standalone fixed-camera frame difference with external previous-frame RAM; no video or CNN included'}elseif($Unit -eq 'tracker'){'Standalone nine-bank SAD tracker with external frame; CNN, camera and display excluded'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
+$scope=if($Unit -eq 'hmi'){'Standalone serial screen UART/control/telemetry; not an integrated board image'}elseif($Unit -eq 'pixel'){'Standalone streaming pixel algorithms only; excludes ISP, CNN and display integration'}elseif($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}elseif($Unit -eq 'motion'){'Standalone fixed-camera frame difference with external previous-frame RAM; no video or CNN included'}elseif($Unit -eq 'tracker'){'Standalone nine-bank SAD tracker with external frame; CNN, camera and display excluded'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
 $job=[ordered]@{status='running';scope=$scope;unit=$Unit;verification_stage=$last;implemented=[bool]$Implement;run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');finished_utc=$null;source_sha256=$hashes;error=$null}
 [IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json),$utf8)
 Push-Location $run

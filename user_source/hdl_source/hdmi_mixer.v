@@ -40,6 +40,7 @@
     output reg        O_hdmi_de,
     output reg[23:0]  O_hdmi_data,
     output reg        O_hdmi_sof,
+    output wire [7:0] O_fps_digits,
     input wire I_target_found,I_compute_valid,
     input wire [15:0] I_target_x_digits,I_target_y_digits,I_compute_ms_digits
 );
@@ -82,6 +83,7 @@
     reg [6:0]  S_fps;
     reg [3:0]  S_fps_d1;
     reg [3:0]  S_fps_d0;
+    assign O_fps_digits={S_fps_d1,S_fps_d0};
 
     reg [3:0]  S_mode_1d;
     reg [3:0]  S_mode_2d;
@@ -130,8 +132,8 @@
     reg [1:0] state_f;reg [3:0] state_wait;
     reg [11:0] ph_f,pv_f;
     reg [23:0] hd_f,vd_f;
-    localparam CPX=IMG_WIDTH-688,CPY=IMG_HEIGHT-64;
-    localparam CBX=IMG_WIDTH-160,CBY=IMG_HEIGHT-224;
+    localparam CPX=IMG_WIDTH-528,CPY=IMG_HEIGHT-52;
+    localparam CBX=IMG_WIDTH-208,CBY=IMG_HEIGHT-240;
     integer c_x,c_y,c_slot,c_group,c_mx,c_my;
     reg [95:0] c_label;
     reg [191:0] c_text;
@@ -372,7 +374,6 @@
 function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:F_mode_name_char=0; 14:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 15:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
 function[7:0] F_isp_name_char;input[2:0] kind;input[2:0] slot;begin case(kind)0:case(slot)0: F_isp_name_char=8'h83;1: F_isp_name_char=8'h83;2: F_isp_name_char=8'ha1;3: F_isp_name_char=8'ha1;default:F_isp_name_char=0;endcase 1:case(slot)0: F_isp_name_char=8'h42;1: F_isp_name_char=8'h4c;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 2:case(slot)0: F_isp_name_char=8'h41;1: F_isp_name_char=8'h57;2: F_isp_name_char=8'h42;default:F_isp_name_char=0;endcase 3:case(slot)0: F_isp_name_char=8'h4c;1: F_isp_name_char=8'h53;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 4:case(slot)0: F_isp_name_char=8'h47;1: F_isp_name_char=8'h41;2: F_isp_name_char=8'h4d;3: F_isp_name_char=8'h4d;4: F_isp_name_char=8'h41;default:F_isp_name_char=0;endcase 5:case(slot)0: F_isp_name_char=8'h80;1: F_isp_name_char=8'h80;2: F_isp_name_char=8'h81;3: F_isp_name_char=8'h81;4: F_isp_name_char=8'h82;5: F_isp_name_char=8'h82;6: F_isp_name_char=8'h83;7: F_isp_name_char=8'h83;default:F_isp_name_char=0;endcase default:F_isp_name_char=0;endcase end endfunction
 function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step>=5;end endfunction
- function[8:0] unscale15;input[8:0] value;begin unscale15=({value,1'b0})/10'd3;end endfunction
     // ================= 级A: 区域判定与字符选择 (像素位置在 S_x_1d/S_y_1d) =================
     // 纯位置判定, 各区域显式互斥, 不存在旧实现的 S_osd_hit 反馈(组合环)
     always @(*) begin
@@ -390,63 +391,60 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                 v_region=1;
                 v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
-                if(S_x_1d>=IMG_WIDTH-164 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<84)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-(IMG_WIDTH-160);
-                    if(S_y_1d<52)begin
+                if(S_x_1d>=IMG_WIDTH-224 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<68)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-(IMG_WIDTH-220);
+                    if(S_y_1d<44)begin
                      c_y=S_y_1d-26;c_text="00 FPS                  ";c_text[191:184]="0"+S_fps_d1;c_text[183:176]="0"+S_fps_d0;
                     end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15))begin
-                     c_y=S_y_1d-58;c_text="----ms PROC             ";
+                     c_y=S_y_1d-50;c_text="----ms PROC             ";
                      if(compute_valid_f)begin
                       c_text[191:184]=bcd_ascii(compute_ms_f[15:12]);c_text[183:176]=bcd_ascii(compute_ms_f[11:8]);
                       c_text[175:168]=bcd_ascii(compute_ms_f[7:4]);c_text[167:160]=bcd_ascii(compute_ms_f[3:0]);
                      end
                     end else begin v_region=0;v_blend=0;end
-                end else if(S_x_1d>=192 && S_x_1d<360 && S_y_1d>=24 && S_y_1d<52)begin
-                    v_blend=1;c_x=unscale15(S_x_1d-196);c_y=unscale15(S_y_1d-26);
-                    v_region=5;v_row=c_y[3:0];
-                    if(c_x>=0 && c_x<16)begin
-                     v_char=c_x<8?(mode_f>=10?"1":"0"):"0"+(mode_f>=10?mode_f-10:mode_f);v_col=c_x&7;
-                    end else if(c_x>=24 && c_x<88)begin v_char=F_mode_name_char(mode_f,(c_x-24)>>4);v_col=(c_x-24)&15;end
-                    if(S_x_1d<196||S_y_1d<26||c_y>=16)v_char=0;
-                end else if(S_x_1d>=192 && S_x_1d<480 && S_y_1d>=56 && S_y_1d<84)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-58;c_text=192'ha2ffa3ff2020202020202020202020202020202020202020;
-                    if(panel_f[3])c_text=192'habff9dffacffadff20202020202020202020202020202020;
+                end else if(S_x_1d>=192 && S_x_1d<384 && S_y_1d>=24 && S_y_1d<44)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-26;c_text="                        ";
+                    c_text[191:184]=mode_f>=10?"1":"0";c_text[183:176]="0"+(mode_f>=10?mode_f-10:mode_f);
+                    c_text[167:160]=F_mode_name_char(mode_f,0);c_text[159:152]=F_mode_name_char(mode_f,1);
+                    c_text[151:144]=F_mode_name_char(mode_f,2);c_text[143:136]=F_mode_name_char(mode_f,3);
+                end else if(S_x_1d>=192 && S_x_1d<480 && S_y_1d>=48 && S_y_1d<68)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-50;c_text=192'ha2a320202020202020202020202020202020202020202020;
+                    if(panel_f[3])c_text=192'hab9dacad2020202020202020202020202020202020202020;
                     else if(mode_f==15)begin
-                     case(task_f)8:c_text=192'h9cff9dffb8ffb9ff20202020202020202020202020202020;10:c_text=192'hbaffbbffbcff8cff20202020202020202020202020202020;11:c_text=192'hbdffbeffbfff9dff20202020202020202020202020202020;12:c_text=192'hc0ffc1ffc2ffc3ff20202020202020202020202020202020;default:c_text=192'hc4ffc5ff9cff9dff20202020202020202020202020202020;endcase
+                     case(task_f)8:c_text=192'h9c9db8b92020202020202020202020202020202020202020;10:c_text=192'hbabbbc8c2020202020202020202020202020202020202020;11:c_text=192'hbdbebf9d2020202020202020202020202020202020202020;12:c_text=192'hc0c1c2c32020202020202020202020202020202020202020;default:c_text=192'hc4c59c9d2020202020202020202020202020202020202020;endcase
                     end else if(mode_f==11||mode_f==12||mode_f==14)begin
-                     case(state_f)1:begin c_text=192'ha4ffa5ffa6ff202020202020202020202020202020202020;v_compact_color=24'h60ff90;end 2,3:c_text=192'ha7ffa8ffa9ffaaff20202020202020202020202020202020;default:c_text=192'ha2ffa3ff2020202020202020202020202020202020202020;endcase
-                     if(!panel_f[2])c_text=192'haeff9dffafffb0ff20202020202020202020202020202020;
-                     else if(mode_f==12&&task_f==6)c_text=192'h99ffd4ffa6ff202020202020202020202020202020202020;
-                     else if((mode_f==12||mode_f==14)&&task_f==3)c_text=192'hb3ffb4ffb2ffb5ff20202020202020202020202020202020;
-                     else if((mode_f==12||mode_f==14)&&(task_f==4||task_f==5))c_text=192'hb6ffb7ffb1ffb2ff20202020202020202020202020202020;
+                     case(state_f)1:begin c_text=192'ha4a5a6202020202020202020202020202020202020202020;v_compact_color=24'h60ff90;end 2,3:c_text=192'ha7a8a9aa2020202020202020202020202020202020202020;default:c_text=192'ha2a320202020202020202020202020202020202020202020;endcase
+                     if(!panel_f[2])c_text=192'hae9dafb02020202020202020202020202020202020202020;
+                     else if(mode_f==12&&task_f==6)c_text=192'h99d4a6202020202020202020202020202020202020202020;
+                     else if((mode_f==12||mode_f==14)&&task_f==3)c_text=192'hb3b4b2b52020202020202020202020202020202020202020;
+                     else if((mode_f==12||mode_f==14)&&(task_f==4||task_f==5))c_text=192'hb6b7b1b22020202020202020202020202020202020202020;
                     end
-                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<480 && S_y_1d>=88 && S_y_1d<116)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-90;c_text="X:---- Y:----           ";
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<480 && S_y_1d>=72 && S_y_1d<92)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-74;c_text="X:---- Y:----           ";
                     if(target_found_f)begin
                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
                      c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
                     end
-                end else if(S_x_1d>=CPX && S_x_1d<CPX+672 && S_y_1d>=CPY && S_y_1d<CPY+54)begin
+                end else if(S_x_1d>=CPX && S_x_1d<CPX+512 && S_y_1d>=CPY && S_y_1d<CPY+40)begin
                     v_blend=1;v_region=6;
-                    c_group=S_x_1d<CPX+168?0:S_x_1d<CPX+336?1:S_x_1d<CPX+504?2:3;
-                    c_x=S_x_1d-CPX-(c_group<<7)-(c_group<<5)-(c_group<<3);c_y=S_y_1d-CPY;
-                    if(c_y<24)begin
+                    c_group=(S_x_1d-CPX)>>7;c_x=S_x_1d-CPX-(c_group<<7);c_y=S_y_1d-CPY;
+                    if(c_y<16)begin
                      case(c_group)
-                      0:c_text=panel_f[3]?192'h535734abff9dffc6ff202020202020202020202020202020:192'h535734abff9dffafff202020202020202020202020202020;
-                      1:c_text=panel_f[2]?192'h535733a4ffc7ffc6ff202020202020202020202020202020:192'h535733a4ffc7ffafff202020202020202020202020202020;
-                      2:c_text=panel_f[1]?192'h535732c8ffbaffaeff9dff20202020202020202020202020:192'h535732c8ffbaffc9ffd5ff20202020202020202020202020;
-                      3:c_text=panel_f[0]?192'h535731caffcbff9affaeff9dff2020202020202020202020:192'h535731caffcbff9affc9ffd5ff2020202020202020202020;
+                      0:c_text=panel_f[3]?192'hab9d20c62020202020202020202020202020202020202020:192'hab9d20af2020202020202020202020202020202020202020;
+                      1:c_text=panel_f[2]?192'hc7a520c62020202020202020202020202020202020202020:192'hc7a520af2020202020202020202020202020202020202020;
+                      2:c_text=panel_f[1]?192'hae9dc8ba20ae9d2020202020202020202020202020202020:192'hae9dc8ba20c9d52020202020202020202020202020202020;
+                      3:c_text=panel_f[0]?192'hcacb9a20ae9d202020202020202020202020202020202020:192'hcacb9a20c9d5202020202020202020202020202020202020;
                      endcase
                      v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
-                    end else if(c_y>=30)begin
-                     c_y=c_y-30;
-                     if(panel_f[3])case(c_group)0:c_text=192'h4b34ccffcdff202020202020202020202020202020202020;1:c_text=192'h4b33ccffceff202020202020202020202020202020202020;2:c_text=192'h4b32ccffcfff202020202020202020202020202020202020;3:c_text=192'h4b31ccffd0ff202020202020202020202020202020202020;endcase
-                     else case(c_group)0:c_text=mode_f==15?192'h4b34b6ffd1ff202020202020202020202020202020202020:(mode_f==12||mode_f==14)?192'h4b34b1ffb2ff202020202020202020202020202020202020:192'h4b34c5ff2020202020202020202020202020202020202020;1:c_text=192'h4b33c5ff2020202020202020202020202020202020202020;2:c_text=192'h4b32cfffd2ffd3ff20202020202020202020202020202020;3:c_text=192'h4b31ceffd2ffd3ff20202020202020202020202020202020;endcase
+                    end else if(c_y>=22)begin
+                     c_y=c_y-22;
+                     if(panel_f[3])case(c_group)0:c_text=192'hcccd20202020202020202020202020202020202020202020;1:c_text=192'hccce20202020202020202020202020202020202020202020;2:c_text=192'hcccf20202020202020202020202020202020202020202020;3:c_text=192'hccd020202020202020202020202020202020202020202020;endcase
+                     else case(c_group)0:c_text=mode_f==15?192'hb6d120202020202020202020202020202020202020202020:(mode_f==12||mode_f==14)?192'hb1b220202020202020202020202020202020202020202020:192'hc52020202020202020202020202020202020202020202020;1:c_text=192'hc52020202020202020202020202020202020202020202020;2:c_text=192'hcfd2d3202020202020202020202020202020202020202020;3:c_text=192'hced2d3202020202020202020202020202020202020202020;endcase
                     end else c_text=0;
-                end else if(S_x_1d>=CBX && S_x_1d<CBX+144 && S_y_1d>=CBY && S_y_1d<CBY+150)begin
-                    v_blend=1;c_x=unscale15(S_x_1d-CBX);c_y=unscale15(S_y_1d-CBY);
-                    if(c_y>=76 && c_y<92)begin
-                     v_region=6;c_x=(S_x_1d-CBX);c_y=(S_y_1d-CBY)-114;c_text="H0000 V0000             ";
+                end else if(S_x_1d>=CBX && S_x_1d<CBX+192 && S_y_1d>=CBY && S_y_1d<CBY+176)begin
+                    v_blend=1;c_x=(S_x_1d-CBX)>>1;c_y=(S_y_1d-CBY)>>1;
+                    if(c_y>=76 && c_y<84)begin
+                     v_region=6;c_x=(S_x_1d-CBX);c_y=(S_y_1d-CBY)-152;c_text="H0000 V0000             ";
                      c_text[183:176]="0"+hd_f[15:12];c_text[175:168]="0"+hd_f[11:8];c_text[167:160]="0"+hd_f[7:4];c_text[159:152]="0"+hd_f[3:0];
                      c_text[135:128]="0"+vd_f[15:12];c_text[127:120]="0"+vd_f[11:8];c_text[119:112]="0"+vd_f[7:4];c_text[111:104]="0"+vd_f[3:0];
                     end else begin
@@ -456,10 +454,10 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                 end
                 if(v_region==6)begin
                     if(c_x<0||c_y<0)begin v_char=0;end else begin
-                     c_x=unscale15(c_x);c_y=unscale15(c_y);c_slot=c_x>>3;v_col=c_x&7;v_row=c_y[3:0];
+                     c_slot=c_x>>4;v_col=c_x&15;v_row=c_y[3:0];
                      if(c_y<16&&c_slot<24)begin
                       v_char=c_text>>(8*(23-c_slot));
-                      if(v_char==8'hff&&c_slot>0)begin v_char=c_text>>(8*(24-c_slot));v_col=8+(c_x&7);end
+
                      end
                     end
                 end

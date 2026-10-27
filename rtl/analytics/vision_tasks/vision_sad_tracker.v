@@ -85,8 +85,24 @@
  wire signed [8:0] scoring_gradient=EXTERNAL_TEMPLATES?search_gradient:grad;
  wire signed [8:0] sg=$signed({1'b0,seed_value})-$signed({1'b0,a});
  wire [8:0] texture=sg[8]?-sg:sg;
- wire [17:0] final_score=SCALE_ENABLE?(root_score[0]<=root_score[1]?root_score[0]:root_score[1]):(mid_score[0]<=mid_score[1]?mid_score[0]:mid_score[1]);
- wire [3:0] final_bank=SCALE_ENABLE?(root_score[0]<=root_score[1]?root_bank[0]:root_bank[1]):(mid_score[0]<=mid_score[1]?mid_bank[0]:mid_bank[1]);
+ // Shared-template path accumulates two lanes per returned word. Distributed
+ // sums are initialized by idx0 writes; no bulk reset or extra line/frame RAM.
+ (* ram_style="dram" *) reg[16:0] even_sums[0:TEMPLATE_WORDS-1],odd_sums[0:TEMPLATE_WORDS-1];
+ function[8:0] gradient_error;input signed[8:0] aa,bb;reg signed[9:0] d;
+ begin d=$signed({aa[8],aa})-$signed({bb[8],bb});gradient_error=d[9]?-d:d;end
+ endfunction
+ wire[16:0] even_next=(idx==0?17'd0:even_sums[template_word])+{8'd0,gradient_error(search_gradient,$signed(shared_read_word[8:0]))};
+ wire[16:0] odd_next=(idx==0?17'd0:odd_sums[template_word])+{8'd0,gradient_error(search_gradient,$signed(shared_read_word[24:16]))};
+ reg[16:0] even_final,odd_final;reg[17:0] streamed_score;reg[3:0] streamed_bank;
+ wire odd_valid=({template_word,1'b0}+1)<LANES;
+ wire choose_even=!odd_valid||even_final<=odd_final;
+ wire[16:0] word_score=choose_even?even_final:odd_final;
+ wire[3:0] word_bank={template_word,1'b0}+!choose_even;
+ always @(posedge clk)if(EXTERNAL_TEMPLATES&&state==TPL_CAPTURE)begin
+  even_sums[template_word]<=even_next;odd_sums[template_word]<=odd_next;
+ end
+ wire [17:0] final_score=EXTERNAL_TEMPLATES?streamed_score:SCALE_ENABLE?(root_score[0]<=root_score[1]?root_score[0]:root_score[1]):(mid_score[0]<=mid_score[1]?mid_score[0]:mid_score[1]);
+ wire [3:0] final_bank=EXTERNAL_TEMPLATES?streamed_bank:SCALE_ENABLE?(root_score[0]<=root_score[1]?root_bank[0]:root_bank[1]):(mid_score[0]<=mid_score[1]?mid_bank[0]:mid_bank[1]);
  wire far_peak=px+2<bx||bx+2<px||py+2<byy||byy+2<py;
  wire [18:0] gap={1'b0,second}-{1'b0,best};
  // One byte write port, existing four-bank word read. Mode 12 exclusively
@@ -143,7 +159,7 @@
   if(!rst_n)begin
    state<=IDLE;pending<=1;point_b<=0;missed_frames<=0;recovering<=0;verify_pending<=0;scan_x<=0;scan_y<=0;verify_x<=0;verify_y<=0;capture_addr<=0;read_addr<=0;pixel_addr<=0;
    a<=0;idx<=0;bank<=0;best_bank<=0;
-   template_word<=0;score_byte<=0;score_lo_byte<=0;score_mid_byte<=0;search_gradient<=0;
+   template_word<=0;even_final<=0;odd_final<=0;streamed_score<=18'h3ffff;streamed_bank<=0;score_byte<=0;score_lo_byte<=0;score_mid_byte<=0;search_gradient<=0;
    p0<=0;p1<=0;p2<=0;seed_value<=0;seed_top<=0;seed_bottom<=0;qx<=0;qy<=0;fx<=0;fy<=0;
    energy<=0;best<=0;second<=0;candidate_index<=0;peak_index<=0;
    for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=0;
@@ -162,7 +178,7 @@
     end
     INIT:begin
      for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=0;
-     energy<=0;idx<=0;bank<=0;candidate_index<=0;best<=18'h3ffff;second<=18'h3ffff;
+     energy<=0;idx<=0;bank<=0;candidate_index<=0;best<=18'h3ffff;second<=18'h3ffff;streamed_score<=18'h3ffff;streamed_bank<=0;
      if(pending)begin point_b<=0;state<=COORD;end else if(REACQUIRE_ENABLE&&recovering&&!verify_pending)begin
       lx<=scan_x;rx<=scan_x+2*RADIUS>WIDTH-17?WIDTH-17:scan_x+2*RADIUS;
       ty<=scan_y;by<=scan_y+2*RADIUS>HEIGHT-16?HEIGHT-16:scan_y+2*RADIUS;
@@ -201,7 +217,11 @@
     RA:begin a<=frame_q;read_addr<=pixel_addr+1'b1;state<=WB;end
     WB:state<=RB;
     RB,TPL_ACCUM:begin
-     if(state==RB&&EXTERNAL_TEMPLATES)begin search_gradient<=grad;template_word<=0;state<=TPL_WAIT;end
+     if(state==TPL_ACCUM&&EXTERNAL_TEMPLATES)begin
+      if({1'b0,word_score}<streamed_score)begin streamed_score<={1'b0,word_score};streamed_bank<=word_bank;end
+      if(template_word==TEMPLATE_WORDS-1)state<=DONE;
+      else begin template_word<=template_word+1'b1;state<=TPL_WAIT;end
+     end else if(state==RB&&EXTERNAL_TEMPLATES)begin search_gradient<=grad;template_word<=0;state<=TPL_WAIT;end
      else begin
       for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=lane_sad[lane]+lane_error[lane*10+:10];
       if(idx==255)state<=REDPAIR;else begin
@@ -211,8 +231,11 @@
     end
     TPL_WAIT:state<=TPL_CAPTURE;
     TPL_CAPTURE:begin
-     if(template_word==TEMPLATE_WORDS-1)state<=TPL_ACCUM;
-     else begin template_word<=template_word+1'b1;state<=TPL_WAIT;end
+     if(idx==255)begin even_final<=even_next;odd_final<=odd_next;state<=TPL_ACCUM;end
+     else if(template_word!=TEMPLATE_WORDS-1)begin template_word<=template_word+1'b1;state<=TPL_WAIT;end
+     else begin
+      idx<=idx+1'b1;pixel_addr<=pixel_addr+(idx[3:0]==15?WIDTH-15:1);read_addr<=pixel_addr+(idx[3:0]==15?WIDTH-15:1);state<=WA;
+     end
     end
     REDPAIR:begin
      for(j=0;j<PAIRS;j=j+1)begin
@@ -243,7 +266,7 @@
     SCORE_WRITE:if(score_byte==2)state<=NEXT;else score_byte<=score_byte+1'b1;
     NEXT:begin
      if(cx==rx&&cy==by)state<=PEAK;else begin
-      candidate_index<=candidate_index+1'b1;idx<=0;
+      candidate_index<=candidate_index+1'b1;idx<=0;streamed_score<=18'h3ffff;streamed_bank<=0;
       for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=0;
       if(cx==rx)begin cx<=lx;cy<=cy+1'b1;pixel_addr<=(cy+1'b1)*WIDTH+lx;read_addr<=(cy+1'b1)*WIDTH+lx;end
       else begin cx<=cx+1'b1;pixel_addr<=cy*WIDTH+cx+1'b1;read_addr<=cy*WIDTH+cx+1'b1;end state<=WA;

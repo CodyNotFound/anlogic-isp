@@ -17,6 +17,7 @@ module design_top_wrapper (
     input  wire [3:0] I_switch,
     output wire       O_screen_pwm,
     output wire       O_servo_h, O_servo_v,
+    input wire I_hmi_rx,output wire O_hmi_tx,
     output wire [3:0] O_led,
     output wire [7:0] O_seg, O_sel,
     output wire       O_buzz,               // 板载蜂鸣器(C12), 按键哔一声反馈
@@ -95,7 +96,7 @@ module design_top_wrapper (
     // Application layer: mode control, pixel algorithms, Logo, and HDMI
     // composition. It runs in the platform-provided HDMI pixel clock domain.
     // v45 isolated candidate: compile the actual CNN replacement, not both cores.
-    vision_pipeline #(.FACE_CNN_ENABLE(1)) u_vision_pipeline (
+    vision_pipeline #(.FACE_CNN_ENABLE(1),.ENABLE_HMI(1)) u_vision_pipeline (
         .clk             (hdmi_pixel_clk),
         .rst_n           (hdmi_rst_n),
         .switches_n      (I_switch),
@@ -116,7 +117,8 @@ module design_top_wrapper (
         .frame_stat_toggle(hdmi_ae_stat_toggle),
         .isp_demo_sel(isp_demo_sel),
         .servo_pwm_h(O_servo_h),.servo_pwm_v(O_servo_v),
-        .panel_leds(O_led),.panel_segments(O_seg),.panel_selects(O_sel)
+        .panel_leds(O_led),.panel_segments(O_seg),.panel_selects(O_sel),
+        .hmi_rx(I_hmi_rx),.hmi_tx(O_hmi_tx)
     );
 
     // 板载蜂鸣器: 任意K1-K4按下沿哔~30ms@2.7kHz (板上SW5为物理使能开关, 低有效无源)

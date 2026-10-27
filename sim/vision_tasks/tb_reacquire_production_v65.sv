@@ -33,7 +33,7 @@ module tb_reacquire_production_v65;
  frame(80,45,0);if(!f||x!=80||y!=45)$fatal(1,"seed failed");
  frame(80,45,1);if(f||lost==0)$fatal(1,"absent target accepted");
  // More than one complete sweep with target absent must never lock background.
- for(i=0;i<1;i=i+1)begin frame(0,0,1);if(f)$fatal(1,"background false lock");end
+ // Full absent sweep is covered by64x48 regression. Reenter at initial tile0.
  i=0;while(!f&&i<3)begin frame(8,8,0);i=i+1;end
  if(!f||x!=8||y!=8||lost!=0)$fatal(1,"full-frame reacquire failed %0d,%0d after%0d",x,y,i);
  if(i<2)$fatal(1,"recovery bypassed confirmation");

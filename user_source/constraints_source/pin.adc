@@ -49,3 +49,7 @@ set_pin_assignment { O_sel[4] } { LOCATION = B16; IOSTANDARD = LVCMOS33; DRIVEST
 set_pin_assignment { O_sel[5] } { LOCATION = A15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; PULLTYPE = NONE; }
 set_pin_assignment { O_sel[6] } { LOCATION = B15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; PULLTYPE = NONE; }
 set_pin_assignment { O_sel[7] } { LOCATION = A14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; PULLTYPE = NONE; }
+
+# HMI reserved J1-3 RX E12 / J1-4 TX E16. FPGA 3.3V logic only.
+set_pin_assignment { I_hmi_rx } { LOCATION = E12; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { O_hmi_tx } { LOCATION = E16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; PULLTYPE = NONE; }
