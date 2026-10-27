@@ -20,8 +20,8 @@ try{
   & (Join-Path $root 'td_project/build_colorshading.ps1') @buildArguments
   if($stage -eq 'Synthesis'){
    $area=[IO.File]::ReadAllText((Join-Path $root "td_project/$RunName/syn/camera_to_dsi_display_gate.area"))
-   foreach($limit in @(@('slice\*?',21216),@('eram',108),@('dsp',40))){
-    $m=[regex]::Match($area,('(?m)^#'+$limit[0]+'\s+(\d+)'))
+   foreach($limit in @(@('slice\*?',21216),@('eram',108),@('dsp',40),@('used ram',8112))){
+    $m=[regex]::Match($area,('(?m)^\s*#'+$limit[0]+'\s+(\d+)'))
     if(-not $m.Success){throw "Missing resource metric: $($limit[0])"}
     if([int]$m.Groups[1].Value -gt $limit[1]){
      if($AllowSlicePackingProbe -and $limit[0] -eq 'slice\*?'){

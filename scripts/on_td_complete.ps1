@@ -20,7 +20,7 @@ $errors=[Collections.Generic.List[string]]::new()
 $result=[ordered]@{
  status='checking'; completed_utc=[DateTime]::UtcNow.ToString('o'); run=$RunName
  process_id=$TdProcessId; setup_wns_ns=$null; setup_tns_ns=$null
- hold_wns_ns=$null; hold_tns_ns=$null; slices=$null; ram=$null; dsp=$null
+ hold_wns_ns=$null; hold_tns_ns=$null; slices=$null; ram=$null; dsp=$null; memory_slices=$null
  source_files_checked=0; bit_path=(Join-Path $phy 'camera_to_dsi_display.bit')
  bit_bytes=0; bit_sha256=$null; errors=@()
 }
@@ -41,8 +41,8 @@ try{
  $areaFile=Join-Path $phy 'camera_to_dsi_display_phy.area'
  if(Test-Path -LiteralPath $areaFile){
   $area=[IO.File]::ReadAllText($areaFile)
-  foreach($pair in @(@('slice','slices'),@('eram','ram'),@('dsp','dsp'))){
-   $match=[regex]::Match($area,('(?m)^#'+$pair[0]+'\s+(\d+)'))
+  foreach($pair in @(@('slice','slices'),@('eram','ram'),@('dsp','dsp'),@('used ram','memory_slices'))){
+   $match=[regex]::Match($area,('(?m)^\s*#'+$pair[0]+'\s+(\d+)'))
    if($match.Success){$result[$pair[1]]=[int]$match.Groups[1].Value}
   }
  }
@@ -58,8 +58,8 @@ try{
   }
  }else{$errors.Add('Source snapshot missing')}
  if($result.source_files_checked -eq 0){$errors.Add('No source files were verified')}
- if($null -eq $result.slices -or $null -eq $result.ram -or $null -eq $result.dsp){$errors.Add('Final resource report is incomplete')}
- elseif($result.slices -gt 21216 -or $result.ram -gt 108 -or $result.dsp -gt 40){$errors.Add('Final resource utilization exceeds the device')}
+ if($null -eq $result.slices -or $null -eq $result.ram -or $null -eq $result.dsp -or $null -eq $result.memory_slices){$errors.Add('Final resource report is incomplete')}
+ elseif($result.slices -gt 21216 -or $result.ram -gt 108 -or $result.dsp -gt 40 -or $result.memory_slices -gt 8112){$errors.Add('Final resource utilization exceeds the device')}
  if(Test-Path -LiteralPath $result.bit_path){
   $result.bit_bytes=(Get-Item -LiteralPath $result.bit_path).Length
   $result.bit_sha256=(Get-FileHash -LiteralPath $result.bit_path -Algorithm SHA256).Hash
@@ -73,7 +73,7 @@ $reportPath=Join-Path $compile ($version+'_completion.md')
 [IO.File]::WriteAllText($jsonPath,($result|ConvertTo-Json -Depth 6),$utf8)
 $lines=@(("# colorshading "+$version+" 完成触发结果"),'',"状态：$($result.status)",
  "最终 STA：SWNS $($result.setup_wns_ns) ns，STNS $($result.setup_tns_ns) ns；HWNS $($result.hold_wns_ns) ns，HTNS $($result.hold_tns_ns) ns。",
- "资源：$($result.slices) slices，$($result.ram) RAM，$($result.dsp)/40 DSP。",
+ "资源：$($result.slices) slices，$($result.ram) RAM，$($result.dsp)/40 DSP，$($result.memory_slices)/8112 M-Slice。",
  "源快照校验：$($result.source_files_checked) 个文件。",
  "bit：$($result.bit_path)","大小：$($result.bit_bytes) bytes；SHA256：$($result.bit_sha256)。",'',
  '本轮修改与仿真依据以对应版本文档、回归日志和源文件快照为准。',

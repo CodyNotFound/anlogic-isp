@@ -56,6 +56,13 @@
       "source_commit": "730466a4f44aafeef02a05c7b5bd0ea4fdc29211",
       "message": "perf: CNN参数存储——小容量ROM映射逻辑资源",
       "changed_files": 6,
+      "removed_files": 0,
+      "destination_commit": "6732125272a95fc0a14984b6c4474d758749cfcc"
+    },
+    {
+      "source_commit": "616824f63c66c78b7acba9fb979869d5d3118476",
+      "message": "perf: CNN缓存布局——调整存储银行并验证完整定点网络",
+      "changed_files": 5,
       "removed_files": 0
     }
   ]

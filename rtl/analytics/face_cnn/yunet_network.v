@@ -19,7 +19,9 @@ module yunet_network #(
   PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21;
  reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
- (* ram_style="bram" *) reg [7:0] cache0[0:1919],cache1[0:1919],cache2[0:1919],cache3[0:1919];
+ (* ram_style="dram" *) reg [7:0] cache0[0:1919];
+ (* ram_style="bram" *) reg [7:0] cache1[0:1919],cache2[0:1919],cache3[0:1919];
+ reg [12:0] cache_read_address;
  (* ram_style="dram" *) reg [7:0] pixel0[0:15],pixel1[0:15],pixel2[0:15],pixel3[0:15];
  reg [7:0] cq0,cq1,cq2,cq3,pq0,pq1,pq2,pq3;
  (* ram_style="bram" *) reg signed [7:0] wm0[0:WEIGHT_DEPTH-1],wm1[0:WEIGHT_DEPTH-1],wm2[0:WEIGHT_DEPTH-1],wm3[0:WEIGHT_DEPTH-1];
@@ -122,7 +124,9 @@ module yunet_network #(
   instruction<=program_rom[operation_index];bias_q<=biases[bias_base+oc];shift_q<=shifts[bias_base+oc];
   aq0<=fm0[memory_address[15:2]];aq1<=fm1[memory_address[15:2]];aq2<=fm2[memory_address[15:2]];aq3<=fm3[memory_address[15:2]];
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
-  cq0<=cache0[cache_addr[12:2]];cq1<=cache1[cache_addr[12:2]];cq2<=cache2[cache_addr[12:2]];cq3<=cache3[cache_addr[12:2]];
+  // READ captures the address; WAIT reads RAM; FEED consumes its registered data.
+  cache_read_address<=cache_addr;
+  cq0<=cache0[cache_read_address[12:2]];cq1<=cache1[cache_read_address[12:2]];cq2<=cache2[cache_read_address[12:2]];cq3<=cache3[cache_read_address[12:2]];
   pq0<=pixel0[ic[5:2]];pq1<=pixel1[ic[5:2]];pq2<=pixel2[ic[5:2]];pq3<=pixel3[ic[5:2]];
   if(state==ROW_WRITE)begin cache0[fill_cache_addr[12:2]]<=aq0;cache1[fill_cache_addr[12:2]]<=aq1;cache2[fill_cache_addr[12:2]]<=aq2;cache3[fill_cache_addr[12:2]]<=aq3;end
   if(state==PIXEL_WRITE)begin pixel0[pixel_offset[5:2]]<=aq0;pixel1[pixel_offset[5:2]]<=aq1;pixel2[pixel_offset[5:2]]<=aq2;pixel3[pixel_offset[5:2]]<=aq3;end
