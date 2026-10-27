@@ -49,6 +49,13 @@
       "source_commit": "69a16fad61b161422820660f5f8bf6722a7fda2d",
       "message": "perf: 模板存储复用——共享CNN闲置特征空间",
       "changed_files": 17,
+      "removed_files": 0,
+      "destination_commit": "917a1792f8b741b73bc15161ac301fbfe692e21d"
+    },
+    {
+      "source_commit": "730466a4f44aafeef02a05c7b5bd0ea4fdc29211",
+      "message": "perf: CNN参数存储——小容量ROM映射逻辑资源",
+      "changed_files": 6,
       "removed_files": 0
     }
   ]

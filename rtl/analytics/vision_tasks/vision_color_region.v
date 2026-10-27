@@ -27,7 +27,7 @@
     reg [13:0] capture_addr,scan_addr,raw_addr,work_addr,queue_addr;
     (* ram_style="bram" *) reg raw_mask[0:N-1],work_mask[0:N-1];
     localparam QDEPTH=1<<$clog2(QUEUE_CAPACITY);
-    (* ram_style="bram" *) reg [14:0] queue[0:QDEPTH-1];
+    (* ram_style="dram" *) reg [14:0] queue[0:QDEPTH-1];
     reg raw_q,work_q;
     reg [14:0] queue_q,head,tail;
     reg [7:0] scan_x,scan_y,cur_x,cur_y;

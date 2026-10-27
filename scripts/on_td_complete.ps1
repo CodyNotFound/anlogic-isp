@@ -5,7 +5,8 @@ param(
 )
 $ErrorActionPreference='Stop'
 $ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot)
-if($ProjectRoot -notin @('[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]','[LOCAL_PATH]')){throw 'Unexpected project root'}
+$installedRoot='[LOCAL_PATH]'
+if($ProjectRoot -ne $installedRoot -and -not($ProjectRoot.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $ProjectRoot '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^colorshading_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $run=Join-Path $ProjectRoot "td_project/$RunName"
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}

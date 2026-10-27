@@ -17,7 +17,7 @@
  reg [2:0] missed_frames;
  reg [13:0] capture_addr,read_addr,pixel_addr;
  (* ram_style="bram" *) reg [7:0] frame[0:WIDTH*HEIGHT-1];
- (* ram_style="bram" *) reg [17:0] scores[0:(2*RADIUS+1)*(2*RADIUS+1)-1];
+ (* ram_style="dram" *) reg [17:0] scores[0:(2*RADIUS+1)*(2*RADIUS+1)-1];
  reg [7:0] frame_storage_q,a,idx,p0,p1,p2,seed_value;
  wire [7:0] frame_q=EXTERNAL_FRAME?shared_read_data:frame_storage_q;
  assign shared_write_en=EXTERNAL_FRAME&&state==CAPTURE&&sample_valid;
@@ -48,7 +48,7 @@
  assign lost_stage=0; // compatibility port; automatic reacquire is disabled
  genvar g;
  generate for(g=0;g<LANES;g=g+1)begin:g_template
-  (* ram_style="bram" *) reg signed [8:0] mem[0:255];
+  (* ram_style="dram" *) reg signed [8:0] mem[0:255];
   reg signed [8:0] q;
   wire signed [9:0] difference=$signed({grad[8],grad})-$signed({q[8],q});
   assign lane_error[g*10+:10]=difference[9]?-difference:difference;

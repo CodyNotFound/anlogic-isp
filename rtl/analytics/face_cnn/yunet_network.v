@@ -23,9 +23,9 @@ module yunet_network #(
  (* ram_style="dram" *) reg [7:0] pixel0[0:15],pixel1[0:15],pixel2[0:15],pixel3[0:15];
  reg [7:0] cq0,cq1,cq2,cq3,pq0,pq1,pq2,pq3;
  (* ram_style="bram" *) reg signed [7:0] wm0[0:WEIGHT_DEPTH-1],wm1[0:WEIGHT_DEPTH-1],wm2[0:WEIGHT_DEPTH-1],wm3[0:WEIGHT_DEPTH-1];
- (* ram_style="bram" *) reg [159:0] program_rom[0:PROGRAM_DEPTH-1];
- (* ram_style="bram" *) reg signed [31:0] biases[0:BIAS_DEPTH-1];
- (* ram_style="bram" *) reg signed [6:0] shifts[0:BIAS_DEPTH-1];
+ (* ram_style="dram" *) reg [159:0] program_rom[0:PROGRAM_DEPTH-1];
+ (* ram_style="dram" *) reg signed [31:0] biases[0:BIAS_DEPTH-1];
+ (* ram_style="dram" *) reg signed [6:0] shifts[0:BIAS_DEPTH-1];
  initial begin
   $readmemh(PROGRAM_FILE,program_rom);$readmemh(W0_FILE,wm0);$readmemh(W1_FILE,wm1);$readmemh(W2_FILE,wm2);$readmemh(W3_FILE,wm3);
   $readmemh(BIAS_FILE,biases);$readmemh(SHIFT_FILE,shifts);
