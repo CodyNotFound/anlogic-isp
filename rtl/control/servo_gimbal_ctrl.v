@@ -1,8 +1,9 @@
 // 50Hz atomic PWM, manual Vim keys and fresh visual-result integration.
-// Vertical 1000/2200us are collision points: stay strictly inside them.
+// User confirmed the revised assembly clears 900..2150us (2026-10-26).
+// manual_mode means an active directional override, not the SW4 key-map switch.
 module servo_gimbal_ctrl #(
  parameter integer CLK_HZ=75000000, HOLD_US=2000000, IMG_W=160, IMG_H=90,
- parameter integer H_MIN_US=500,H_MAX_US=2500,V_MIN_US=1050,V_MAX_US=2150,
+ parameter integer H_MIN_US=500,H_MAX_US=2500,V_MIN_US=900,V_MAX_US=2150,
  parameter integer CENTER_US=1500, STEP_MAX_US=32, AUTO_GAIN_SHIFT=1,
  parameter integer MANUAL_STEP_US=4, MANUAL_FAST_STEP_US=32, MANUAL_ACCEL_FRAMES=10,
  parameter integer H_INVERT=1, V_INVERT=0, AUTO_SLEW_US=8, AUTO_PLAN_US=120000, SLOW_TIMEOUT_US=650000

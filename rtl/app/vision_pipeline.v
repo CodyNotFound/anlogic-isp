@@ -46,11 +46,13 @@ module vision_pipeline #(
 );
     wire [3:0] feature_requested,physical_features;
     wire [3:0] physical_keys,hmi_keys,hmi_mode;
-    wire hmi_mode_set,hmi_action;
+    wire hmi_mode_set,hmi_action,hmi_connected;
     wire [7:0] fps_digits;
     wire [3:0] normal_buttons_n,keys_pressed;
     assign keys_pressed=(|physical_keys) ? physical_keys : hmi_keys;
     wire manual_mode=feature_requested[3];
+    // SW4 changes key routing only; idle direction keys never inhibit SW3.
+    wire manual_motion=manual_mode && (|keys_pressed);
     // SW3 gates automatic motion only. Analytics and compact OSD stay active.
     reg info_enabled_f;
     always @(posedge clk or negedge rst_n)begin
@@ -348,7 +350,7 @@ module vision_pipeline #(
         .out_vsync(face_vsync),.out_hsync(face_hsync),.out_de(face_de),.out_sof(face_sof),.out_eol(face_eol),.out_rgb(face_pixel));
 
     reg [11:0] motion_last_h,motion_last_v;reg [3:0] motion_settle_frames;
-    wire motion_camera_moving=manual_mode||motion_settle_frames!=0;
+    wire motion_camera_moving=manual_motion||motion_settle_frames!=0;
     always @(posedge clk or negedge rst_n)begin
      if(!rst_n)begin motion_last_h<=1500;motion_last_v<=1500;motion_settle_frames<=15;end
      else begin
@@ -362,7 +364,7 @@ module vision_pipeline #(
         .source_sof(video_sof),.source_eol(video_eol),.source_de(video_de),.source_rgb(pixel_in),
         .vsync(face_vsync),.hsync(face_hsync),.de(face_de),.sof(face_sof),.eol(face_eol),.rgb(face_pixel),
         .out_vsync(task_vsync),.out_hsync(task_hsync),.out_de(task_de),.out_sof(task_sof),.out_eol(task_eol),.out_rgb(task_pixel),
-        .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_mode),
+        .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_motion),
         .osd_enable(info_enabled_f),.hud_status(task_hud_status),
         .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
         .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles),.camera_moving(motion_camera_moving));
@@ -394,14 +396,14 @@ module vision_pipeline #(
     generate if(ENABLE_HMI)begin: g_hmi
      hmi_control_link u_link(.clk(clk),.rst_n(rst_n),.rx(hmi_rx),.tx(hmi_tx),
       .physical_features(physical_features),.features(feature_requested),.mode(mode),
-      .mode_set(hmi_mode_set),.mode_value(hmi_mode),.action(hmi_action),.keys(hmi_keys),
+      .mode_set(hmi_mode_set),.mode_value(hmi_mode),.action(hmi_action),.keys(hmi_keys),.connected(hmi_connected),.manual_active(manual_motion),
       .target_found(telemetry_found&&telemetry_mode==mode&&coordinate_found),
       .compute_valid(telemetry_compute_valid&&telemetry_mode==mode),.task_status(task_hud_status),.ctl_state(gimbal_state),
       .x_digits(target_x_digits),.y_digits(target_y_digits),.ms_digits(compute_ms_digits),
       .h_digits(h_digits[15:0]),.v_digits(v_digits[15:0]),.fps_digits(fps_digits));
     end else begin: g_no_hmi
      assign feature_requested=physical_features;assign hmi_tx=1'b1;
-     assign hmi_mode_set=0;assign hmi_mode=0;assign hmi_action=0;assign hmi_keys=0;
+     assign hmi_connected=0;assign hmi_mode_set=0;assign hmi_mode=0;assign hmi_action=0;assign hmi_keys=0;
     end endgenerate
 
     // Existing OSD remains last; analytics never process their own overlays.
@@ -428,7 +430,7 @@ module vision_pipeline #(
         .I_mode           (mode),
         .I_isp_demo       ({demo_active, demo_step}),
         .I_feature_enable (4'b0),
-        .I_info_enable(info_enabled_f),.I_panel_features(feature_requested),
+        .I_manual_active(manual_motion),.I_hmi_connected(hmi_connected),.I_info_enable(info_enabled_f),.I_panel_features(feature_requested),
         .I_ctl_state(gimbal_state),.I_task_status(task_hud_status),
         .I_target_found(telemetry_found&&telemetry_mode==mode&&coordinate_found),
         .I_compute_valid(telemetry_compute_valid&&telemetry_mode==mode),
@@ -453,7 +455,7 @@ module vision_pipeline #(
         .enable(gimbal_auto_enable),
         .result_valid(face_enable?face_position_valid:track_valid),.found(face_enable?face_found:track_found),
         .cx(face_enable?face_center_x[10:3]:track_x),.cy(face_enable?face_center_y[10:3]:track_y),
-        .manual_mode(manual_mode),.keys_pressed(keys_pressed),.pwm_h(servo_pwm_h),.pwm_v(servo_pwm_v),
+        .manual_mode(manual_motion),.keys_pressed(keys_pressed),.pwm_h(servo_pwm_h),.pwm_v(servo_pwm_v),
         .pulse_h_us(pulse_h),.pulse_v_us(pulse_v),.ctl_state(gimbal_state),.slow_source(face_enable&&FACE_CNN_ENABLE),.capture_valid(face_capture_started));
     gimbal_panel u_panel(.clk(clk),.rst_n(rst_n),.features(feature_requested),.pulse_h(pulse_h),.pulse_v(pulse_v),
         .leds(panel_leds),.segments(panel_segments),.selects(panel_selects),.h_digits(h_digits),.v_digits(v_digits),.display_h(display_h),.display_v(display_v));

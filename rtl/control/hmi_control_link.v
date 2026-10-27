@@ -5,17 +5,25 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  input wire target_found,compute_valid,input wire[3:0]task_status,input wire[1:0]ctl_state,
  input wire[15:0]x_digits,y_digits,h_digits,v_digits,ms_digits,input wire[7:0]fps_digits,
  output wire tx,output wire[3:0]features,output reg mode_set,output reg[3:0]mode_value,
- output reg action,output reg[3:0]keys);
+ output reg action,output reg[3:0]keys,output reg connected,input wire manual_active);
  localparam MS_TICKS=CLK_HZ/1000,MW=MS_TICKS<2?1:$clog2(MS_TICKS);
  reg[MW-1:0]ms_count;wire ms_tick=ms_count==MS_TICKS-1;
  reg[3:0]desired,physical_prev;wire[3:0]changed=physical_features^physical_prev;
- assign features={desired[3]||physical_features[3],desired[2:0]};
+ // Connection is an input-source lease, never an implicit manual-mode request.
+ // While connected, the latest screen command or physical switch edge wins.
+ // After the link expires, every feature follows its physical switch again.
+ assign features=connected?desired:physical_features;
  wire manual_mode=features[3];
  wire received,rx_error,tx_ready;wire[7:0]received_data,tx_data;
  wire tx_valid;
  vision_uart_8n1 #(.CLK_HZ(CLK_HZ),.BAUD(BAUD)) uart(clk,rst_n,rx,tx_valid,tx_data,tx_ready,tx,received,rx_error,received_data);
  reg[2:0]parse;reg[7:0]op,arg,check;reg[3:0]gap_ms;
  wire command=received&&parse==5&&received_data==8'h0d&&check==(8'hff^op^arg);
+ wire supported=((op==8'h01||op==8'h02||op==8'h15)&&arg==0)||
+                (op==8'h10&&arg<16&&arg!=13)||
+                (op>=8'h11&&op<=8'h14&&arg<2)||(op==8'h16&&arg<16);
+ wire accepted=command&&supported;
+ reg[9:0]link_ms;
  reg[7:0]lease_ms;
  function[3:0]safe_keys;input[3:0]value;begin
  safe_keys=value;if(value[3]&&value[0])begin safe_keys[3]=0;safe_keys[0]=0;end
@@ -44,34 +52,42 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  end
  integer i;
  always @(posedge clk or negedge rst_n)begin
-  if(!rst_n)begin desired<=0;physical_prev<=0;mode_set<=0;mode_value<=0;action<=0;keys<=0;lease_ms<=0;end
+  if(!rst_n)begin desired<=0;physical_prev<=0;mode_set<=0;mode_value<=0;action<=0;keys<=0;lease_ms<=0;connected<=0;link_ms<=0;end
   else begin
    physical_prev<=physical_features;mode_set<=0;action<=0;
+   if(!connected)desired<=physical_features;
    for(i=0;i<4;i=i+1)if(changed[i])desired[i]<=physical_features[i];
+   if(ms_tick&&connected)begin
+    if(link_ms==999)begin connected<=0;link_ms<=0;keys<=0;lease_ms<=0;end
+    else link_ms<=link_ms+1'b1;
+   end
    if(!manual_mode)begin keys<=0;lease_ms<=0;end
    else if(ms_tick&&lease_ms!=0)begin lease_ms<=lease_ms-1'b1;if(lease_ms==1)keys<=0;end
-   if(command)case(op)
+   if(accepted)begin
+   connected<=1;link_ms<=0;
+   case(op)
     8'h01:begin end // Status query is served by the next periodic snapshot (<=100ms).
     8'h10:if(arg<16&&arg!=13)begin mode_value<=arg[3:0];mode_set<=1;end
     8'h11:if(arg<2&&!changed[0])desired[0]<=arg[0];
     8'h12:if(arg<2&&!changed[1])desired[1]<=arg[0];
     8'h13:if(arg<2&&!changed[2])desired[2]<=arg[0];
     8'h14:if(arg<2&&!changed[3])desired[3]<=arg[0];
-    8'h15:if(arg==0&&!manual_mode&&(mode==12||mode==14||mode==15))action<=1;
+    8'h15:if(arg==0&&manual_active!==1'b1&&(mode==12||mode==14||mode==15))action<=1;
     8'h16:if(arg<16&&manual_mode)begin keys<=safe_keys(arg[3:0]);lease_ms<=arg==0?0:250;end
     default:begin end
    endcase
+   end
   end
  end
  // Four-digit values reuse the existing off-pixel formatting engines.
  function[15:0]small_bcd;input[3:0]value;begin small_bcd=value>=10?16'h0010+(value-10):{12'd0,value};end endfunction
  reg[3:0]ui_state;
  always @*begin
-  if(manual_mode)ui_state=4;else if(!features[2])ui_state=5;else if(target_found)ui_state=1;
+  if(manual_active===1'b1)ui_state=4;else if(!features[2])ui_state=5;else if(target_found)ui_state=1;
   else if(task_status==3)ui_state=6;else if(task_status==4||task_status==5)ui_state=7;
   else if(mode==12&&task_status==6)ui_state=2;else ui_state=ctl_state==0?0:3;
  end
- reg[207:0]snapshot;reg[7:0]sequence_bcd;reg[6:0]period_ms;
+ reg[223:0]snapshot;reg[7:0]sequence_bcd;reg[6:0]period_ms;
  reg running;reg[3:0]field;reg[4:0]index;
  wire[15:0]digits=snapshot>>(field*16);
  reg[3:0]digit;
@@ -82,7 +98,8 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  always @*begin
   case(index)
    0:byte_value="m";1:byte_value="a";2:byte_value="i";3:byte_value="n";
-   4,7:byte_value=".";5,8:byte_value="v";6:byte_value="A"+field;
+   // vN reports the link; vM remains the final atomic-snapshot commit marker.
+   4,7:byte_value=".";5,8:byte_value="v";6:byte_value=field==12?"N":field==13?"M":"A"+field;
    9:byte_value="a";10:byte_value="l";11:byte_value="=";
    12,13,14,15:byte_value="0"+digit;
    default:byte_value=8'hff;
@@ -94,11 +111,11 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
   else begin
    if(ms_tick&&period_ms<99)period_ms<=period_ms+1'b1;
    if(!running&&period_ms==99)begin
-    snapshot<={{8'd0,sequence_bcd},{15'd0,physical_features[3]},{8'd0,fps_digits},{15'd0,compute_valid},{15'd0,target_found},ms_digits,v_digits,h_digits,y_digits,x_digits,{12'd0,ui_state},small_bcd(features),small_bcd(mode)};
+    snapshot<={{8'd0,sequence_bcd},{15'd0,connected},{15'd0,physical_features[3]},{8'd0,fps_digits},{15'd0,compute_valid},{15'd0,target_found},ms_digits,v_digits,h_digits,y_digits,x_digits,{12'd0,ui_state},small_bcd(features),small_bcd(mode)};
     if(sequence_bcd[3:0]==9)sequence_bcd<=sequence_bcd[7:4]==9?0:{sequence_bcd[7:4]+4'd1,4'd0};else sequence_bcd<=sequence_bcd+1'b1;
     running<=1;period_ms<=0;field<=0;index<=0;
    end else if(running&&tx_ready)begin
-    if(index==18)begin index<=0;if(field==12)begin running<=0;field<=0;end else field<=field+1'b1;end
+    if(index==18)begin index<=0;if(field==13)begin running<=0;field<=0;end else field<=field+1'b1;end
     else index<=index+1'b1;
    end
   end

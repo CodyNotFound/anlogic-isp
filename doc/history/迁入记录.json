@@ -175,6 +175,13 @@
       "source_commit": "2eb8a1f46ba3df75dd79167aaed492e57757ca12",
       "message": "perf: 原生字模显示——移除分数字形缩放",
       "changed_files": 4,
+      "removed_files": 0,
+      "destination_commit": "067572013c49f0ce3abc179bf0675ffe14ca94fc"
+    },
+    {
+      "source_commit": "4207076652d51375ab5bf24943fd3265dd2fcb77",
+      "message": "fix: 方向键与自动跟随——分离用途切换并完善外部控制",
+      "changed_files": 20,
       "removed_files": 0
     }
   ]

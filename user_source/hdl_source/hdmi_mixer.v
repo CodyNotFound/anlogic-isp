@@ -41,6 +41,7 @@
     output reg[23:0]  O_hdmi_data,
     output reg        O_hdmi_sof,
     output wire [7:0] O_fps_digits,
+    input wire I_hmi_connected,I_manual_active,
     input wire I_target_found,I_compute_valid,
     input wire [15:0] I_target_x_digits,I_target_y_digits,I_compute_ms_digits
 );
@@ -125,22 +126,23 @@
     reg [3:0]  v_idx;
     reg v_blend;
     reg [23:0] v_compact_color,r1_compact_color;
-    reg info_f;reg target_found_f,compute_valid_f;
+    reg manual_f;reg hmi_f;reg info_f;reg target_found_f,compute_valid_f;
     reg [15:0] target_x_f,target_y_f,compute_ms_f;
     function [7:0] bcd_ascii;input [3:0] d;begin bcd_ascii=d<10?8'd48+{4'd0,d}:8'h2d;end endfunction
     reg [3:0] panel_f,mode_f,task_f;
     reg [1:0] state_f;reg [3:0] state_wait;
     reg [11:0] ph_f,pv_f;
     reg [23:0] hd_f,vd_f;
-    localparam CPX=IMG_WIDTH-416,CPY=IMG_HEIGHT-52;
-    localparam CBX=IMG_WIDTH-176,CBY=IMG_HEIGHT-212;
+    localparam CPX=IMG_WIDTH-432,CPY=IMG_HEIGHT-68;
+    localparam CBX=IMG_WIDTH-176,CBY=IMG_HEIGHT-224;
     integer c_x,c_y,c_slot,c_group,c_mx,c_my;
     reg c_small,c_header;
+    wire[3:0]status_first=mode_f==0?8:6;
     function[5:0] F_slot12;input[9:0] x;reg[19:0] p;
     begin p=({10'd0,x}<<9)+({10'd0,x}<<7)+({10'd0,x}<<5)+({10'd0,x}<<3)+({10'd0,x}<<1)+x;F_slot12=p[19:13];end endfunction
-    function[191:0] F_status;input[3:0] m,t,panel;input[1:0] state;begin
+    function[191:0] F_status;input[3:0] m,t,panel;input[1:0] state;input active;begin
      F_status=192'ha2a320202020202020202020202020202020202020202020;
-     if(panel[3])F_status=192'hab9dacad2020202020202020202020202020202020202020;
+     if(active)F_status=192'hab9dacad2020202020202020202020202020202020202020;
      else if(m==15)case(t)
        8:F_status=192'h9c9db8b92020202020202020202020202020202020202020;
        10:F_status=192'hbabbbc8c2020202020202020202020202020202020202020;
@@ -155,19 +157,20 @@
        else if((m==12||m==14)&&(t==4||t==5))F_status=192'hb6b7b1b22020202020202020202020202020202020202020;
      end
     end endfunction
-    wire[191:0]compact_status=F_status(mode_f,task_f,panel_f,state_f);
+    wire[191:0]compact_status=F_status(mode_f,task_f,panel_f,state_f,manual_f);
+    wire[2:0]status_count=compact_status[175:168]==8'h20 ? 2 : compact_status[167:160]==8'h20 ? 3 : 4;
 
     reg [95:0] c_label;
     reg [191:0] c_text;
     always @(posedge I_clk or negedge I_rst_n)begin
         if(!I_rst_n)begin
-            info_f<=0;target_found_f<=0;compute_valid_f<=0;target_x_f<=0;target_y_f<=0;compute_ms_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;state_wait<=0;
+            manual_f<=0;hmi_f<=0;info_f<=0;target_found_f<=0;compute_valid_f<=0;target_x_f<=0;target_y_f<=0;compute_ms_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;state_wait<=0;
             ph_f<=1500;pv_f<=1500;hd_f<=24'h001500;vd_f<=24'h001500;
         end else if(I_video_user)begin
-            info_f<=I_info_enable;target_found_f<=I_target_found;compute_valid_f<=I_compute_valid;
+            manual_f<=I_manual_active===1'b1;hmi_f<=I_hmi_connected===1'b1;info_f<=I_info_enable;target_found_f<=I_target_found;compute_valid_f<=I_compute_valid;
             target_x_f<=I_target_x_digits;target_y_f<=I_target_y_digits;compute_ms_f<=I_compute_ms_digits;panel_f<=I_panel_features;mode_f<=I_mode;
             task_f<=I_task_status;
-            if(I_mode!=mode_f || I_ctl_state==1 || I_panel_features[3] || !I_panel_features[2])begin state_f<=I_ctl_state;state_wait<=0;end
+            if(I_mode!=mode_f || I_ctl_state==1 || I_manual_active===1'b1 || !I_panel_features[2])begin state_f<=I_ctl_state;state_wait<=0;end
             else if(I_ctl_state==state_f)state_wait<=0;
             else if(state_wait==15)begin state_f<=I_ctl_state;state_wait<=0;end
             else state_wait<=state_wait+1'b1;
@@ -404,38 +407,41 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         v_lx = 12'd0; v_ly = 12'd0; v_idx = 4'd0;
         v_blend=0;v_compact_color=24'hf0f5f5;
         c_x=0;c_y=0;c_slot=0;c_group=0;c_label=0;c_text=0;c_small=0;c_header=0;
-        c_mx=24+((((2500-ph_f)<<1)+(2500-ph_f))>>6);c_my=8+((((pv_f-500)<<1)+(pv_f-500))>>6);
+        // Map reachable pulse ranges to a full square, with 1500us at the cross.
+        c_mx=ph_f<=500?120:ph_f>=2500?24:24+(((2500-ph_f)*49+512)>>10);
+        c_my=pv_f<=900?8:pv_f>=2150?104:pv_f<1500?56-(((1500-pv_f)*82+512)>>10):56+(((pv_f-1500)*76+512)>>10);
 
         if(COMPACT_OSD && S_video_de_1d)begin
-            // One backing plate spans the Logo and left-side text. Transparent
-            // Logo indices show this same plate; opaque palette colors survive.
-            if(S_x_1d>=16 && S_x_1d<404 && S_y_1d>=16 && S_y_1d<126 && (info_f||S_x_1d<178))v_blend=1;
             if(S_x_1d>=24 && S_x_1d<170 && S_y_1d>=24 && S_y_1d<118)begin
                 v_region=1;v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
-                if(S_x_1d>=184 && S_x_1d<400 && S_y_1d>=44 && S_y_1d<68)begin
-                    v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-48;c_text="                        ";
+                if(S_x_1d>=180 && S_x_1d<180+((status_first+status_count)<<4)+16 && S_y_1d>=24 && S_y_1d<52)begin
+                    v_blend=1;
+                    v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-30;c_text="                        ";
                     c_text[191:184]=mode_f>=10?"1":"0";c_text[183:176]="0"+(mode_f>=10?mode_f-10:mode_f);
                     c_text[167:160]=F_mode_name_char(mode_f,0);c_text[159:152]=F_mode_name_char(mode_f,1);
                     c_text[151:144]=F_mode_name_char(mode_f,2);c_text[143:136]=F_mode_name_char(mode_f,3);
-                    c_text[127:0]=compact_status[191:64];
-                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=184 && S_x_1d<400 && S_y_1d>=76 && S_y_1d<100)begin
-                    v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-80;c_text="X:---- Y:----           ";
+                    if(mode_f==0)c_text[127:0]=compact_status[191:64];else c_text[143:0]=compact_status[191:48];
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=180 && S_x_1d<404 && S_y_1d>=56 && S_y_1d<84)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-62;c_text="X:---- Y:----           ";
                     if(target_found_f)begin
                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
                      c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
                     end
-                end else if(S_x_1d>=IMG_WIDTH-208 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=16 && S_y_1d<68)begin
-                    v_blend=1;v_region=6;c_small=1;c_x=S_x_1d-(IMG_WIDTH-200);
+                end else if(hmi_f && S_x_1d>=180 && S_x_1d<292 && S_y_1d>=88 && S_y_1d<116)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-94;
+                    c_text=192'hd6d7d8d9dadb202020202020202020202020202020202020;
+                end else if(S_x_1d>=IMG_WIDTH-104 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=16 && S_y_1d<68)begin
+                    v_blend=1;v_region=6;c_small=1;c_x=S_x_1d-(IMG_WIDTH-96);
                     if(S_y_1d<42)begin c_y=S_y_1d-24;c_text="00 FPS                  ";c_text[191:184]="0"+S_fps_d1;c_text[183:176]="0"+S_fps_d0;end
                     else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15))begin
-                     c_y=S_y_1d-44;c_text="----ms PROC             ";
+                     c_y=S_y_1d-44;c_text="----ms                  ";
                      if(compute_valid_f)begin
                       c_text[191:184]=bcd_ascii(compute_ms_f[15:12]);c_text[183:176]=bcd_ascii(compute_ms_f[11:8]);c_text[175:168]=bcd_ascii(compute_ms_f[7:4]);c_text[167:160]=bcd_ascii(compute_ms_f[3:0]);
                      end
                     end else v_region=0;
-                end else if(S_x_1d>=CPX && S_x_1d<CPX+400 && S_y_1d>=CPY && S_y_1d<CPY+40)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-CPX;c_y=S_y_1d-CPY;
+                end else if(S_x_1d>=CPX && S_x_1d<CPX+416 && S_y_1d>=CPY && S_y_1d<CPY+56)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-CPX-8;c_y=S_y_1d-CPY-8;
                     if(c_x<80)c_group=0;else if(c_x<160)begin c_group=1;c_x=c_x-80;end
                     else if(c_x<288)begin c_group=2;c_x=c_x-160;end else begin c_group=3;c_x=c_x-288;end
                     if(c_y<16)begin
@@ -446,7 +452,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                       3:c_text=panel_f[0]?192'hcacb9a20ae9d202020202020202020202020202020202020:192'hcacb9a20c9d5202020202020202020202020202020202020;
                      endcase
                      v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
-                    end else if(c_y>=22)begin c_y=c_y-22;
+                    end else if(c_y>=24)begin c_y=c_y-24;
                      if(panel_f[3])case(c_group)
                       0:c_text=192'hcccd20202020202020202020202020202020202020202020;
                       1:c_text=192'hccce20202020202020202020202020202020202020202020;
@@ -459,15 +465,17 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                       3:c_text=192'hced2d3202020202020202020202020202020202020202020;
                      endcase
                     end else c_text=0;
+                    if(S_x_1d==CPX||S_x_1d==CPX+415||S_y_1d==CPY||S_y_1d==CPY+55)begin v_region=7;v_compact_color=24'h606870;end
                 end else if(S_x_1d>=CBX && S_x_1d<CBX+160 && S_y_1d>=CBY && S_y_1d<CBY+144)begin
                     v_blend=1;c_x=S_x_1d-CBX;c_y=S_y_1d-CBY;
-                    if(c_y>=120 && c_y<136)begin
+                    if(c_x==0||c_x==159||c_y==0||c_y==143)begin v_region=7;v_compact_color=24'h606870;end
+                    else if(c_y>=120 && c_y<136)begin
                      v_region=6;c_small=1;c_x=c_x-8;c_y=c_y-120;c_text="H0000 V0000             ";
                      c_text[183:176]="0"+hd_f[15:12];c_text[175:168]="0"+hd_f[11:8];c_text[167:160]="0"+hd_f[7:4];c_text[159:152]="0"+hd_f[3:0];
                      c_text[135:128]="0"+vd_f[15:12];c_text[127:120]="0"+vd_f[11:8];c_text[119:112]="0"+vd_f[7:4];c_text[111:104]="0"+vd_f[3:0];
                     end else begin
-                     if(((c_x==24||c_x==120||c_x==72)&&c_y>=8&&c_y<=104)||((c_y==8||c_y==32||c_y==56||c_y==80||c_y==104)&&c_x>=24&&c_x<=120))begin v_region=7;v_compact_color=24'h606870;end
-                     if(c_x+2>=c_mx&&c_x<=c_mx+2&&c_y+2>=c_my&&c_y<=c_my+2)begin v_region=7;v_compact_color=panel_f[3]?24'h30e0ff:24'hffb050;end
+                     if(((c_x==24||c_x==120||c_x==72)&&c_y>=8&&c_y<=104)||((c_y==8||c_y==56||c_y==104)&&c_x>=24&&c_x<=120))begin v_region=7;v_compact_color=24'h606870;end
+                     if(c_x+2>=c_mx&&c_x<=c_mx+2&&c_y+2>=c_my&&c_y<=c_my+2)begin v_region=7;v_compact_color=!panel_f[2]?24'hc0c0c0:state_f==1?24'h60ff90:24'hffb050;end
                     end
                 end
                 if(v_region==6 && c_x>=0 && c_y>=0)begin
@@ -478,7 +486,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     v_row=c_y[3:0];
                     if(c_y<16&&c_slot<24)begin
                      v_char=c_text>>(8*(23-c_slot));
-                     if(c_header&&c_slot>=8&&!panel_f[3]&&panel_f[2]&&state_f==1&&(mode_f==11||mode_f==12||mode_f==14))v_compact_color=24'h60ff90;
+                     if(c_header&&c_slot>=status_first&&!manual_f&&panel_f[2]&&state_f==1&&(mode_f==11||mode_f==12||mode_f==14))v_compact_color=24'h60ff90;
                     end
                 end
             end
