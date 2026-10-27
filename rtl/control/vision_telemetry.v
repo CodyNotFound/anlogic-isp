@@ -14,7 +14,7 @@ module vision_telemetry #(parameter CLK_HZ=75000000,WIDTH=1280,HEIGHT=720)(
  wire start=state==2||state==4||state==6;
  wire [19:0] value=state==2?{8'd0,saved_x}:state==4?{8'd0,saved_y}:{6'd0,milliseconds};
  wire [23:0] digits;
- vision_bcd convert(clk,rst_n,start,value,digits);
+ vision_bcd #(.BIN_W(14),.DEC_DIGITS(4)) convert(clk,rst_n,start,value,digits);
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    state<=0;wait_count<=0;saved_mode<=0;saved_found<=0;saved_compute_valid<=0;saved_x<=0;saved_y<=0;

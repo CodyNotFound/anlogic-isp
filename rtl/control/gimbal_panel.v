@@ -6,26 +6,30 @@ module gimbal_panel #(parameter CLK_HZ=75000000)(
  output reg [23:0] h_digits,v_digits,
  output reg [11:0] display_h,display_v
 );
- reg [4:0] convert_count;
+ reg [5:0] convert_count;
  reg [11:0] captured_h,captured_v;
- wire [23:0] h_work,v_work;
- wire start=convert_count==0;
+ reg [23:0] staged_h;
+ wire [23:0] digits;
+ wire snapshot=convert_count==0;
+ wire start=snapshot||convert_count==23;
+ wire [19:0] value=snapshot?{8'b0,pulse_h}:{8'b0,captured_v};
  assign leds=features;
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    convert_count<=0;captured_h<=1500;captured_v<=1500;display_h<=1500;display_v<=1500;
-   h_digits<=24'h001500;v_digits<=24'h001500;
+   h_digits<=24'h001500;v_digits<=24'h001500;staged_h<=24'h001500;
   end else begin
    convert_count<=convert_count+1'b1;
-   if(start)begin captured_h<=pulse_h;captured_v<=pulse_v;end
+   if(snapshot)begin captured_h<=pulse_h;captured_v<=pulse_v;end
+   if(convert_count==22)staged_h<=digits;
    // Publish the positions and their BCD representation as one coherent packet.
-   if(convert_count==22)begin
-    display_h<=captured_h;display_v<=captured_v;h_digits<=h_work;v_digits<=v_work;
+   if(convert_count==46)begin
+    display_h<=captured_h;display_v<=captured_v;h_digits<=staged_h;v_digits<=digits;
    end
   end
  end
- vision_bcd hconv(clk,rst_n,start,{8'b0,pulse_h},h_work);
- vision_bcd vconv(clk,rst_n,start,{8'b0,pulse_v},v_work);
+ // One engine formats both axes from the same snapshot, outside the pixel path.
+ vision_bcd #(.BIN_W(12),.DEC_DIGITS(4)) convert(clk,rst_n,start,value,digits);
  localparam SLOT=CLK_HZ/1000;
  localparam CW=(SLOT<2)?1:$clog2(SLOT);
  reg [CW-1:0] count;reg [2:0] index;

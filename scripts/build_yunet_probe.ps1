@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage)
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage,[switch]$TrackerReacquire)
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -40,6 +40,7 @@ module vision_tracker_probe(input wire clk,rst_n,reseed,frame_start,sample_valid
  .shared_read_addr(shared_read_addr),.shared_write_data(shared_write_data),.shared_read_data(shared_read_data));
 endmodule
 '@
+ if($TrackerReacquire){$wrapper=$wrapper.Replace('.SCALE_ENABLE(1),','.SCALE_ENABLE(1),.REACQUIRE_ENABLE(1),')}
  if($TrackerSharedStorage -and -not $TrackerExtendedInterface){throw 'Shared storage requires extended interface'}
  if($TrackerExtendedInterface){
   $wrapper=$wrapper.Replace('input wire [7:0] gray,shared_read_data,','input wire [7:0] gray,shared_read_data,input wire [31:0] shared_read_word,')

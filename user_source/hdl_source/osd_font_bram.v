@@ -59,7 +59,7 @@ module osd_font_bram (
   else if(I_char==8'h2E)char_idx=38;
   else if(I_char==8'h6D)char_idx=40;
   else if(I_char==8'h73)char_idx=41;
-  else if(I_char>=8'h80&&I_char<=8'hD3)char_idx={1'b0,I_char[6:0]}+7'd42;
+  else if(I_char>=8'h80&&I_char<=8'hD5)char_idx={1'b0,I_char[6:0]}+7'd42;
   else char_idx=39;
  end
 

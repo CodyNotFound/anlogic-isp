@@ -37,16 +37,16 @@ module servo_gimbal_ctrl #(
  wire fresh=result_valid && !valid_d;
  assign ctl_state=!enable||!seen ? 2'd0 : age_us>=HOLD_US ? 2'd3 :
                     (found && age_us<(slow?SLOW_TIMEOUT_US:200000) ? 2'd1:2'd2);
- function signed [6:0] correction;
-  input [7:0] pos;input integer mid,dead;input integer invert;
-  integer err,mag;
+ function signed [8:0] correction;
+  input [7:0] pos;input integer mid,dead;input integer invert;input slow_mode;
+  reg signed[9:0] err;reg[9:0] mag;
   begin
    err=pos-mid;mag=(err<0)?-err:err;
    if(mag<=dead)correction=0;
    else begin
     // Count only error outside the deadband: 1us near center, faster far away.
-    mag=(mag-dead+((1<<AUTO_GAIN_SHIFT)-1))>>AUTO_GAIN_SHIFT;
-    if(mag<1)mag=1;if(mag>STEP_MAX_US)mag=STEP_MAX_US;
+    mag=slow_mode?((mag-dead)<<1):(mag-dead+((1<<AUTO_GAIN_SHIFT)-1))>>AUTO_GAIN_SHIFT;
+    if(mag<1)mag=1;if(mag>(slow_mode?128:STEP_MAX_US))mag=slow_mode?128:STEP_MAX_US;
     correction=((err<0)^invert)?-mag:mag;
    end
   end
@@ -64,19 +64,18 @@ module servo_gimbal_ctrl #(
    approach=current+delta;
   end
  endfunction
- function integer slow_correction;
- input [7:0] pos;input integer mid,dead,invert;integer e,m;
- begin e=pos-mid;m=e<0?-e:e;m=m<=dead?0:(m-dead)*2;
- if(m>128)m=128;slow_correction=((e<0)^invert)?-m:m;end
+ function[11:0] goal_clamp;
+ input signed[13:0] value;input[11:0] lo,hi;
+ begin goal_clamp=value<$signed({2'b0,lo})?lo:value>$signed({2'b0,hi})?hi:value[11:0];end
  endfunction
- function integer bounded_delta;
- input integer goal,current;integer d;
- begin d=goal-current;bounded_delta=d>128?128:d< -128?-128:d;end
+ function signed[8:0] bounded_delta;
+ input[11:0] goal,current;reg signed[13:0] d;
+ begin d=$signed({2'b0,goal})-$signed({2'b0,current});bounded_delta=d>128?128:d< -128?-128:d;end
  endfunction
- integer target_h,target_v,delta_h,delta_v;
+ reg[11:0] target_h,target_v;reg signed[8:0] delta_h,delta_v;
  always @*begin
- target_h=clamp($signed({1'b0,capture_h})+slow_correction(cx,IMG_W/2,4,H_INVERT),H_MIN_US,H_MAX_US);
- target_v=clamp($signed({1'b0,capture_v})+slow_correction(cy,IMG_H/2,3,V_INVERT),V_MIN_US,V_MAX_US);
+ target_h=goal_clamp($signed({2'b0,(slow?capture_h:pulse_h_us)})+correction(cx,IMG_W/2,slow?4:8,H_INVERT,slow),H_MIN_US,H_MAX_US);
+ target_v=goal_clamp($signed({2'b0,(slow?capture_v:pulse_v_us)})+correction(cy,IMG_H/2,slow?3:6,V_INVERT,slow),V_MIN_US,V_MAX_US);
  delta_h=bounded_delta(target_h,pulse_h_us);delta_v=bounded_delta(target_v,pulse_v_us);
  end
  integer dh,dv;
@@ -112,8 +111,8 @@ module servo_gimbal_ctrl #(
       // Loss holds the last pulse indefinitely. Only a fresh accepted target
       // or an explicit manual command may move the axes; timeout never homes.
       if(slow && slow_left!=0 && found && age_us<SLOW_TIMEOUT_US)begin
-       pulse_h_us<=clamp($signed({1'b0,pulse_h_us})+(slow_neg_h?-$signed({1'b0,ramp_h[8:4]}):$signed({1'b0,ramp_h[8:4]})),H_MIN_US,H_MAX_US);
-       pulse_v_us<=clamp($signed({1'b0,pulse_v_us})+(slow_neg_v?-$signed({1'b0,ramp_v[8:4]}):$signed({1'b0,ramp_v[8:4]})),V_MIN_US,V_MAX_US);
+       pulse_h_us<=goal_clamp($signed({2'b0,pulse_h_us})+(slow_neg_h?-$signed({1'b0,ramp_h[8:4]}):$signed({1'b0,ramp_h[8:4]})),H_MIN_US,H_MAX_US);
+       pulse_v_us<=goal_clamp($signed({2'b0,pulse_v_us})+(slow_neg_v?-$signed({1'b0,ramp_v[8:4]}):$signed({1'b0,ramp_v[8:4]})),V_MIN_US,V_MAX_US);
        fraction_h<=ramp_h[3:0];fraction_v<=ramp_v[3:0];slow_left<=slow_left-1'b1;
       end else if(!slow && plan_active && pending && found)begin
        pulse_h_us<=approach(pulse_h_us,desired_h);
@@ -138,8 +137,8 @@ module servo_gimbal_ctrl #(
      slow_mag_h<=delta_h<0?-delta_h:delta_h;slow_neg_h<=delta_h<0;
      slow_mag_v<=delta_v<0?-delta_v:delta_v;slow_neg_v<=delta_v<0;
     end else slow_left<=0;
-    desired_h<=clamp($signed({1'b0,pulse_h_us})+correction(cx,IMG_W/2,8,H_INVERT),H_MIN_US,H_MAX_US);
-    desired_v<=clamp($signed({1'b0,pulse_v_us})+correction(cy,IMG_H/2,6,V_INVERT),V_MIN_US,V_MAX_US);
+    desired_h<=target_h;
+    desired_v<=target_v;
    end
   end
  end

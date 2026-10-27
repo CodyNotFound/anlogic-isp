@@ -34,7 +34,7 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     assign shared_write_addr=tracking?twaddr:region?rwaddr:mwaddr;
     assign shared_read_addr=tracking?traddr:region?rraddr:mraddr;
     assign shared_write_data=tracking?twdata:region?rwdata:mwdata;
-    vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3),.EXTERNAL_FRAME(SHARED_TRACK_FRAME),.EXTERNAL_TEMPLATES(SHARED_TRACK_FRAME),.EXTERNAL_SCORES(SHARED_TRACK_FRAME)) tracker(
+    vision_sad_tracker #(.WIDTH(WIDTH/8),.HEIGHT(HEIGHT/8),.SCALE_ENABLE(1),.RECOVERY_FRAMES(3),.REACQUIRE_ENABLE(1),.EXTERNAL_FRAME(SHARED_TRACK_FRAME),.EXTERNAL_TEMPLATES(SHARED_TRACK_FRAME),.EXTERNAL_SCORES(SHARED_TRACK_FRAME)) tracker(
         .clk(clk),.rst_n(rst_n&&tracking&&!abort),.reseed(action),.frame_start(fs),.sample_valid(sv),.frame_end(fe),.gray(gray),
         .result_valid(tv),.found(tf),.center_x(tx),.center_y(ty),.quality(tq),.best_sad(),.second_sad(),.busy(),.compute_cycles(tracker_cycles),
         .lost_stage(t_lost),.shared_write_en(twrite),.shared_write_addr(twaddr),

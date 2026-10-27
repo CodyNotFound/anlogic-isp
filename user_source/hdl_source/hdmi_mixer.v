@@ -130,7 +130,7 @@
     reg [1:0] state_f;reg [3:0] state_wait;
     reg [11:0] ph_f,pv_f;
     reg [23:0] hd_f,vd_f;
-    localparam CPX=IMG_WIDTH-592,CPY=IMG_HEIGHT-64;
+    localparam CPX=IMG_WIDTH-688,CPY=IMG_HEIGHT-64;
     localparam CBX=IMG_WIDTH-160,CBY=IMG_HEIGHT-224;
     integer c_x,c_y,c_slot,c_group,c_mx,c_my;
     reg [95:0] c_label;
@@ -369,7 +369,7 @@
 
     // 模式名称字符表, idx 超出名称长度返回 0(空白)
     // 模式名(中文两字, 0x80系字库码; 超出返回空白)
-function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:case(slot)0: F_mode_name_char=8'h99;1: F_mode_name_char=8'h9a;default:F_mode_name_char=0;endcase 14:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 15:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
+function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:F_mode_name_char=0; 14:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 15:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
 function[7:0] F_isp_name_char;input[2:0] kind;input[2:0] slot;begin case(kind)0:case(slot)0: F_isp_name_char=8'h83;1: F_isp_name_char=8'h83;2: F_isp_name_char=8'ha1;3: F_isp_name_char=8'ha1;default:F_isp_name_char=0;endcase 1:case(slot)0: F_isp_name_char=8'h42;1: F_isp_name_char=8'h4c;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 2:case(slot)0: F_isp_name_char=8'h41;1: F_isp_name_char=8'h57;2: F_isp_name_char=8'h42;default:F_isp_name_char=0;endcase 3:case(slot)0: F_isp_name_char=8'h4c;1: F_isp_name_char=8'h53;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 4:case(slot)0: F_isp_name_char=8'h47;1: F_isp_name_char=8'h41;2: F_isp_name_char=8'h4d;3: F_isp_name_char=8'h4d;4: F_isp_name_char=8'h41;default:F_isp_name_char=0;endcase 5:case(slot)0: F_isp_name_char=8'h80;1: F_isp_name_char=8'h80;2: F_isp_name_char=8'h81;3: F_isp_name_char=8'h81;4: F_isp_name_char=8'h82;5: F_isp_name_char=8'h82;6: F_isp_name_char=8'h83;7: F_isp_name_char=8'h83;default:F_isp_name_char=0;endcase default:F_isp_name_char=0;endcase end endfunction
 function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step>=5;end endfunction
  function[8:0] unscale15;input[8:0] value;begin unscale15=({value,1'b0})/10'd3;end endfunction
@@ -416,6 +416,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     end else if(mode_f==11||mode_f==12||mode_f==14)begin
                      case(state_f)1:begin c_text=192'ha4ffa5ffa6ff202020202020202020202020202020202020;v_compact_color=24'h60ff90;end 2,3:c_text=192'ha7ffa8ffa9ffaaff20202020202020202020202020202020;default:c_text=192'ha2ffa3ff2020202020202020202020202020202020202020;endcase
                      if(!panel_f[2])c_text=192'haeff9dffafffb0ff20202020202020202020202020202020;
+                     else if(mode_f==12&&task_f==6)c_text=192'h99ffd4ffa6ff202020202020202020202020202020202020;
                      else if((mode_f==12||mode_f==14)&&task_f==3)c_text=192'hb3ffb4ffb2ffb5ff20202020202020202020202020202020;
                      else if((mode_f==12||mode_f==14)&&(task_f==4||task_f==5))c_text=192'hb6ffb7ffb1ffb2ff20202020202020202020202020202020;
                     end
@@ -425,16 +426,16 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
                      c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
                     end
-                end else if(S_x_1d>=CPX && S_x_1d<CPX+576 && S_y_1d>=CPY && S_y_1d<CPY+54)begin
+                end else if(S_x_1d>=CPX && S_x_1d<CPX+672 && S_y_1d>=CPY && S_y_1d<CPY+54)begin
                     v_blend=1;v_region=6;
-                    c_group=S_x_1d<CPX+144?0:S_x_1d<CPX+288?1:S_x_1d<CPX+432?2:3;
-                    c_x=S_x_1d-CPX-(c_group<<7)-(c_group<<4);c_y=S_y_1d-CPY;
+                    c_group=S_x_1d<CPX+168?0:S_x_1d<CPX+336?1:S_x_1d<CPX+504?2:3;
+                    c_x=S_x_1d-CPX-(c_group<<7)-(c_group<<5)-(c_group<<3);c_y=S_y_1d-CPY;
                     if(c_y<24)begin
                      case(c_group)
                       0:c_text=panel_f[3]?192'h535734abff9dffc6ff202020202020202020202020202020:192'h535734abff9dffafff202020202020202020202020202020;
                       1:c_text=panel_f[2]?192'h535733a4ffc7ffc6ff202020202020202020202020202020:192'h535733a4ffc7ffafff202020202020202020202020202020;
-                      2:c_text=panel_f[1]?192'h535732c8ffbaffaeff202020202020202020202020202020:192'h535732c8ffbaffc9ff202020202020202020202020202020;
-                      3:c_text=panel_f[0]?192'h535731caffcbff9affaeff20202020202020202020202020:192'h535731caffcbff9affc9ff20202020202020202020202020;
+                      2:c_text=panel_f[1]?192'h535732c8ffbaffaeff9dff20202020202020202020202020:192'h535732c8ffbaffc9ffd5ff20202020202020202020202020;
+                      3:c_text=panel_f[0]?192'h535731caffcbff9affaeff9dff2020202020202020202020:192'h535731caffcbff9affc9ffd5ff2020202020202020202020;
                      endcase
                      v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
                     end else if(c_y>=30)begin

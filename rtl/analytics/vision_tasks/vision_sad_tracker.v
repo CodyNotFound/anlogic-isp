@@ -1,14 +1,17 @@
 // Frozen bilinear templates: 0,+/-6,+/-12,+/-18 deg, optional two scale banks.
-// Optional bounded recovery retries only the last local neighborhood; K4 reselects.
+// Optional tiled full-frame reacquisition reuses the same bounded score arena.
+// Recovery needs a stricter score and a second-frame local confirmation; K4 reselects.
 (* dsp_style="no" *) module vision_sad_tracker #(
- parameter WIDTH=160,HEIGHT=90,RADIUS=8,MIN_TEXTURE=1024,MAX_SAD=6144,MIN_GAP=256,ROTATION_ENABLE=1,SCALE_ENABLE=0,RECOVERY_FRAMES=0,EXTERNAL_FRAME=0,EXTERNAL_TEMPLATES=0,EXTERNAL_SCORES=0
+ parameter WIDTH=160,HEIGHT=90,RADIUS=8,MIN_TEXTURE=1024,MAX_SAD=6144,MIN_GAP=256,ROTATION_ENABLE=1,SCALE_ENABLE=0,RECOVERY_FRAMES=0,REACQUIRE_ENABLE=0,EXTERNAL_FRAME=0,EXTERNAL_TEMPLATES=0,EXTERNAL_SCORES=0
 )(input wire clk,rst_n,reseed,frame_start,sample_valid,frame_end,input wire [7:0] gray,
  output reg result_valid,found,output reg [7:0] center_x,center_y,quality,
- output reg [17:0] best_sad,second_sad,output wire busy,output reg [31:0] compute_cycles,output wire [1:0] lost_stage,
+ output reg [17:0] best_sad,second_sad,output wire busy,output wire [31:0] compute_cycles,output wire [1:0] lost_stage,
  output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
  output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word);
  localparam IDLE=0,CAPTURE=1,INIT=2,WA=3,RA=4,WB=5,RB=6,DONE=7,NEXT=8,PEAK=9,PWAIT=10,PREAD=11,DECIDE=12,
  COORD=13,ADDR=14,W0=15,R0=16,W1=17,R1=18,W2=19,R2=20,W3=21,R3=22,STORE=23,SEEDED=24,REDPAIR=25,REDMID=26,REDROOT=27,INTERP=28,TPL_WAIT=29,TPL_CAPTURE=30,TPL_ACCUM=31,TPL_WRITE_HI=32,SCORE_WRITE=33;
+ localparam WORK_BITS=$clog2((2*RADIUS+1)*(2*RADIUS+1)*5000+100000);
+ reg[WORK_BITS-1:0] work_count;assign compute_cycles=work_count;
  localparam LANES=SCALE_ENABLE?9:(ROTATION_ENABLE?7:1);
  localparam PAIRS=SCALE_ENABLE?8:4,MIDS=SCALE_ENABLE?4:2;
  localparam LAST_BANK=LANES-1;
@@ -27,6 +30,11 @@
  reg signed [8:0] search_gradient;
  reg pending,point_b;
  reg [2:0] missed_frames;
+ reg recovering,verify_pending;
+ reg [7:0] scan_x,scan_y,verify_x,verify_y;
+ wire [7:0] search_x=verify_pending?verify_x:center_x;
+ wire [7:0] search_y=verify_pending?verify_y:center_y;
+
  reg [13:0] capture_addr,read_addr,pixel_addr;
  (* ram_style="bram" *) reg [7:0] frame[0:WIDTH*HEIGHT-1];
  (* ram_style="dram" *) reg [17:0] scores[0:(2*RADIUS+1)*(2*RADIUS+1)-1];
@@ -45,6 +53,9 @@
  integer lane,j;
  reg [8:0] candidate_index,peak_index;
  reg [7:0] lx,rx,ty,by,cx,cy,bx,byy,px,py;
+ wire match_ok=best<=MAX_SAD&&second>=best+MIN_GAP;
+ wire recovery_ok=match_ok&&best<=MAX_SAD/2;
+ wire verify_near=bx+8<=verify_x+4&&verify_x<=bx+12&&byy+8<=verify_y+4&&verify_y<=byy+12;
  reg signed [14:0] qx,qy;
  reg [3:0] fx,fy;
  wire [16:0] seed_blend=seed_top*(5'd16-{1'b0,fy})+seed_bottom*fy+17'd128;
@@ -96,7 +107,7 @@
   (score_first||score_more)?(score_first?final_score[7:0]:score_byte==1?final_score[15:8]:{6'd0,final_score[17:16]}):gray;
  assign shared_read_addr=tpl_read?template_row+({12'd0,template_word}<<2):score_read?score_read_addr:{1'b0,read_addr};
  assign busy=state!=IDLE;
- assign lost_stage=0; // compatibility port; automatic reacquire is disabled
+ assign lost_stage=REACQUIRE_ENABLE&&recovering?(verify_pending?2'd1:2'd3):2'd0;
  genvar g;
  generate for(g=0;g<LANES;g=g+1)begin:g_template
   (* ram_style="dram" *) reg signed [8:0] mem[0:255];
@@ -130,7 +141,7 @@
  end endgenerate
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
-   state<=IDLE;pending<=1;point_b<=0;missed_frames<=0;capture_addr<=0;read_addr<=0;pixel_addr<=0;
+   state<=IDLE;pending<=1;point_b<=0;missed_frames<=0;recovering<=0;verify_pending<=0;scan_x<=0;scan_y<=0;verify_x<=0;verify_y<=0;capture_addr<=0;read_addr<=0;pixel_addr<=0;
    a<=0;idx<=0;bank<=0;best_bank<=0;
    template_word<=0;score_byte<=0;score_lo_byte<=0;score_mid_byte<=0;search_gradient<=0;
    p0<=0;p1<=0;p2<=0;seed_value<=0;seed_top<=0;seed_bottom<=0;qx<=0;qy<=0;fx<=0;fy<=0;
@@ -140,24 +151,28 @@
    for(j=0;j<MIDS;j=j+1)begin mid_score[j]<=0;mid_bank[j]<=0;end
    for(j=0;j<2;j=j+1)begin root_score[j]<=0;root_bank[j]<=0;end
    lx<=0;rx<=0;ty<=0;by<=0;cx<=0;cy<=0;bx<=0;byy<=0;px<=0;py<=0;
-   result_valid<=0;found<=0;center_x<=WIDTH/2;center_y<=HEIGHT/2;quality<=0;best_sad<=0;second_sad<=0;compute_cycles<=0;
+   result_valid<=0;found<=0;center_x<=WIDTH/2;center_y<=HEIGHT/2;quality<=0;best_sad<=0;second_sad<=0;work_count<=0;
   end else begin
-   result_valid<=0;if(state>CAPTURE)compute_cycles<=compute_cycles+1'b1;
-   if(reseed)begin state<=IDLE;pending<=1;found<=0;quality<=0;missed_frames<=0;end
+   result_valid<=0;if(state>CAPTURE)work_count<=work_count+1'b1;
+   if(reseed)begin state<=IDLE;pending<=1;found<=0;quality<=0;missed_frames<=0;recovering<=0;verify_pending<=0;scan_x<=0;scan_y<=0;end
    else case(state)
-    IDLE:if(frame_start&&(pending||found||(missed_frames!=0 && missed_frames<=RECOVERY_FRAMES)))begin state<=CAPTURE;capture_addr<=0;end
+    IDLE:if(frame_start&&(pending||found||(REACQUIRE_ENABLE&&recovering)||(missed_frames!=0 && missed_frames<=RECOVERY_FRAMES)))begin state<=CAPTURE;capture_addr<=0;end
     CAPTURE:if(sample_valid)begin
-     if(capture_addr==WIDTH*HEIGHT-1&&frame_end)begin state<=INIT;compute_cycles<=0;end else capture_addr<=capture_addr+1'b1;
+     if(capture_addr==WIDTH*HEIGHT-1&&frame_end)begin state<=INIT;work_count<=0;end else capture_addr<=capture_addr+1'b1;
     end
     INIT:begin
      for(lane=0;lane<LANES;lane=lane+1)lane_sad[lane]<=0;
      energy<=0;idx<=0;bank<=0;candidate_index<=0;best<=18'h3ffff;second<=18'h3ffff;
-     if(pending)begin point_b<=0;state<=COORD;end else begin
-      lx<=center_x<8+RADIUS?0:center_x-8-RADIUS;rx<=center_x+RADIUS>WIDTH-9?WIDTH-17:center_x-8+RADIUS;
-      ty<=center_y<8+RADIUS?0:center_y-8-RADIUS;by<=center_y+RADIUS>HEIGHT-8?HEIGHT-16:center_y-8+RADIUS;
-      cx<=center_x<8+RADIUS?0:center_x-8-RADIUS;cy<=center_y<8+RADIUS?0:center_y-8-RADIUS;
-      pixel_addr<=(center_y<8+RADIUS?0:center_y-8-RADIUS)*WIDTH+(center_x<8+RADIUS?0:center_x-8-RADIUS);
-      read_addr<=(center_y<8+RADIUS?0:center_y-8-RADIUS)*WIDTH+(center_x<8+RADIUS?0:center_x-8-RADIUS);state<=WA;
+     if(pending)begin point_b<=0;state<=COORD;end else if(REACQUIRE_ENABLE&&recovering&&!verify_pending)begin
+      lx<=scan_x;rx<=scan_x+2*RADIUS>WIDTH-17?WIDTH-17:scan_x+2*RADIUS;
+      ty<=scan_y;by<=scan_y+2*RADIUS>HEIGHT-16?HEIGHT-16:scan_y+2*RADIUS;
+      cx<=scan_x;cy<=scan_y;pixel_addr<=scan_y*WIDTH+scan_x;read_addr<=scan_y*WIDTH+scan_x;state<=WA;
+     end else begin
+      lx<=search_x<8+RADIUS?0:search_x-8-RADIUS;rx<=search_x+RADIUS>WIDTH-9?WIDTH-17:search_x-8+RADIUS;
+      ty<=search_y<8+RADIUS?0:search_y-8-RADIUS;by<=search_y+RADIUS>HEIGHT-8?HEIGHT-16:search_y-8+RADIUS;
+      cx<=search_x<8+RADIUS?0:search_x-8-RADIUS;cy<=search_y<8+RADIUS?0:search_y-8-RADIUS;
+      pixel_addr<=(search_y<8+RADIUS?0:search_y-8-RADIUS)*WIDTH+(search_x<8+RADIUS?0:search_x-8-RADIUS);
+      read_addr<=(search_y<8+RADIUS?0:search_y-8-RADIUS)*WIDTH+(search_x<8+RADIUS?0:search_x-8-RADIUS);state<=WA;
      end
     end
     COORD:begin qx<=xc+ys;qy<=yc-xs;state<=ADDR;end
@@ -248,10 +263,26 @@
      end
     end
     DECIDE:begin
-     found<=best<=MAX_SAD&&second>=best+MIN_GAP;
-     quality<=(best>MAX_SAD||second<best+MIN_GAP)?0:(gap>4095?255:gap[11:4]);
-     if(best<=MAX_SAD&&second>=best+MIN_GAP)begin center_x<=bx+8;center_y<=byy+8;missed_frames<=0;end
-     else if(RECOVERY_FRAMES!=0 && missed_frames<=RECOVERY_FRAMES)missed_frames<=missed_frames+1'b1;
+     found<=0;quality<=0;
+     if(REACQUIRE_ENABLE&&recovering)begin
+      if(recovery_ok&&(!verify_pending||verify_near))begin
+       if(!verify_pending)begin verify_pending<=1;verify_x<=bx+8;verify_y<=byy+8;end
+       else begin
+        found<=1;recovering<=0;verify_pending<=0;missed_frames<=0;
+        center_x<=bx+8;center_y<=byy+8;quality<=gap>4095?255:gap[11:4];
+       end
+      end else begin
+       verify_pending<=0;
+       if(scan_x+2*RADIUS>=WIDTH-17)begin
+        scan_x<=0;scan_y<=scan_y+2*RADIUS>=HEIGHT-16?0:scan_y+2*RADIUS+1;
+       end else scan_x<=scan_x+2*RADIUS+1;
+      end
+     end else if(match_ok)begin
+      found<=1;center_x<=bx+8;center_y<=byy+8;missed_frames<=0;quality<=gap>4095?255:gap[11:4];
+     end else begin
+      if(REACQUIRE_ENABLE)begin recovering<=1;verify_pending<=0;scan_x<=0;scan_y<=0;end
+      if(RECOVERY_FRAMES!=0&&missed_frames<=RECOVERY_FRAMES)missed_frames<=missed_frames+1'b1;
+     end
      best_sad<=best;second_sad<=second;result_valid<=1;state<=IDLE;
     end
     default:state<=IDLE;
