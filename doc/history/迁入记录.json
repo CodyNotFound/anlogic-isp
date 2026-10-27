@@ -168,6 +168,13 @@
       "source_commit": "c6a639b85367fe19dda52794a2143d32ea045258",
       "message": "fix: 面板布局——统一Logo底板并收紧云台控件",
       "changed_files": 4,
+      "removed_files": 0,
+      "destination_commit": "07700b9fa704d3c30f9ce02d75e552699006576b"
+    },
+    {
+      "source_commit": "2eb8a1f46ba3df75dd79167aaed492e57757ca12",
+      "message": "perf: 原生字模显示——移除分数字形缩放",
+      "changed_files": 4,
       "removed_files": 0
     }
   ]
