@@ -10,13 +10,8 @@ module isp_top #(parameter integer ENABLE_LSC=1,ENABLE_AWB=1,ENABLE_COLOR=1,BLAC
  //                          2=+AWB(全局绿被拉平, 露出"中间绿两边品红"渐变=例程同款中间态)
  //                          3=+LSC(边缘渐变+暗角消失) 4=+sRGB色调+去紫边 5=+饱和(全开) ;
  // 正常模式(demo_active=0)恒为全开(step=5)。灰度拜耳旁路保留RTL能力但当前演示不使用。
- (* async_reg = "true" *) reg [3:0] demo_s1,demo_s2;
- always @(posedge axi4s_video_aclk or negedge I_rst_n)begin
-  if(!I_rst_n)begin demo_s1<=4'h5;demo_s2<=4'h5;end
-  else begin
-   demo_s1<=I_isp_demo;demo_s2<=demo_s1;
-  end
- end
+ wire [3:0] demo_s2;
+ vision_demo_cdc u_demo_cdc(.clk(axi4s_video_aclk),.rst_n(I_rst_n),.async_demo(I_isp_demo),.demo(demo_s2));
  wire demo_on  = demo_s2[3];
  wire [2:0] dstep = demo_s2[2:0];
  wire [2:0] eff_step = demo_on ? dstep : 3'd5;      // 正常模式=全链

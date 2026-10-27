@@ -7,7 +7,7 @@ module osd_font_bram (
   if(I_char>=8'h30&&I_char<=8'h39)char_idx={3'b000,I_char[3:0]};
   else if(I_char>=8'h41&&I_char<=8'h5A)char_idx={2'b00,I_char[4:0]}+7'd9;
   else if(I_char==8'h3a)char_idx=7'd36;else if(I_char==8'h2d)char_idx=7'd37;
-  else if(I_char==8'h2e)char_idx=7'd38;else if(I_char>=8'h80&&I_char<=8'hcc)char_idx={1'b0,I_char[6:0]}+7'd40;
+  else if(I_char==8'h2e)char_idx=7'd38;else if(I_char>=8'h80&&I_char<=8'hce)char_idx={1'b0,I_char[6:0]}+7'd40;
   else char_idx=7'd39;
  end
  initial $readmemh("osd_font_rom.hex",mem);

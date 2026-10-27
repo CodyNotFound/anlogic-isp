@@ -1,0 +1,13 @@
+12
+lena_full 0
+hopper_full 0
+messi_full 0
+fruits_negative 0
+blank_negative 0
+lena_dim 0
+lena_rotated_30 0
+lena_eyes_occluded 0
+photo_left 0
+photo_right 0
+figurine_human_model 0
+figurine_anime_model 1

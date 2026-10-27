@@ -255,6 +255,14 @@
                     <Attr Name="CompileOrder" Val="57"/>
                 </FileInfo>
             </File>
+            <File Path="../rtl/isp/pixel_cartoon.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="93"/>
+                </FileInfo>
+            </File>
             <File Path="../rtl/isp/pixel_algorithm.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

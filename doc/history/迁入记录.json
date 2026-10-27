@@ -1,0 +1,13 @@
+{
+  "original_destination": "667bfb605beda783e2fc0017e7932c1f0d601b11",
+  "source_repository": "colorshading",
+  "note": "按功能快照迁入；原仓库历史保留，构建产物外部归档；提交日期为迁入时间。",
+  "steps": [
+    {
+      "source_commit": "1a7348f9b11c83b33d75c2c810be613b37bc147f",
+      "message": "fix: 色区跟踪与显示链路对齐——保持丢失位置并修正亮度统计顺序",
+      "changed_files": 0,
+      "removed_files": 0
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# 时钟复位
+三个新模块都在axi4s_video_aclk域，沿用低有效复位。只在握手接受beat时累计坐标/统计。流水线整体随O_tready推进或保持，所有sidebands同样保持。分帧增益只在接受SOF时发布。既有HDMI/传感器AE统计CDC不新增或重写。
