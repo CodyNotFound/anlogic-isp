@@ -132,9 +132,10 @@
     reg [1:0] state_f;reg [3:0] state_wait;
     reg [11:0] ph_f,pv_f;
     reg [23:0] hd_f,vd_f;
-    localparam CPX=IMG_WIDTH-528,CPY=IMG_HEIGHT-52;
-    localparam CBX=IMG_WIDTH-208,CBY=IMG_HEIGHT-240;
+    localparam CPX=IMG_WIDTH-752,CPY=IMG_HEIGHT-88;
+    localparam CBX=IMG_WIDTH-208,CBY=IMG_HEIGHT-284;
     integer c_x,c_y,c_slot,c_group,c_mx,c_my;
+    reg c_double;
     reg [95:0] c_label;
     reg [191:0] c_text;
     always @(posedge I_clk or negedge I_rst_n)begin
@@ -381,7 +382,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         v_row = 4'd0; v_col = 4'd0;
         v_lx = 12'd0; v_ly = 12'd0; v_idx = 4'd0;
         v_blend=0;v_compact_color=24'hf0f5f5;
-        c_x=0;c_y=0;c_slot=0;c_group=0;c_label=0;c_text=0;
+        c_x=0;c_y=0;c_slot=0;c_group=0;c_label=0;c_text=0;c_double=1;
         c_mx=16+((2500-ph_f)>>5);c_my=4+((pv_f-500)>>5);
 
         if(COMPACT_OSD && S_video_de_1d)begin
@@ -391,24 +392,24 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                 v_region=1;
                 v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
-                if(S_x_1d>=IMG_WIDTH-224 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<68)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-(IMG_WIDTH-220);
-                    if(S_y_1d<44)begin
+                if(S_x_1d>=IMG_WIDTH-384 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=24 && S_y_1d<104)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-(IMG_WIDTH-380);
+                    if(S_y_1d<60)begin
                      c_y=S_y_1d-26;c_text="00 FPS                  ";c_text[191:184]="0"+S_fps_d1;c_text[183:176]="0"+S_fps_d0;
                     end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15))begin
-                     c_y=S_y_1d-50;c_text="----ms PROC             ";
+                     c_y=S_y_1d-70;c_text="----ms PROC             ";
                      if(compute_valid_f)begin
                       c_text[191:184]=bcd_ascii(compute_ms_f[15:12]);c_text[183:176]=bcd_ascii(compute_ms_f[11:8]);
                       c_text[175:168]=bcd_ascii(compute_ms_f[7:4]);c_text[167:160]=bcd_ascii(compute_ms_f[3:0]);
                      end
                     end else begin v_region=0;v_blend=0;end
-                end else if(S_x_1d>=192 && S_x_1d<384 && S_y_1d>=24 && S_y_1d<44)begin
+                end else if(S_x_1d>=192 && S_x_1d<448 && S_y_1d>=24 && S_y_1d<60)begin
                     v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-26;c_text="                        ";
                     c_text[191:184]=mode_f>=10?"1":"0";c_text[183:176]="0"+(mode_f>=10?mode_f-10:mode_f);
                     c_text[167:160]=F_mode_name_char(mode_f,0);c_text[159:152]=F_mode_name_char(mode_f,1);
                     c_text[151:144]=F_mode_name_char(mode_f,2);c_text[143:136]=F_mode_name_char(mode_f,3);
-                end else if(S_x_1d>=192 && S_x_1d<480 && S_y_1d>=48 && S_y_1d<68)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-50;c_text=192'ha2a320202020202020202020202020202020202020202020;
+                end else if(S_x_1d>=192 && S_x_1d<632 && S_y_1d>=68 && S_y_1d<104)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-70;c_text=192'ha2a320202020202020202020202020202020202020202020;
                     if(panel_f[3])c_text=192'hab9dacad2020202020202020202020202020202020202020;
                     else if(mode_f==15)begin
                      case(task_f)8:c_text=192'h9c9db8b92020202020202020202020202020202020202020;10:c_text=192'hbabbbc8c2020202020202020202020202020202020202020;11:c_text=192'hbdbebf9d2020202020202020202020202020202020202020;12:c_text=192'hc0c1c2c32020202020202020202020202020202020202020;default:c_text=192'hc4c59c9d2020202020202020202020202020202020202020;endcase
@@ -419,16 +420,21 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                      else if((mode_f==12||mode_f==14)&&task_f==3)c_text=192'hb3b4b2b52020202020202020202020202020202020202020;
                      else if((mode_f==12||mode_f==14)&&(task_f==4||task_f==5))c_text=192'hb6b7b1b22020202020202020202020202020202020202020;
                     end
-                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<480 && S_y_1d>=72 && S_y_1d<92)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-74;c_text="X:---- Y:----           ";
+                end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==14||mode_f==15) && S_x_1d>=192 && S_x_1d<632 && S_y_1d>=112 && S_y_1d<148)begin
+                    v_blend=1;v_region=6;c_x=S_x_1d-196;c_y=S_y_1d-114;c_text="X:---- Y:----           ";
                     if(target_found_f)begin
                      c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
                      c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
                     end
-                end else if(S_x_1d>=CPX && S_x_1d<CPX+512 && S_y_1d>=CPY && S_y_1d<CPY+40)begin
+                end else if(S_x_1d>=CPX && S_x_1d<CPX+736 && S_y_1d>=CPY && S_y_1d<CPY+76)begin
                     v_blend=1;v_region=6;
-                    c_group=(S_x_1d-CPX)>>7;c_x=S_x_1d-CPX-(c_group<<7);c_y=S_y_1d-CPY;
-                    if(c_y<16)begin
+                    c_x=S_x_1d-CPX;
+                    if(c_x<144)c_group=0;
+                    else if(c_x<288)begin c_group=1;c_x=c_x-144;end
+                    else if(c_x<528)begin c_group=2;c_x=c_x-288;end
+                    else begin c_group=3;c_x=c_x-528;end
+                    c_y=S_y_1d-CPY;
+                    if(c_y<32)begin
                      case(c_group)
                       0:c_text=panel_f[3]?192'hab9d20c62020202020202020202020202020202020202020:192'hab9d20af2020202020202020202020202020202020202020;
                       1:c_text=panel_f[2]?192'hc7a520c62020202020202020202020202020202020202020:192'hc7a520af2020202020202020202020202020202020202020;
@@ -436,15 +442,15 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                       3:c_text=panel_f[0]?192'hcacb9a20ae9d202020202020202020202020202020202020:192'hcacb9a20c9d5202020202020202020202020202020202020;
                      endcase
                      v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
-                    end else if(c_y>=22)begin
-                     c_y=c_y-22;
+                    end else if(c_y>=40)begin
+                     c_y=c_y-40;
                      if(panel_f[3])case(c_group)0:c_text=192'hcccd20202020202020202020202020202020202020202020;1:c_text=192'hccce20202020202020202020202020202020202020202020;2:c_text=192'hcccf20202020202020202020202020202020202020202020;3:c_text=192'hccd020202020202020202020202020202020202020202020;endcase
                      else case(c_group)0:c_text=mode_f==15?192'hb6d120202020202020202020202020202020202020202020:(mode_f==12||mode_f==14)?192'hb1b220202020202020202020202020202020202020202020:192'hc52020202020202020202020202020202020202020202020;1:c_text=192'hc52020202020202020202020202020202020202020202020;2:c_text=192'hcfd2d3202020202020202020202020202020202020202020;3:c_text=192'hced2d3202020202020202020202020202020202020202020;endcase
                     end else c_text=0;
                 end else if(S_x_1d>=CBX && S_x_1d<CBX+192 && S_y_1d>=CBY && S_y_1d<CBY+176)begin
                     v_blend=1;c_x=(S_x_1d-CBX)>>1;c_y=(S_y_1d-CBY)>>1;
                     if(c_y>=76 && c_y<84)begin
-                     v_region=6;c_x=(S_x_1d-CBX);c_y=(S_y_1d-CBY)-152;c_text="H0000 V0000             ";
+                     v_region=6;c_double=0;c_x=(S_x_1d-CBX);c_y=(S_y_1d-CBY)-152;c_text="H0000 V0000             ";
                      c_text[183:176]="0"+hd_f[15:12];c_text[175:168]="0"+hd_f[11:8];c_text[167:160]="0"+hd_f[7:4];c_text[159:152]="0"+hd_f[3:0];
                      c_text[135:128]="0"+vd_f[15:12];c_text[127:120]="0"+vd_f[11:8];c_text[119:112]="0"+vd_f[7:4];c_text[111:104]="0"+vd_f[3:0];
                     end else begin
@@ -453,6 +459,7 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     end
                 end
                 if(v_region==6)begin
+                    if(c_double)begin c_x=c_x>>>1;c_y=c_y>>>1;end
                     if(c_x<0||c_y<0)begin v_char=0;end else begin
                      c_slot=c_x>>4;v_col=c_x&15;v_row=c_y[3:0];
                      if(c_y<16&&c_slot<24)begin

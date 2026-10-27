@@ -154,6 +154,13 @@
       "source_commit": "0b5eb886eb86ecba1ba8c41180f65cc84083e954",
       "message": "fix: 字模与彩色特效——保留原生像素并缩短小幅人脸修正",
       "changed_files": 13,
+      "removed_files": 0,
+      "destination_commit": "2e371bcd3fd97e86f5b520d4b2dcccdd57cff4c7"
+    },
+    {
+      "source_commit": "c3da681a0d1dc4f3df1d5609285cf5028ac848e5",
+      "message": "fix: 中文信息可读性——突出主状态并保持云台面板比例",
+      "changed_files": 7,
       "removed_files": 0
     }
   ]
