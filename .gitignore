@@ -26,3 +26,12 @@ td_project/face_lbp_probe_*/
 td_project/object_classifier_probe_*/
 sim/vision_tasks_work/
 releases/
+
+# Generated validation and standalone probes remain outside source history.
+/reports/
+td_project/yunet_probe_*/
+doc/compile/*_job.json
+doc/compile/*_completion.json
+sim/*_work/
+sim/work*/
+**/__pycache__/

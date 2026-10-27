@@ -11,6 +11,7 @@ $jobPath=Join-Path $root "doc/compile/${version}_job.json"
 $utf8=[Text.UTF8Encoding]::new($false)
 $job=[ordered]@{status='running';run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');stage='Check';completed_utc=$null;error=$null;disable_fsm_inference=[bool]$DisableFsmInference;slice_packing_probe=[bool]$AllowSlicePackingProbe}
 function Save-Job{[IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json -Depth 5),$utf8)}
+New-Item -ItemType Directory -Force -Path (Split-Path $jobPath) | Out-Null
 Save-Job
 try{
  foreach($stage in @('Check','Synthesis','Implementation')){
