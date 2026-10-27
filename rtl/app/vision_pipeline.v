@@ -45,12 +45,11 @@ module vision_pipeline #(
     wire [3:0] feature_requested;
     wire [3:0] normal_buttons_n,keys_pressed;
     wire manual_mode=feature_requested[3];
-    // SW3 is a display switch. Detection and automatic control never depend
-    // on it. Commit at input SOF, before the delayed overlay stages see SOF.
+    // SW3 gates automatic motion only. Analytics and compact OSD stay active.
     reg info_enabled_f;
     always @(posedge clk or negedge rst_n)begin
         if(!rst_n)info_enabled_f<=0;
-        else if(video_sof)info_enabled_f<=ENABLE_OSD && feature_requested[2];
+        else if(video_sof)info_enabled_f<=ENABLE_OSD;
     end
     wire [11:0] pulse_h,pulse_v,display_h,display_v;
     wire [1:0] gimbal_state;
@@ -65,7 +64,7 @@ module vision_pipeline #(
     wire       task_action;
     wire [2:0] demo_step;
     wire [3:0] feature_enable;
-    assign feature_enable={feature_requested[0],1'b0,1'b1,feature_requested[1]}; // SW1 AB, SW2 AE, AWB always on
+    assign feature_enable={1'b1,1'b0,1'b1,feature_requested[1]}; // AB fixed on; SW1 AWB AUTO/HOLD, SW2 AE AUTO/HOLD
     wire [23:0] algorithm_pixel;
     wire [23:0] exposure_pixel;
     wire [23:0] white_balance_pixel;
@@ -390,7 +389,7 @@ module vision_pipeline #(
     always @(posedge clk or negedge rst_n)begin
         if(!rst_n)gimbal_mode_d<=0;else gimbal_mode_d<=mode;
     end
-    wire gimbal_auto_enable=ENABLE_PIPELINE && !demo_active &&
+    wire gimbal_auto_enable=ENABLE_PIPELINE && feature_requested[2] && !demo_active &&
         gimbal_mode_d==mode && (mode==11 || mode==12 || mode==14);
     servo_gimbal_ctrl #(.IMG_W(IMG_WIDTH/8),.IMG_H(IMG_HEIGHT/8)) u_gimbal(.clk(clk),.rst_n(rst_n),
         .enable(gimbal_auto_enable),

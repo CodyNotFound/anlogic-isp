@@ -458,6 +458,7 @@ module hdmi_mixer #(
                             6:c_text="REACQUIRE K4 PICK       ";
                             default:begin end
                         endcase
+                        if(!panel_f[2])c_text="AUTO OFF K4 PICK        ";
                     end
                 end else if(S_x_1d>=CPX && S_x_1d<CPX+384 && S_y_1d>=CPY && S_y_1d<CPY+36)begin
                     v_blend=1;v_region=6;
@@ -466,9 +467,9 @@ module hdmi_mixer #(
                     if(c_y<16)begin
                         case(c_group)
                             0:c_label=panel_f[3]?"SW4 MAN ON  ":"SW4 MAN OFF ";
-                            1:c_label="SW3 OSD ON  ";
-                            2:c_label=panel_f[1]?"SW2 AE ON   ":"SW2 AE OFF  ";
-                            3:c_label=panel_f[0]?"SW1 AB ON   ":"SW1 AB OFF  ";
+                            1:c_label=panel_f[2]?"SW3 AUTO ON ":"SW3 AUTO OFF";
+                            2:c_label=panel_f[1]?"SW2 AE AUTO ":"SW2 AE HOLD ";
+                            3:c_label=panel_f[0]?"SW1 WB AUTO ":"SW1 WB HOLD ";
                         endcase
                         v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
                     end else if(c_y>=20)begin

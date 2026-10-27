@@ -141,22 +141,8 @@ always @(posedge I_clk or posedge I_rst) begin
 		end else begin
 			r_auto_was_enabled <= 1'b0;
 			r_auto_cooldown <= 4'd0;
-			// Restore the known platform baseline on the switch-off edge.
-			if (r_auto_was_enabled) begin
-				r_ae_set <= AE_MAX;
-				r_ag_set <= 16'd80;
-			end else begin
-				if(r_button_1[0]) begin
-					r_ae_set <= (r_ae_set > AE_MIN) ? r_ae_set - r_ae_tick : r_ae_set;
-				end else if(r_button_1[1]) begin
-					r_ae_set <= (r_ae_set < AE_MAX) ? r_ae_set + r_ae_tick : r_ae_set;
-				end
-				if(r_button_1[2]) begin
-					r_ag_set <= (r_ag_set > AG_MIN) ? r_ag_set - r_ag_tick : r_ag_set;
-				end else if(r_button_1[3]) begin
-					r_ag_set <= (r_ag_set < AG_MAX) ? r_ag_set + r_ag_tick : r_ag_set;
-				end
-			end
+			// HOLD: preserve exposure/gain and ignore camera tuning keys.
+
 		end
 	end
 	end
@@ -176,7 +162,7 @@ always @(posedge I_clk or posedge I_rst) begin
 		r_ag     <= 80; 
 	end else if(r_ae_req) begin
 		r_ae_req <= 0; 
-	end else if(((r_ae != r_ae_set) || (r_ag != r_ag_set))&&(I_cam_cfg_done==1'b1)&&(I_ae_cfg_done==1'b1)) begin
+	end else if(I_auto_enable && ((r_ae != r_ae_set) || (r_ag != r_ag_set))&&(I_cam_cfg_done==1'b1)&&(I_ae_cfg_done==1'b1)) begin
 		r_ae     <= r_ae_set; 
 		r_ag     <= r_ag_set; 
 		r_ae_req <= 1; 

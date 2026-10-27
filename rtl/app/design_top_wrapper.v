@@ -69,7 +69,7 @@ module design_top_wrapper (
         .O_cam_scl(O_cam_scl), .IO_cam_sda(IO_cam_sda),
         .O_cam_24m(O_cam_24m), .O_cam_rst(O_cam_rst),
         .I_ae_enable(O_led[1]),
-        .I_awb_enable(1'b1),
+        .I_awb_enable(O_led[0]),
         .I_isp_demo(isp_demo_sel),
         .I_ae_stat_y(hdmi_ae_stat_y),
         .I_ae_stat_toggle(hdmi_ae_stat_toggle),

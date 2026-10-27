@@ -91,6 +91,13 @@
       "source_commit": "1d5d18bc771d22dc1ded66a805ee037adf0b99c8",
       "message": "perf: 模板旋转系数——移位加法替代通用乘法",
       "changed_files": 3,
+      "removed_files": 0,
+      "destination_commit": "21c5cfedef0f70aeff7324138643a6639a55f199"
+    },
+    {
+      "source_commit": "05c976219ba53f12f331da810e26484883b609f4",
+      "message": "feat: 白平衡曝光锁定与云台平滑——按新定位限速调整",
+      "changed_files": 15,
       "removed_files": 0
     }
   ]
