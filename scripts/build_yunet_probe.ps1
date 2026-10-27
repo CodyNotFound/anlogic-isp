@@ -1,4 +1,4 @@
-param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion','pixel','hmi')][string]$Unit='dot',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[string]$PixelSource='',[string]$CartoonSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage,[switch]$TrackerReacquire)
+param([string]$RunName='yunet_probe_v45_r1',[switch]$Implement,[ValidateSet('dot','network','tracker','motion','pixel','hmi','tone')][string]$Unit='dot',[string]$ToneSource='',[string]$ToneModule='color_tone4',[string]$NetworkSource='',[string]$DotSource='',[string]$MotionSource='',[string]$TrackerSource='',[string]$PixelSource='',[string]$CartoonSource='',[switch]$TrackerExtendedInterface,[switch]$TrackerSharedStorage,[switch]$TrackerReacquire)
 $ErrorActionPreference='Stop'
 if($RunName -notmatch '^yunet_probe_[A-Za-z0-9_]+$'){throw 'Invalid isolated run name'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -15,6 +15,13 @@ $rtl=if($Unit -eq 'tracker'){Resolve-ProbeSource 'rtl/analytics/vision_tasks/vis
 $hash=(Get-FileHash -LiteralPath $rtl -Algorithm SHA256).Hash
 $files=@($rtl);$top='yunet_dot4'
 if($Unit -eq 'hmi'){$files=@((Resolve-ProbeSource 'rtl/control/hmi_control_link.v' ''),(Resolve-ProbeSource 'rtl/control/vision_uart_8n1.v' ''));$top='hmi_control_link'}
+if($Unit -eq 'tone'){
+ if($ToneModule -notmatch '^[A-Za-z_][A-Za-z0-9_]*$'){throw 'Invalid module'}
+ $tone=Resolve-ProbeSource 'rtl/isp/color_tone4.v' $ToneSource
+ $wrapper="module tone_probe(input wire clk,rst_n,valid,sof,eol,sat_on,tone_on,ready,input wire[95:0]rgb,output wire valid_o,sof_o,eol_o,ready_o,output wire[23:0]rgb_o);wire[95:0]all_rgb;assign rgb_o=all_rgb[95:72]^all_rgb[71:48]^all_rgb[47:24]^all_rgb[23:0];`n$ToneModule core(.I_clk(clk),.I_rst_n(rst_n),.I_tvalid(valid),.I_tuser(sof),.I_tlast(eol),.I_sat_on(sat_on),.I_tone_on(tone_on),.O_tready(ready),.I_tdata(rgb),.O_tvalid(valid_o),.O_tuser(sof_o),.O_tlast(eol_o),.I_tready(ready_o),.O_tdata(all_rgb));`nendmodule`n"
+ $wp=Join-Path $run 'tone_probe.v';[IO.File]::WriteAllText($wp,$wrapper,$utf8)
+ $files=@($tone,$wp.Replace('\','/'));$top='tone_probe'
+}
 if($Unit -eq 'pixel'){
  $rtl=Resolve-ProbeSource 'rtl/isp/pixel_algorithm.v' $PixelSource
  $files=@($rtl,(Resolve-ProbeSource 'rtl/isp/pixel_cartoon.v' $CartoonSource));$top='pixel_algorithm'
@@ -78,6 +85,7 @@ endmodule
  $files+=$wp.Replace('\','/');$top='motion_probe'
 }
 $sourceFiles=@($files)
+if($Unit -eq 'tone'){$sourceFiles+=Join-Path (Split-Path $tone) 'colorshading_gamma_case.vh'}
 if($Unit -eq 'network'){$sourceFiles+=Get-ChildItem -LiteralPath (Join-Path $root 'rtl/analytics/face_cnn') -Filter '*.hex'|ForEach-Object FullName}
 $hashes=@($sourceFiles|ForEach-Object{[pscustomobject]@{path=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})
 [IO.File]::WriteAllText((Join-Path $run 'source_sha256.json'),($hashes|ConvertTo-Json),$utf8)
@@ -111,7 +119,7 @@ set drHoldFix on
 [IO.File]::WriteAllText((Join-Path $run 'settings.cfg'),$settings,$utf8)
 [IO.File]::WriteAllText((Join-Path $run 'run.tcl'),"if {[catch {source {$flow}} message]} {puts stderr `$message; exit 1}`nexit 0",$utf8)
 $jobPath=Join-Path $root "reports/yunet_v45/${RunName}_job.json"
-$scope=if($Unit -eq 'hmi'){'Standalone serial screen UART/control/telemetry; not an integrated board image'}elseif($Unit -eq 'pixel'){'Standalone streaming pixel algorithms only; excludes ISP, CNN and display integration'}elseif($Unit -eq 'dot'){'Standalone shared convolution arithmetic only; not a complete detector or board image'}elseif($Unit -eq 'motion'){'Standalone fixed-camera frame difference with external previous-frame RAM; no video or CNN included'}elseif($Unit -eq 'tracker'){'Standalone nine-bank SAD tracker with external frame; CNN, camera and display excluded'}else{'Standalone complete CNN feature/head engine; camera, position decoder and display integration excluded'}
+$scope=switch($Unit){tone {'Standalone four-pixel color ISP with all lanes XOR-observable; excludes video/CNN integration'} hmi {'Standalone HMI link'} pixel {'Standalone pixel effects'} tracker {'Standalone SAD tracker'} network {'Standalone CNN engine'} default {'Standalone arithmetic unit'}}
 $job=[ordered]@{status='running';scope=$scope;unit=$Unit;verification_stage=$last;implemented=[bool]$Implement;run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');finished_utc=$null;source_sha256=$hashes;error=$null}
 [IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json),$utf8)
 Push-Location $run

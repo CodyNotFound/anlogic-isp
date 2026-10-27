@@ -133,6 +133,16 @@
     reg [3:0] panel_f,mode_f,task_f;
     reg [1:0] state_f;reg [3:0] state_wait;
     reg [11:0] ph_f,pv_f;
+    // Frame snapshots are stable before the bottom-right widget is scanned.
+    // Register pulse-to-widget mapping independently of the pixel color mux.
+    reg [7:0] widget_x,widget_y;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if(!I_rst_n) begin widget_x<=8'd72;widget_y<=8'd56;end
+        else begin
+            widget_x<=ph_f<=500?120:ph_f>=2500?24:24+(((2500-ph_f)*49+512)>>10);
+            widget_y<=pv_f<=900?8:pv_f>=2150?104:pv_f<1500?56-(((1500-pv_f)*82+512)>>10):56+(((pv_f-1500)*76+512)>>10);
+        end
+    end
     reg [23:0] hd_f,vd_f;
     localparam CPX=IMG_WIDTH-432,CPY=IMG_HEIGHT-68;
     localparam CBX=IMG_WIDTH-176,CBY=IMG_HEIGHT-224;
@@ -162,7 +172,7 @@
     wire[2:0]status_count=compact_status[175:168]==8'h20 ? 2 : compact_status[167:160]==8'h20 ? 3 : 4;
 
     reg [95:0] c_label;
-    reg [191:0] c_text;
+    reg [127:0] c_text;
     always @(posedge I_clk or negedge I_rst_n)begin
         if(!I_rst_n)begin
             manual_f<=0;hmi_f<=0;info_f<=0;target_found_f<=0;compute_valid_f<=0;target_x_f<=0;target_y_f<=0;compute_ms_f<=0;panel_f<=0;mode_f<=0;task_f<=0;state_f<=0;state_wait<=0;
@@ -409,8 +419,8 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
         v_blend=0;v_compact_color=24'hf0f5f5;
         c_x=0;c_y=0;c_slot=0;c_group=0;c_label=0;c_text=0;c_small=0;c_header=0;
         // Map reachable pulse ranges to a full square, with 1500us at the cross.
-        c_mx=ph_f<=500?120:ph_f>=2500?24:24+(((2500-ph_f)*49+512)>>10);
-        c_my=pv_f<=900?8:pv_f>=2150?104:pv_f<1500?56-(((1500-pv_f)*82+512)>>10):56+(((pv_f-1500)*76+512)>>10);
+        c_mx=widget_x;
+        c_my=widget_y;
 
         if(COMPACT_OSD && S_video_de_1d)begin
             if(S_x_1d>=24 && S_x_1d<170 && S_y_1d>=24 && S_y_1d<118)begin
@@ -418,33 +428,33 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
                 if(S_x_1d>=180 && S_x_1d<180+((mode_f<11?(mode_f==0?7:5):status_first+status_count)<<4)+16 && S_y_1d>=24 && S_y_1d<52)begin
                     v_blend=1;
-                    v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-30;c_text="                        ";
-                    c_text[191:184]=mode_f>=10?"1":"0";c_text[183:176]="0"+(mode_f>=10?mode_f-10:mode_f);
-                    c_text[167:160]=F_mode_name_char(mode_f,0);c_text[159:152]=F_mode_name_char(mode_f,1);
-                    c_text[151:144]=F_mode_name_char(mode_f,2);c_text[143:136]=F_mode_name_char(mode_f,3);
-                    if(mode_f>=11)c_text[143:0]=compact_status[191:48];
+                    v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-30;c_text="                ";
+                    c_text[127:120]=mode_f>=10?"1":"0";c_text[119:112]="0"+(mode_f>=10?mode_f-10:mode_f);
+                    c_text[103:96]=F_mode_name_char(mode_f,0);c_text[95:88]=F_mode_name_char(mode_f,1);
+                    c_text[87:80]=F_mode_name_char(mode_f,2);c_text[79:72]=F_mode_name_char(mode_f,3);
+                    if(mode_f>=11)c_text[79:0]=compact_status[191:112];
                 end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==13||mode_f==14) && S_x_1d>=180 && S_x_1d<404 && S_y_1d>=56 && S_y_1d<84)begin
-                    v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-62;c_text="X:---- Y:----           ";
+                    v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-62;c_text="X:---- Y:----   ";
                     if(target_found_f)begin
-                     c_text[175:168]=bcd_ascii(target_x_f[15:12]);c_text[167:160]=bcd_ascii(target_x_f[11:8]);c_text[159:152]=bcd_ascii(target_x_f[7:4]);c_text[151:144]=bcd_ascii(target_x_f[3:0]);
-                     c_text[119:112]=bcd_ascii(target_y_f[15:12]);c_text[111:104]=bcd_ascii(target_y_f[11:8]);c_text[103:96]=bcd_ascii(target_y_f[7:4]);c_text[95:88]=bcd_ascii(target_y_f[3:0]);
+                     c_text[111:104]=bcd_ascii(target_x_f[15:12]);c_text[103:96]=bcd_ascii(target_x_f[11:8]);c_text[95:88]=bcd_ascii(target_x_f[7:4]);c_text[87:80]=bcd_ascii(target_x_f[3:0]);
+                     c_text[55:48]=bcd_ascii(target_y_f[15:12]);c_text[47:40]=bcd_ascii(target_y_f[11:8]);c_text[39:32]=bcd_ascii(target_y_f[7:4]);c_text[31:24]=bcd_ascii(target_y_f[3:0]);
                     end
                 end else if(hmi_f && S_x_1d>=180 && S_x_1d<292 && S_y_1d>=88 && S_y_1d<116)begin
                     v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-94;
-                    c_text=192'hd6d7d8d9dadb202020202020202020202020202020202020;
+                    c_text=128'hd6d7d8d9dadb20202020202020202020;
                 end else if(S_x_1d>=IMG_WIDTH-(mode_f<11?112:88)-16 && S_x_1d<IMG_WIDTH-16 && S_y_1d>=16 && S_y_1d<68)begin
                     v_blend=1;v_region=6;c_small=1;c_x=S_x_1d-(IMG_WIDTH-96);
-                    if(S_y_1d<42)begin c_y=S_y_1d-24;c_text="00 FPS                  ";c_text[191:184]="0"+S_fps_d1;c_text[183:176]="0"+S_fps_d0;end
+                    if(S_y_1d<42)begin c_y=S_y_1d-24;c_text="00 FPS          ";c_text[127:120]="0"+S_fps_d1;c_text[119:112]="0"+S_fps_d0;end
                     else if(TARGET_TELEMETRY)begin
-                     c_y=S_y_1d-44;c_text="----ms                  ";
+                     c_y=S_y_1d-44;c_text="----ms          ";
                      if(mode_f<11)begin
-                      c_x=S_x_1d-(IMG_WIDTH-120);c_text="0.----ms                ";
+                      c_x=S_x_1d-(IMG_WIDTH-120);c_text="0.----ms        ";
                       if(compute_valid_f)begin
-                       c_text[175:168]=bcd_ascii(compute_ms_f[15:12]);c_text[167:160]=bcd_ascii(compute_ms_f[11:8]);c_text[159:152]=bcd_ascii(compute_ms_f[7:4]);c_text[151:144]=bcd_ascii(compute_ms_f[3:0]);
+                       c_text[111:104]=bcd_ascii(compute_ms_f[15:12]);c_text[103:96]=bcd_ascii(compute_ms_f[11:8]);c_text[95:88]=bcd_ascii(compute_ms_f[7:4]);c_text[87:80]=bcd_ascii(compute_ms_f[3:0]);
                       end
                      end
                      if(compute_valid_f&&mode_f>=11)begin
-                      c_text[191:184]=bcd_ascii(compute_ms_f[15:12]);c_text[183:176]=bcd_ascii(compute_ms_f[11:8]);c_text[175:168]=bcd_ascii(compute_ms_f[7:4]);c_text[167:160]=bcd_ascii(compute_ms_f[3:0]);
+                      c_text[127:120]=bcd_ascii(compute_ms_f[15:12]);c_text[119:112]=bcd_ascii(compute_ms_f[11:8]);c_text[111:104]=bcd_ascii(compute_ms_f[7:4]);c_text[103:96]=bcd_ascii(compute_ms_f[3:0]);
                      end
                     end else v_region=0;
                 end else if(S_x_1d>=CPX && S_x_1d<CPX+416 && S_y_1d>=CPY && S_y_1d<CPY+56)begin
@@ -453,23 +463,23 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     else if(c_x<288)begin c_group=2;c_x=c_x-160;end else begin c_group=3;c_x=c_x-288;end
                     if(c_y<16)begin
                      case(c_group)
-                      0:c_text=panel_f[3]?192'hab9d20c62020202020202020202020202020202020202020:192'hab9d20af2020202020202020202020202020202020202020;
-                      1:c_text=panel_f[2]?192'hc7a520c62020202020202020202020202020202020202020:192'hc7a520af2020202020202020202020202020202020202020;
-                      2:c_text=panel_f[1]?192'hae9dc8ba20ae9d2020202020202020202020202020202020:192'hae9dc8ba20c9d52020202020202020202020202020202020;
-                      3:c_text=panel_f[0]?192'hcacb9a20ae9d202020202020202020202020202020202020:192'hcacb9a20c9d5202020202020202020202020202020202020;
+                      0:c_text=panel_f[3]?128'hab9d20c6202020202020202020202020:128'hab9d20af202020202020202020202020;
+                      1:c_text=panel_f[2]?128'hc7a520c6202020202020202020202020:128'hc7a520af202020202020202020202020;
+                      2:c_text=panel_f[1]?128'hae9dc8ba20ae9d202020202020202020:128'hae9dc8ba20c9d5202020202020202020;
+                      3:c_text=panel_f[0]?128'hcacb9a20ae9d20202020202020202020:128'hcacb9a20c9d520202020202020202020;
                      endcase
                      v_compact_color=panel_f[3-c_group]?24'h60ff90:24'hc0c0c0;
                     end else if(c_y>=24)begin c_y=c_y-24;
                      if(panel_f[3])case(c_group)
-                      0:c_text=192'hcccd20202020202020202020202020202020202020202020;
-                      1:c_text=192'hccce20202020202020202020202020202020202020202020;
-                      2:c_text=192'hcccf20202020202020202020202020202020202020202020;
-                      3:c_text=192'hccd020202020202020202020202020202020202020202020;
+                      0:c_text=128'hcccd2020202020202020202020202020;
+                      1:c_text=128'hccce2020202020202020202020202020;
+                      2:c_text=128'hcccf2020202020202020202020202020;
+                      3:c_text=128'hccd02020202020202020202020202020;
                      endcase else case(c_group)
-                      0:c_text=mode_f==14?192'hb6d120202020202020202020202020202020202020202020:(mode_f==12||mode_f==13)?192'hb1b220202020202020202020202020202020202020202020:192'hc52020202020202020202020202020202020202020202020;
-                      1:c_text=192'hc52020202020202020202020202020202020202020202020;
-                      2:c_text=192'hcfd2d3202020202020202020202020202020202020202020;
-                      3:c_text=192'hced2d3202020202020202020202020202020202020202020;
+                      0:c_text=mode_f==14?128'hb6d12020202020202020202020202020:(mode_f==12||mode_f==13)?128'hb1b22020202020202020202020202020:128'hc5202020202020202020202020202020;
+                      1:c_text=128'hc5202020202020202020202020202020;
+                      2:c_text=128'hcfd2d320202020202020202020202020;
+                      3:c_text=128'hced2d320202020202020202020202020;
                      endcase
                     end else c_text=0;
                     if(S_x_1d==CPX||S_x_1d==CPX+415||S_y_1d==CPY||S_y_1d==CPY+55)begin v_region=7;v_compact_color=24'h606870;end
@@ -477,9 +487,9 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     v_blend=1;c_x=S_x_1d-CBX;c_y=S_y_1d-CBY;
                     if(c_x==0||c_x==159||c_y==0||c_y==143)begin v_region=7;v_compact_color=24'h606870;end
                     else if(c_y>=120 && c_y<136)begin
-                     v_region=6;c_small=1;c_x=c_x-8;c_y=c_y-120;c_text="H0000 V0000             ";
-                     c_text[183:176]="0"+hd_f[15:12];c_text[175:168]="0"+hd_f[11:8];c_text[167:160]="0"+hd_f[7:4];c_text[159:152]="0"+hd_f[3:0];
-                     c_text[135:128]="0"+vd_f[15:12];c_text[127:120]="0"+vd_f[11:8];c_text[119:112]="0"+vd_f[7:4];c_text[111:104]="0"+vd_f[3:0];
+                     v_region=6;c_small=1;c_x=c_x-8;c_y=c_y-120;c_text="H0000 V0000     ";
+                     c_text[119:112]="0"+hd_f[15:12];c_text[111:104]="0"+hd_f[11:8];c_text[103:96]="0"+hd_f[7:4];c_text[95:88]="0"+hd_f[3:0];
+                     c_text[71:64]="0"+vd_f[15:12];c_text[63:56]="0"+vd_f[11:8];c_text[55:48]="0"+vd_f[7:4];c_text[47:40]="0"+vd_f[3:0];
                     end else begin
                      if(((c_x==24||c_x==120||c_x==72)&&c_y>=8&&c_y<=104)||((c_y==8||c_y==56||c_y==104)&&c_x>=24&&c_x<=120))begin v_region=7;v_compact_color=24'h606870;end
                      if(c_x+2>=c_mx&&c_x<=c_mx+2&&c_y+2>=c_my&&c_y<=c_my+2)begin v_region=7;v_compact_color=!panel_f[2]?24'hc0c0c0:state_f==1?24'h60ff90:24'hffb050;end
@@ -491,8 +501,8 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
                     if(c_small)begin c_slot=F_slot12(c_x);v_col=c_x-((c_slot<<3)+(c_slot<<2));end
                     else begin c_slot=c_x>>4;v_col=c_x&15;end
                     v_row=c_y[3:0];
-                    if(c_y<16&&c_slot<24)begin
-                     v_char=c_text>>(8*(23-c_slot));
+                    if(c_y<16&&c_slot<16)begin
+                     v_char=c_text[{~c_slot[3:0],3'b000}+:8];
                      if(c_header&&c_slot>=status_first&&!manual_f&&panel_f[2]&&state_f==1&&(mode_f==11||mode_f==12||mode_f==13))v_compact_color=24'h60ff90;
                     end
                 end

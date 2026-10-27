@@ -1,0 +1,64 @@
+from pathlib import Path
+import sys,json,re
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT.parent/'v45_face/.face_deps'))
+import numpy as np
+from PIL import Image
+out=ROOT/'reports/osd_v73';meta=json.loads((out/'font_map.json').read_text(encoding='utf-8'))
+words=[int(x,16) for x in (ROOT/'sim/osd_font_rom.hex').read_text().split()]
+mif=[int(v,16) for _,v in re.findall(r'([0-9A-F]+)\s*:\s*([0-9A-F]+);',(ROOT/'user_source/hdl_source/osd_font_rom.mif').read_text())]
+assert len(words)==2048 and words==mif
+assert len(meta['ascii'])+len(meta['cjk'])==128
+idx=np.loadtxt(ROOT/'sim/logo_idx.hex',dtype=np.uint8,converters={0:lambda x:int(x,16)})[:146*94].reshape(94,146)
+pal=np.loadtxt(ROOT/'sim/logo_pal.hex',dtype=np.uint32,converters={0:lambda x:int(x,16)})
+rgb=np.stack([(pal>>16)&255,(pal>>8)&255,pal&255],1).astype(np.uint8)
+def mask(text,small=False):
+ cols=[]
+ for c in text:
+  gi=len(meta['ascii'])+meta['cjk'].index(c) if ord(c)>127 else meta['ascii'].index(c)
+  xs=np.arange(12 if small else 16);ys=np.arange(16)
+  cols.append(np.array([[(words[gi*16+int(y)]>>(15-int(x)))&1 for x in xs]for y in ys],bool))
+ return np.concatenate(cols,axis=1)
+checks=0
+for i in range(5):
+ pic=Image.open(out/f'frame{i}.ppm');pic.save(out/f'frame{i}.png');im=np.asarray(pic)
+ assert np.all(im[24:118,24:170][idx!=0]==rgb[idx[idx!=0]])
+ texts=[(['11 人脸','12 模板','00 色彩还原','13 色区','14 运动'][i],188,30,0xf0f5f5),('60 FPS',1184,24,0xf0f5f5),('H1539 V1476',1112,616,0xf0f5f5)]
+ if i!=2:
+  texts += [('跟踪中' if i<4 else '暂无运动',284,30,0x60ff90 if i<4 else 0xf0f5f5),('X:0936 Y:0404',188,62,0xf0f5f5),('0267ms' if i==0 else '0015ms',1184,44,0xf0f5f5)]
+ else:
+  texts += [('0.0003ms',1160,44,0xf0f5f5)]
+  assert np.all(im[24:52,308:404]==[96,128,160]),'ordinary mode has no waiting/status plate'
+ positions=[856,936,1016,1144]
+ for group,text in enumerate(['手动 开' if i==1 else '手动 关','追踪 开','自动曝光 自动','白平衡 自动']):texts.append((text,positions[group],660,0xc0c0c0 if group==0 and i!=1 else 0x60ff90))
+ for group,text in enumerate(['向左','向下','向上','向右'] if i==1 else ['选取' if i==3 else '重置' if i==4 else '无','无','上一项','下一项']):texts.append((text,positions[group],684,0xf0f5f5))
+ assert np.all(im[24:118,24:170][idx==0]==[96,128,160]),'Logo transparent background'
+ assert np.all(im[118:126,178:404]==[96,128,160]),'unused left area remains video'
+ if i!=2:texts.append(('串口屏已接入',188,94,0xf0f5f5))
+ else:assert np.all(im[88:116,180:292]==[96,128,160]),'disconnected badge hidden'
+ assert np.all(im[528,1144]==[48,64,80]),'extra quarter grid removed'
+ assert np.all(im[504,1128:1225]==[96,104,112]),'reachable range top border'
+ assert np.all(im[652,848:1264]==[96,104,112]),'footer top border'
+ assert np.all(im[653:707,849:856]==[48,64,80]),'footer left padding'
+ for text,x,y,color in texts:
+  m=mask(text,text.startswith("H1539") or text.endswith("FPS") or text.endswith("ms"));expected=np.full((m.shape[0],m.shape[1],3),[48,64,80],np.uint8)
+  expected[m]=[(color>>16)&255,(color>>8)&255,color&255]
+  actual=im[y:y+m.shape[0],x:x+m.shape[1]]
+  if not np.array_equal(actual,expected):
+   bad=np.argwhere(np.any(actual!=expected,2));print(i,text,bad[:12].tolist(),[(actual[yy,xx].tolist(),expected[yy,xx].tolist()) for yy,xx in bad[:4]])
+  assert np.array_equal(actual,expected),(i,text,int(np.any(actual!=expected,2).sum()))
+  checks+=1
+oldfont=[int(v,16)for _,v in re.findall(r'([0-9A-F]+)\s*:\s*([0-9A-F]+);',(ROOT/'releases/vision_hmi_v66_r2/source/user_source/hdl_source/osd_font_rom.mif').read_text())]
+oldascii='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:-. ms'
+for i,c in enumerate(meta['ascii']):assert words[i*16:(i+1)*16]==oldfont[oldascii.index(c)*16:(oldascii.index(c)+1)*16],'Original ASCII pixels'
+asset=json.loads((ROOT/'rtl/overlay/zlabs_pixel16_v67.json').read_text(encoding='utf-8'))
+asset['glyphs'].update(json.loads((ROOT/'rtl/overlay/zlabs_hmi_v71.json').read_text(encoding='utf-8'))['glyphs'])
+for i,c in enumerate(meta['cjk']):assert words[(len(meta['ascii'])+i)*16:(len(meta['ascii'])+i+1)*16]==asset['glyphs'][c]
+record=dict(status='passed',gimbal_size=[160,144],transparent_logo_background=True,font_canvas_height=16,native_pixels=True,ascii_v66_exact=True,cjk_v67_exact=True,known_pixels=4608000,font_words=2048,glyphs=128,logo_exact=True,independent_text_rectangles=checks)
+(out/'validation.json').write_text(json.dumps(record,indent=2));print(record)
+
+for i in range(5):
+ baseline=np.asarray(Image.open(ROOT/'reports/osd_v72'/f'frame{i}.png'))
+ actual=np.asarray(Image.open(out/f'frame{i}.png'))
+ assert np.array_equal(actual,baseline),('v72 pixel mismatch',i)
+print('All 4608000 RGB pixels exact against v72; compact selector reduced24 to16 slots')

@@ -49,6 +49,10 @@ module color_tone4 #(
   defringe_pixel={r,g,b};
  end endfunction
 
+ function[7:0]sat15;input[7:0]c,y;reg signed[8:0]d;reg signed[9:0]q;
+ begin d=$signed({1'b0,c})-$signed({1'b0,y});q=$signed({1'b0,c})+(d>>>1);
+ sat15=q[9]?8'd0:q[8]?8'd255:q[7:0];end endfunction
+
  function [23:0] saturation_pixel;
  input [23:0] pixel;
  reg [7:0] r,g,b,y,max_rgb,min_rgb;reg signed [10:0] dr,dg,db;
@@ -68,10 +72,7 @@ module color_tone4 #(
    db=$signed({1'b0,b})-$signed({1'b0,y});
    dr_ext={{10{dr[10]}},dr};dg_ext={{10{dg[10]}},dg};db_ext={{10{db[10]}},db};
    if(SAT_Q8==384)begin
-    // 384/256 = 1.5; keep this production setting multiplier-free.
-    r_scaled=(dr_ext<<<8)+(dr_ext<<<7);
-    g_scaled=(dg_ext<<<8)+(dg_ext<<<7);
-    b_scaled=(db_ext<<<8)+(db_ext<<<7);
+    r_scaled=0;g_scaled=0;b_scaled=0;
    end else if(SAT_Q8==614)begin
     r_scaled=(dr_ext<<<9)+(dr_ext<<<6)+(dr_ext<<<5)+(dr_ext<<<2)+(dr_ext<<<1);
     g_scaled=(dg_ext<<<9)+(dg_ext<<<6)+(dg_ext<<<5)+(dg_ext<<<2)+(dg_ext<<<1);
@@ -79,12 +80,17 @@ module color_tone4 #(
    end else begin
     r_scaled=dr_ext*SAT_Q8;g_scaled=dg_ext*SAT_Q8;b_scaled=db_ext*SAT_Q8;
    end
-   r_out=$signed({1'b0,y})+(r_scaled>>>8);
-   g_out=$signed({1'b0,y})+(g_scaled>>>8);
-   b_out=$signed({1'b0,y})+(b_scaled>>>8);
-   if(r_out<0)r=0;else if(r_out>255)r=255;else r=r_out[7:0];
-   if(g_out<0)g=0;else if(g_out>255)g=255;else g=g_out[7:0];
-   if(b_out<0)b=0;else if(b_out>255)b=255;else b=b_out[7:0];
+   if(SAT_Q8==384)begin
+    // y+floor(1.5*(c-y)) == c+floor((c-y)/2), including negative differences.
+    r=sat15(r,y);g=sat15(g,y);b=sat15(b,y);
+   end else begin
+    r_out=$signed({1'b0,y})+(r_scaled>>>8);
+    g_out=$signed({1'b0,y})+(g_scaled>>>8);
+    b_out=$signed({1'b0,y})+(b_scaled>>>8);
+    if(r_out<0)r=0;else if(r_out>255)r=255;else r=r_out[7:0];
+    if(g_out<0)g=0;else if(g_out>255)g=255;else g=g_out[7:0];
+    if(b_out<0)b=0;else if(b_out>255)b=255;else b=b_out[7:0];
+   end
    saturation_pixel={r,g,b};
   end
  end endfunction

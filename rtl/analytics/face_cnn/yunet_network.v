@@ -3,7 +3,7 @@
 // Four interleaved banks permit four channel reads per convolution beat.
 // Depthwise/single-channel layers use lane0, avoiding multi-port RAM replication.
 module yunet_network #(
- parameter integer PROGRAM_DEPTH=55,WEIGHT_DEPTH=12373,BIAS_DEPTH=1524,
+ parameter integer CHANNEL_PREFETCH=1,PIXEL_PREFETCH=1,PROGRAM_DEPTH=55,WEIGHT_DEPTH=12373,BIAS_DEPTH=1524,
  parameter PROGRAM_FILE="rtl/analytics/face_cnn/program.hex",
  parameter W0_FILE="rtl/analytics/face_cnn/weights0.hex",W1_FILE="rtl/analytics/face_cnn/weights1.hex",
  parameter W2_FILE="rtl/analytics/face_cnn/weights2.hex",W3_FILE="rtl/analytics/face_cnn/weights3.hex",
@@ -17,7 +17,7 @@ module yunet_network #(
   CONV_READ=6,CONV_WAIT=7,CONV_FEED=8,CONV_RESULT=9,NEXT_OUTPUT=10,
   MISC_READ=11,MISC_WAIT=12,MISC_EVAL=13,ROW_PREP=14,ROW_READ=15,ROW_WAIT=16,ROW_WRITE=17,
   PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21;
- reg [4:0] state;assign busy=state!=IDLE;
+ reg beat_prefetched;reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="dram" *) reg [7:0] cache0[0:1919];
  (* ram_style="bram" *) reg [7:0] cache1[0:1919],cache2[0:1919],cache3[0:1919];
@@ -120,13 +120,18 @@ module yunet_network #(
  reg [1:0] debug_bank;
  assign read_word={aq3,aq2,aq1,aq0};
  assign read_data=debug_bank==0?aq0:debug_bank==1?aq1:debug_bank==2?aq2:aq3;
+ wire prefetch_beat=state==CONV_FEED&&dot_in_ready&&
+  ((PIXEL_PREFETCH&&use_pixel&&!last_tap)||(CHANNEL_PREFETCH&&!last_ic));
  always @(posedge clk)begin
-  operand_address<=calculated_address;weight_address<=conv_weight;
+  operand_address<=CHANNEL_PREFETCH&&prefetch_beat&&!in_place?conv_addr+17'd4:calculated_address;
+  // 1x1 in-place pixels already have a one-cycle cache read. Prefetch the
+  // next four weights when a beat is accepted, avoiding a redundant WAIT.
+  weight_address<=prefetch_beat?conv_weight+17'd4:conv_weight;
   instruction<=program_rom[operation_index];bias_q<=biases[bias_base+oc];shift_q<=shifts[bias_base+oc];
   aq0<=fm0[memory_address[15:2]];aq1<=fm1[memory_address[15:2]];aq2<=fm2[memory_address[15:2]];aq3<=fm3[memory_address[15:2]];
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
   // READ captures the address; WAIT reads RAM; FEED consumes its registered data.
-  cache_read_address<=cache_addr;
+  cache_read_address<=CHANNEL_PREFETCH&&prefetch_beat&&use_row?cache_addr+13'd4:cache_addr;
   cq0<=cache0[cache_read_address[12:2]];cq1<=cache1[cache_read_address[12:2]];cq2<=cache2[cache_read_address[12:2]];cq3<=cache3[cache_read_address[12:2]];
   pq0<=pixel0[ic[5:2]];pq1<=pixel1[ic[5:2]];pq2<=pixel2[ic[5:2]];pq3<=pixel3[ic[5:2]];
   if(state==ROW_WRITE)begin cache0[fill_cache_addr[12:2]]<=aq0;cache1[fill_cache_addr[12:2]]<=aq1;cache2[fill_cache_addr[12:2]]<=aq2;cache3[fill_cache_addr[12:2]]<=aq3;end
@@ -154,7 +159,7 @@ module yunet_network #(
  wire [16:0] output_address=feature_index(dst_base,oy,ox,ow,oc,channel_shift(co));
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
-   state<=IDLE;done<=0;operation_done<=0;operation_index<=0;cycles<=0;
+   beat_prefetched<=0;state<=IDLE;done<=0;operation_done<=0;operation_index<=0;cycles<=0;
    opcode<=0;src_base<=0;src2_base<=0;dst_base<=0;iw<=0;ih<=0;ow<=0;oh<=0;ci<=0;co<=0;
    kernel3<=0;stride2<=0;pad1<=0;depthwise<=0;relu<=0;input_unsigned<=0;weight_base<=0;bias_base<=0;shift1<=0;shift2<=0;
    in_place<=0;reverse_order<=0;row_ready<=0;pixel_ready<=0;row_valid<=0;prep_row<=0;fill_slot<=0;fill_y<=0;fill_offset<=0;pixel_offset<=0;
@@ -163,6 +168,7 @@ module yunet_network #(
   end else begin
    done<=0;operation_done<=0;write_pending<=0;
    if(busy)cycles<=cycles+1'b1;
+   if(state==CONV_READ)beat_prefetched<=0;else if(state==CONV_FEED&&dot_in_ready)beat_prefetched<=!last_ic;
    case(state)
     IDLE:if(start)begin operation_index<=0;cycles<=0;state<=CONFIG_WAIT;end
     CONFIG_WAIT:state<=CONFIG;
@@ -199,7 +205,7 @@ module yunet_network #(
     end
     META:state<=DOT_START;
     DOT_START:if(dot_ready)state<=CONV_READ;
-    CONV_READ:begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=CONV_WAIT;end
+    CONV_READ:begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=((PIXEL_PREFETCH&&use_pixel)||(CHANNEL_PREFETCH&&beat_prefetched))?CONV_FEED:CONV_WAIT;end
     CONV_WAIT:state<=CONV_FEED;
     CONV_FEED:if(dot_in_ready)begin
      if(last_tap)state<=CONV_RESULT;
