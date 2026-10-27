@@ -140,6 +140,13 @@
       "source_commit": "631f5af0eaec6bde5756a5c4901bc1882c940fca",
       "message": "feat: 串口屏控制——集成模式方向与功能状态协议",
       "changed_files": 29,
+      "removed_files": 0,
+      "destination_commit": "a91f0fb1ecc8c9b299f40801f7a31f7a2ac38e8f"
+    },
+    {
+      "source_commit": "563247c5d7d42c0db8307b81ec9a566a586bd1c9",
+      "message": "fix: 串口状态查询——保留屏幕刷新窗口",
+      "changed_files": 4,
       "removed_files": 0
     }
   ]

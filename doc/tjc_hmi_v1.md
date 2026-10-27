@@ -63,7 +63,7 @@ CHECK = FF XOR OP XOR ARG
 |vL|0/1|物理手动开关开启；为1时禁用“退出手动”|
 |vM|0..99循环|包提交序号，最后更新|
 
-FPGA 大约每100ms依次发送 vA..vL，然后发送 vM；同一包来自同一快照。每条赋值使用原生ASCII，末尾为三个FF：
+FPGA 大约每100ms依次发送 vA..vL，然后发送 vM；同一包来自同一快照。查询由下一个周期状态包应答（最长约100ms），不会插队缩短包间隔，因此每包后留有超过20ms的显示刷新窗口。屏幕启动查询一次即可，不要循环查询。每条赋值使用原生ASCII，末尾为三个FF：
 main.vA.val=0011 FF FF FF
 main.vH.val=0267 FF FF FF
 main.vM.val=0001 FF FF FF

@@ -8,12 +8,15 @@ module tb_hmi_v66;
  .features(features),.mode_set(mode_set),.mode_value(selected),.action(action),.keys(keys));
  wire valid,error;wire[7:0]data;
  vision_uart_8n1 #(.CLK_HZ(1000000),.BAUD(100000)) monitor(.clk(clk),.rst_n(rst),.rx(tx),.tx_valid(1'b0),.tx_data(8'd0),.tx_ready(),.tx(),.rx_valid(valid),.rx_error(error),.rx_data(data));
+ integer tick_count=0,last_start=-1000000;
  integer bytes=0,packets=0,sets=0,picks=0,idx=0,field=0,value=0,last_seq=-1;reg[127:0] golden;integer first[0:12];
  always @(posedge clk)begin
+  tick_count=tick_count+1;
   if(mode_set)begin mode<=selected;sets=sets+1;end
   if(action)picks=picks+1;
   if(error)$fatal(1,"UART TX framing error");
   if(valid)begin
+   if(idx==0&&field==0)begin if(tick_count-last_start<99000)$fatal(1,"query bypassed atomic snapshot interval");last_start=tick_count;end
    golden="main.vA.val=0000";golden[79:72]="A"+field;
    if(idx<12 && data!==((golden>>(8*(15-idx)))&255))$fatal(1,"header index%0d field%0d got%x expected%x",idx,field,data,(golden>>(8*(15-idx)))&255);
    if(idx>=12&&idx<=15)begin
@@ -36,6 +39,7 @@ module tb_hmi_v66;
  initial begin
   first[0]=11;first[1]=0;first[2]=5;first[3]=936;first[4]=404;first[5]=1539;first[6]=1476;first[7]=267;first[8]=1;first[9]=1;first[10]=60;first[11]=0;first[12]=0;
   clocks(5);rst=1;clocks(30000);if(packets!=1)$fatal(1,"initial telemetry packet");
+  command(8'h01,0);command(8'h01,0);command(8'h01,0);
   command(8'h11,1);command(8'h12,1);command(8'h13,1);if(features!=7)$fatal(1,"enable features");
   command(8'h14,1);command(8'h16,8);if(keys!=8||features!=15)$fatal(1,"manual direction");
   command(8'h16,9);if(keys!=0)$fatal(1,"opposite directions");

@@ -16,7 +16,7 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  vision_uart_8n1 #(.CLK_HZ(CLK_HZ),.BAUD(BAUD)) uart(clk,rst_n,rx,tx_valid,tx_data,tx_ready,tx,received,rx_error,received_data);
  reg[2:0]parse;reg[7:0]op,arg,check;reg[3:0]gap_ms;
  wire command=received&&parse==5&&received_data==8'h0d&&check==(8'hff^op^arg);
- reg[7:0]lease_ms;reg request_state;
+ reg[7:0]lease_ms;
  function[3:0]safe_keys;input[3:0]value;begin
  safe_keys=value;if(value[3]&&value[0])begin safe_keys[3]=0;safe_keys[0]=0;end
  if(value[2]&&value[1])begin safe_keys[2]=0;safe_keys[1]=0;end
@@ -44,14 +44,14 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  end
  integer i;
  always @(posedge clk or negedge rst_n)begin
-  if(!rst_n)begin desired<=0;physical_prev<=0;mode_set<=0;mode_value<=0;action<=0;keys<=0;lease_ms<=0;request_state<=0;end
+  if(!rst_n)begin desired<=0;physical_prev<=0;mode_set<=0;mode_value<=0;action<=0;keys<=0;lease_ms<=0;end
   else begin
-   physical_prev<=physical_features;mode_set<=0;action<=0;request_state<=0;
+   physical_prev<=physical_features;mode_set<=0;action<=0;
    for(i=0;i<4;i=i+1)if(changed[i])desired[i]<=physical_features[i];
    if(!manual_mode)begin keys<=0;lease_ms<=0;end
    else if(ms_tick&&lease_ms!=0)begin lease_ms<=lease_ms-1'b1;if(lease_ms==1)keys<=0;end
    if(command)case(op)
-    8'h01:if(arg==0)request_state<=1;
+    8'h01:begin end // Status query is served by the next periodic snapshot (<=100ms).
     8'h10:if(arg<16&&arg!=13)begin mode_value<=arg[3:0];mode_set<=1;end
     8'h11:if(arg<2&&!changed[0])desired[0]<=arg[0];
     8'h12:if(arg<2&&!changed[1])desired[1]<=arg[0];
@@ -72,7 +72,7 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
   else if(mode==12&&task_status==6)ui_state=2;else ui_state=ctl_state==0?0:3;
  end
  reg[207:0]snapshot;reg[7:0]sequence_bcd;reg[6:0]period_ms;
- reg running,pending;reg[3:0]field;reg[4:0]index;
+ reg running;reg[3:0]field;reg[4:0]index;
  wire[15:0]digits=snapshot>>(field*16);
  reg[3:0]digit;
  always @*case(index)
@@ -90,14 +90,13 @@ module hmi_control_link #(parameter CLK_HZ=75000000,BAUD=115200)(
  end
  assign tx_valid=running;assign tx_data=byte_value;
  always @(posedge clk or negedge rst_n)begin
-  if(!rst_n)begin snapshot<=0;sequence_bcd<=0;period_ms<=0;running<=0;pending<=1;field<=0;index<=0;end
+  if(!rst_n)begin snapshot<=0;sequence_bcd<=0;period_ms<=99;running<=0;field<=0;index<=0;end
   else begin
    if(ms_tick&&period_ms<99)period_ms<=period_ms+1'b1;
-   if(request_state)pending<=1;
-   if(!running&&(period_ms==99||pending))begin
+   if(!running&&period_ms==99)begin
     snapshot<={{8'd0,sequence_bcd},{15'd0,physical_features[3]},{8'd0,fps_digits},{15'd0,compute_valid},{15'd0,target_found},ms_digits,v_digits,h_digits,y_digits,x_digits,{12'd0,ui_state},small_bcd(features),small_bcd(mode)};
     if(sequence_bcd[3:0]==9)sequence_bcd<=sequence_bcd[7:4]==9?0:{sequence_bcd[7:4]+4'd1,4'd0};else sequence_bcd<=sequence_bcd+1'b1;
-    running<=1;pending<=0;period_ms<=0;field<=0;index<=0;
+    running<=1;period_ms<=0;field<=0;index<=0;
    end else if(running&&tx_ready)begin
     if(index==18)begin index<=0;if(field==12)begin running<=0;field<=0;end else field<=field+1'b1;end
     else index<=index+1'b1;
