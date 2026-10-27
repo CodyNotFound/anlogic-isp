@@ -196,7 +196,8 @@
       "source_commit": "15103d9a5270ea8b275daa998b707cc72f548c87",
       "message": "test: 串口到PWM整链路——覆盖十五模式与普通处理耗时",
       "changed_files": 0,
-      "removed_files": 0
+      "removed_files": 0,
+      "destination_commit": "cb8c0461e6d34fa21a385b1c73897d63f6985564"
     }
   ]
 }

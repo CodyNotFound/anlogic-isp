@@ -1,80 +1,40 @@
-# Anlogic PH1P35 Vision
+# 安芯智视视觉跟踪云台系统
 
-安路 2026 FPGA 创新设计赛道题二的正式工程。第一阶段目标是从 SC500CS 摄像头采集 1280x720@60fps 视频，经 MIPI CSI-2、RAW10/ISP、DDR2 帧缓存后，通过 HDMI 输出。
+基于HX1P35A / PH1P35MDG324的FPGA视觉工程。SC500CS双通道MIPI CSI-2输入RAW10，经ISP与DDR2后输出1280×720@60 Hz视频，并驱动两轴云台。
 
-## 当前状态
+## 功能与操作
 
-- 阶段：Phase 1 - 官方平台基线 + 项目自有像素处理层
-- 目标器件：`PH1P35MDG324`
-- 开发板：HX1P35A
-- 摄像头：SC500CS，2-lane MIPI CSI-2，RAW10
-- 输出：HDMI，1280x720@60Hz
-- 算法模式（K1 加/K2 减，00..12、14（跳过13））：0 色彩还原 / 1 灰度 / 2 反色 / 3 二值 / 4 增亮 / 5 锐化 / 6 模糊 / 7 边缘 / 8 浮雕 / **9 TOON 赛璐璐** / 10 换色 / **11 FACE 人脸位置 / 12 TRAK 目标跟踪  / 14 REGN 区域测量**。
-- 当前任务模式：**12 跟踪：七角度及两个尺度模板，有限局部恢复；14 色区：一键取色、连通域及位置/面积关联**。13局部均衡与SW3全局均衡已退出运行时。K4重新选取，说明见[抗倾斜跟踪](doc/vision_tracking_rotation.md)。
-- 人脸模式仍为11 FACE，由FPGA独立推理；从00按K2三次进入。仿真、资源和板测边界见[人脸模式说明](doc/face_mode.md)。
-- 实施依据见[模式价值审查](doc/mode_value_review.md)。旧00～11保留，新功能接续编号。
-- 当前应用禁用旧ISP分步演示入口；K3在手动云台模式下向下，非手动时无操作。
-- 蜂鸣器（C12，板上SW5使能）：开机大疆式三音上行 D5-A5-D6；任意按键哔一声
-- 功能拨码：SW1 AB自适应亮度、SW2 AE自动曝光、SW3 OSD信息显示、SW4手动云台；RAW域AWB固定常开。SW3关闭仍保留安路Logo，后台跟踪继续；FACE/TRACK/REGION模式自动使用有效位置驱动云台，SW4手动优先。
-- 顶层：`design_top_wrapper`
-- TD 工程：`td_project/camera_to_dsi_display.al`
+ISP支持黑电平、17×13网格LSC、BGGR去马赛克、白平衡、色调和自动曝光。00～10依次为色彩还原、灰度、反色、二值、增亮、锐化、模糊、边缘、浮雕、卡通、换色；11人脸CNN、12模板、13色区、14固定机位运动。分析任务互斥共享片上存储。
 
-## 快速开始
+| 控件 | 功能 |
+| --- | --- |
+| SW1 / SW2 | 白平衡、曝光自动更新或保持当前参数 |
+| SW3 | 自动云台跟随使能 |
+| SW4 | 四键用途切换，开启后K4/K3/K2/K1为左/下/上/右 |
+| K1 / K2 | 非方向用途时下一/上一模式 |
+| K4 | 模板/色区取样，运动模式重建参考 |
 
-1. 安装安路 Tang Dynasty TD 6.2.168116 或兼容版本。
-2. 按官方 JTAG 文档安装 WinUSB，并确认 `hwserver.exe` 位于 TD 安装目录的 `bin` 中。
-3. 在 TD 中打开 `td_project/camera_to_dsi_display.al`。
-4. 确认器件为 `PH1P35MDG324`、顶层为 `design_top_wrapper`。
-5. 执行 Synthesis，再执行 Physical Design/Place & Route。
-6. 在 `td_project/camera_to_dsi_display_Runs/phy_1/` 找到新生成的 `.bit`。
-7. 用 BitWriter 选择 `PROGRAM_SRAM` 下载验证；确认稳定后再生成 Flash 文件。
+方向键临时接管，松开等待新的定位恢复自动；目标丢失保持指令位置。可选串口屏支持模式、功能与方向控制，本地仍可接管。公开模型与许可证保留在models/yunet。
 
-拨码功能按低有效持续电平工作，拨到一侧后保持使能，不会自动返回。原有按键 `I_button[3:0]` 仍使用 D5/A9/B9/C7；新增拨码端口 `I_switch[3:0]` 使用 SW1=A4、SW2=B4、SW3=E11、SW4=D11。
+## 构建与验证
 
-## 目录说明
+TD入口为td_project/camera_to_dsi_display.al，顶层design_top_wrapper。保持rtl、user_source、td_project和vendor_reference相对目录。
 
-`td_project/` 和 `user_source/` 保持安路 TD 相对路径兼容。`rtl/`、`sim/`、`scripts/` 和 `reports/` 保存项目自有模块、仿真和验证内容；不要为了“目录好看”复制或重命名官方平台 IP。
+```powershell
+./scripts/run_td_verified.ps1 -RunName colorshading_runs_20261027_verify -DisableFsmInference -AllowSlicePackingProbe
+./scripts/run_hmi_v72.ps1
+```
 
-详细说明见：
+每次使用新的RunName，源码快照、资源与最终建立/保持时序必须通过检查。主线迁入时128个构建输入与原通过归档逐字节一致：Slice20855/21216、RAM108/108、DSP39/40，setup+0.005ns、hold+0.020ns，TNS均0。原构建证据、目标目录重新构建与实物验证分别记录。
 
-- `docs/architecture.md`：第一阶段数据通路和模块边界
-- `docs/build.md`：从源码重新编译和下载
-- `docs/verification.md`：仿真、综合、实板验收标准
-- `docs/change-impact.md`：修改分辨率、算法、约束时的影响范围
+bit、数据库、仿真工作库和报告外部归档，不入源码历史。后续优化候选在独立分支验证。
 
-## 官方参考资料
+## 文档
 
-官方例程和资料保存在 `[LOCAL_PATH]`，本仓库只记录来源，不复制整套资料。参考 Lab1/2/3 的说明见 `vendor_reference/README.md`。
+- [迁入记录](doc/history/README.md)
+- [技术文档](doc/submission/01_技术文档初稿.md)
+- [视频拍摄](doc/submission/02_视频拍摄与剪辑大纲.md)
+- [按键与接线](doc/submission/04_按键交互与简明接线.md)
+- [五点可行性](doc/submission/05_五点关键点可行性与数据口径.md)
 
-
-### HX1P35A 云台与操作面板（2026-10-21）
-
-双TBSK15使用J1-1/C18、J1-2/D15输出PWM，J1-12共地，舵机使用独立6V电源。
-AWB固定常开，SW1=AB、SW2=AE、SW3=OSD信息显示、SW4=手动；K4/K3/K2/K1对应Vim的h/j/k/l。当前控制与紧凑布局见[v43说明](doc/osd_v43.md)，以下旧版本归档保留各自的历史开关定义。
-LED1～4显示开关状态，SW6选数码管时显示水平/竖直PWM微秒值。
-接线、限位和全部操作见[云台接线说明](doc/gimbal_wiring_hx1p35a.md)；最终编译/时序结论以对应v38 completion记录为准。
-
-云台v38提速：短按4µs微调，长按约200ms后每20ms走32µs；自动按偏差调速，单条新结果最大32µs，中心附近1µs。见[提速验证](doc/gimbal_v38_validation.md)。
-
-### 人脸、模板、色区跟踪 v40（2026-10-24）
-
-已归档通过40项功能检查及最终路由时序的[vision_tracking_v40_r4](releases/vision_tracking_v40_r4)。人脸增加局部级联复核与最多两次有界梯度模板续跟，取消固定周期的全图重扫；模板增加尺度候选和有限恢复；色区首次关联取样点，随后关联原目标位置与面积。物品类别识别不在本轮范围内。
-
-物理20362/21216 slice、RAM91/108、DSP36/40；setup +0.101ns、hold +0.020ns，TNS均0。未烧录或实拍验收；本轮没有重新训练人脸模型，不能据此宣称侧脸准确率已解决。详见[验证说明](doc/tracking_v40_validation.md)及[上板检查](doc/tracking_v40_board_check.md)。
-
-### 彩色赛璐璐 v41（2026-10-24）
-
-活动源码将09复古替换为TOON：梯度门控RGB平滑、亮度分档与彩色/亮度联合轮廓描线。实际RTL输出对比见[效果图](reports/cartoon_v41/comparison_rtl.png)，原生720p图像流及模式退出检查已通过；这里的输入是固定照片，不代表摄像头实拍验收。
-
-已归档[vision_cartoon_v41_r2](releases/vision_cartoon_v41_r2)，22项功能检查通过（17项当前源码回归、5项未变渲染单模块检查复用）；106个构建输入哈希验证通过。最终物理20639/21216 slice、RAM100/108、DSP36/40，路由setup +0.227ns、hold +0.020ns，TNS均0。
-
-[上板bit](releases/vision_cartoon_v41_r2/build/phy/camera_to_dsi_display.bit)。SW4关闭后用K1/K2选择09 TOON，先关闭SW1 AB观察原始色阶。未烧录或实拍验收；实现、校验值及上板观察步骤见[赛璐璐模式说明](doc/cartoon_v41.md)。
-
-
-### 颜色跟踪与丢失保持 v42（2026-10-24）
-
-[vision_color_tracking_v42_r3](releases/vision_color_tracking_v42_r3)修复丢失超时回中，改为无限保持PWM；颜色取样采用归一化色度方向，保留颜色，丢失扩展搜索并要求唯一候选连续确认。AB移到特效之前，避免反色后的统计反馈；07改为亮度/颜色联合灰阶轮廓，gamma前加入暗部色噪抑制。人脸及SAD算法没有在本轮重写。
-
-35项功能检查通过（9项R3颜色流水及分析接口复测、26项未变功能复用），106个构建输入校验通过；物理20847/21216 slice、RAM100/108、DSP36/40，最终setup +0.107ns、hold +0.020ns，TNS均0。
-
-[上板bit](releases/vision_color_tracking_v42_r3/build/phy/camera_to_dsi_display.bit)；SW4关、14 REGION、K4取样，再开SW3自动。操作、材质/光照限制、实拍尚待确认的暗光偏绿与录制建议见[v42说明](doc/field_tracking_v42.md)。未烧录，旧版归档保留。
+官方平台来源见vendor_reference/README.md。
