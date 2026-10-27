@@ -38,8 +38,16 @@ module yunet_network #(
  reg signed [31:0] bias_q;reg signed [6:0] shift_q;
  reg signed [31:0] misc_temp;reg write_pending;reg [16:0] write_address;reg [7:0] write_data;
  function [15:0] multiply8;
- input [7:0] a,b;integer i;reg [15:0] s;
- begin s=0;for(i=0;i<8;i=i+1)if(b[i])s=s+({8'b0,a}<<i);multiply8=s;end
+ input [7:0] a,b;reg [15:0] aa;
+ // The generated 160x96 graph has only these six row widths. A general
+ // eight-term shift/add multiplier created a 21-level path into the BRAM.
+ // Each supported width has exactly two terms and needs one carry chain.
+ begin aa={8'b0,a};case(b)
+  8'd160:multiply8=(aa<<7)+(aa<<5);8'd80:multiply8=(aa<<6)+(aa<<4);
+  8'd40:multiply8=(aa<<5)+(aa<<3);8'd20:multiply8=(aa<<4)+(aa<<2);
+  8'd10:multiply8=(aa<<3)+(aa<<1);8'd5:multiply8=(aa<<2)+aa;
+  default:multiply8=0;
+ endcase end
  endfunction
  function [2:0] channel_shift;
  input [6:0] c;

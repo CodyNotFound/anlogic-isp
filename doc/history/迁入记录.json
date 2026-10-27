@@ -21,6 +21,13 @@
       "source_commit": "741e68a1d667f1096720e811416c179f78171fdc",
       "message": "feat: 人脸定点CNN——接入YuNet网络与完整图像到坐标链路",
       "changed_files": 46,
+      "removed_files": 0,
+      "destination_commit": "3aad23b0a1746b17b40b48e7bacc8f3dac7ea7a3"
+    },
+    {
+      "source_commit": "c20ef9be66c7728cea8c873b3dd91cd2d39c9305",
+      "message": "perf: CNN地址计算——按固定图像尺寸简化行地址",
+      "changed_files": 3,
       "removed_files": 0
     }
   ]
