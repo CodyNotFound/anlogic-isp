@@ -14,6 +14,13 @@
       "source_commit": "57ea5c1c11d981aa74af3cb8cf0b02f354649884",
       "message": "feat: 中文紧凑面板——统一模式状态与云台位置显示",
       "changed_files": 19,
+      "removed_files": 0,
+      "destination_commit": "68fcd77863e7501a3edfd14d704f5f5cb901b68a"
+    },
+    {
+      "source_commit": "741e68a1d667f1096720e811416c179f78171fdc",
+      "message": "feat: 人脸定点CNN——接入YuNet网络与完整图像到坐标链路",
+      "changed_files": 46,
       "removed_files": 0
     }
   ]

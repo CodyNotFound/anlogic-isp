@@ -31,3 +31,9 @@ scripts/osd_v43_reference.py独立使用原MIF字形与Logo，生成六张720p�
 本轮第一轮Check发现活动.al缺少已有pixel_cartoon源条目；补回后另建r2，保留失败日志。不使用旧网表续编译。
 
 本轮不烧录；面板观感、摄像头和机械动作仍需用户上板验收。
+
+## r2 最终交付结果
+
+12项功能回归通过，其中完整OSD核对6帧共5,529,600个RGB像素。106个显式构建输入在Check后保持一致。最终布线setup WNS +0.234ns、hold WNS +0.020ns，TNS均为0；Slices 20,444/21,216，RAM 100/108，DSP 36/40。
+
+bit SHA256：F2E89172FCAC7D683260EA77211C2AD757EDBEBA4336E6CDF6808ACE7E7F5868。归档：releases/vision_osd_v43_r2；机器可读总报告：reports/osd_v43/validation.json。通过软件及物理实现检查不代表已上板验收。

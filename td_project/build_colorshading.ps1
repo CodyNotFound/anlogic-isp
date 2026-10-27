@@ -37,6 +37,8 @@ $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'user_source/hdl_
 # Face ROM contents are synthesis inputs, even though they are not Verilog files.
 $faceRomRoot=Join-Path $projectRoot 'rtl/analytics/face_lbp'
 $sources += @('weak.hex','stage.hex','geometry.hex','human_weak.hex','human_stage.hex','human_geometry.hex') | ForEach-Object {Join-Path $faceRomRoot $_}
+$cnnRoot=Join-Path $projectRoot 'rtl/analytics/face_cnn'
+if(Test-Path -LiteralPath $cnnRoot){$sources+=Get-ChildItem -LiteralPath $cnnRoot -File | Where-Object {$_.Extension -in @('.hex','.vh')} | ForEach-Object FullName}
 New-Item -ItemType Directory -Force -Path $synDir,$phyDir | Out-Null
 $manifest = foreach ($source in ($sources | Sort-Object -Unique)) {
     $hash = Get-FileHash -LiteralPath $source -Algorithm SHA256

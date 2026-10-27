@@ -1,0 +1,56 @@
+// Four physical signed multipliers, shared by all YuNet convolutions.
+// 9-bit activations cover both unsigned camera BGR (0..255) and signed int8 maps.
+// The scheduler supplies flattened OHWI products, padding and unused lanes = 0.
+// Accept one four-product beat per clock; the last beat drains before publication.
+// No floating point, vendor simulator primitive, or CPU classifier is required.
+module yunet_dot4(
+ input wire clk,rst_n,
+ input wire start,input wire signed [31:0] bias,
+ input wire signed [6:0] shift,input wire relu,
+ output wire ready,
+ input wire in_valid,output wire in_ready,input wire in_last,
+ input wire [35:0] activations,input wire [31:0] weights,
+ output reg out_valid,input wire out_ready,
+ output reg signed [31:0] accumulator,
+ output reg signed [7:0] value
+);
+ reg busy,closing,p_valid,p_last;
+ reg signed [6:0] shift_q;reg relu_q;
+ reg signed [31:0] sum;
+ reg signed [16:0] p0,p1,p2,p3;
+ wire signed [18:0] pair_sum={{2{p0[16]}},p0}+{{2{p1[16]}},p1}+{{2{p2[16]}},p2}+{{2{p3[16]}},p3};
+ wire signed [31:0] next_sum=sum+{{13{pair_sum[18]}},pair_sum};
+ assign ready=!busy;
+ assign in_ready=busy&&!closing&&!out_valid;
+ function signed [7:0] requant;
+ input signed [31:0] a;input signed [6:0] s;input r;
+ reg signed [63:0] wide;
+ begin
+  wide={{32{a[31]}},a};
+  if(s>0)wide=(wide+(64'sd1<<(s-1)))>>>s;
+  else if(s<0)wide=wide<<<(-s);
+  requant=(r&&wide<0)?8'sd0:wide>127?8'sd127:wide< -128?-8'sd128:wide[7:0];
+ end
+ endfunction
+ always @(posedge clk or negedge rst_n)begin
+  if(!rst_n)begin
+   busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;
+   sum<=0;p0<=0;p1<=0;p2<=0;p3<=0;out_valid<=0;accumulator<=0;value<=0;
+  end else begin
+   p_valid<=0;
+   if(start&&ready)begin busy<=1;closing<=0;sum<=bias;shift_q<=shift;relu_q<=relu;end
+   if(in_valid&&in_ready)begin
+    p0<=$signed(activations[8:0])*$signed(weights[7:0]);
+    p1<=$signed(activations[17:9])*$signed(weights[15:8]);
+    p2<=$signed(activations[26:18])*$signed(weights[23:16]);
+    p3<=$signed(activations[35:27])*$signed(weights[31:24]);
+    p_valid<=1;p_last<=in_last;if(in_last)closing<=1;
+   end
+   if(p_valid)begin
+    sum<=next_sum;
+    if(p_last)begin accumulator<=next_sum;value<=requant(next_sum,shift_q,relu_q);out_valid<=1;end
+   end
+   if(out_valid&&out_ready)begin out_valid<=0;busy<=0;closing<=0;end
+  end
+ end
+endmodule

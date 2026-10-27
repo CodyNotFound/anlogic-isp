@@ -8,6 +8,7 @@ module vision_pipeline #(
     parameter integer ENABLE_PIPELINE = `VISION_ENABLE_PIPELINE,
     parameter integer ENABLE_EDGE = `VISION_ENABLE_EDGE,
     parameter integer ENABLE_OSD = `VISION_ENABLE_OSD,
+    parameter integer FACE_CNN_ENABLE = 0,
     parameter integer DEBUG_MODE = `VISION_DEBUG_MODE,
     // TD resolves readmemh beside the source file containing that statement.
     // RTL simulation from the repo root can override these three parameters.
@@ -308,12 +309,23 @@ module vision_pipeline #(
 
     // Detect on the clean platform RGB, before effects, adaptive brightness,
     // labels and logo. Mode 11 falls through pixel_algorithm unchanged.
+    wire lbp_found,lbp_valid;
+    wire [11:0] lbp_x,lbp_y,lbp_size,lbp_cx,lbp_cy;
     face_video_position #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),
         .WEAK_FILE(FACE_WEAK_FILE),.STAGE_FILE(FACE_STAGE_FILE),.GEOMETRY_FILE(FACE_GEOMETRY_FILE)) u_face_position(
-        .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
-        .position_valid(face_position_valid),.found(face_found),
-        .box_x(face_x),.box_y(face_y),.box_size(face_size),.center_x(face_center_x),.center_y(face_center_y),
+        .clk(clk),.rst_n(rst_n),.enable(face_enable && !FACE_CNN_ENABLE),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
+        .position_valid(lbp_valid),.found(lbp_found),
+        .box_x(lbp_x),.box_y(lbp_y),.box_size(lbp_size),.center_x(lbp_cx),.center_y(lbp_cy),
         .busy(),.stream_error(),.timeout_error(),.accepted_frames(),.completed_frames());
+    generate if(FACE_CNN_ENABLE)begin: cnn_mode
+        face_video_cnn #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT)) u_cnn(
+            .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
+            .position_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
+            .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames());
+    end else begin: lbp_mode
+        assign face_position_valid=lbp_valid;assign face_found=lbp_found;
+        assign face_x=lbp_x;assign face_y=lbp_y;assign face_size=lbp_size;assign face_center_x=lbp_cx;assign face_center_y=lbp_cy;
+    end endgenerate
     face_position_overlay u_face_overlay(
         .clk(clk),.rst_n(rst_n),.enable(face_enable && info_enabled_f),
         .vsync(post_alg_vsync),.hsync(post_alg_hsync),.de(post_alg_de),.sof(post_alg_sof),.eol(post_alg_eol),

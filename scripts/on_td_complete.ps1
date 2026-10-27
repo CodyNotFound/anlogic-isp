@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference='Stop'
 $ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot)
-if($ProjectRoot -ne '[LOCAL_PATH]'){throw 'Unexpected project root'}
+if($ProjectRoot -notin @('[LOCAL_PATH]','[LOCAL_PATH]')){throw 'Unexpected project root'}
 if($RunName -notmatch '^colorshading_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $run=Join-Path $ProjectRoot "td_project/$RunName"
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}
@@ -87,7 +87,7 @@ if($previous -notmatch ("<!-- "+$version+"-completion-trigger -->")){
  [IO.File]::WriteAllText($verification,("<!-- ${version}-completion-trigger -->`r`n"+$text+"`r`n`r`n---`r`n`r`n"+$previous),$utf8)
 }
 $manifestPath=Join-Path $compile 'install_manifest.json'
-if(Test-Path -LiteralPath $manifestPath){
+if($false -and (Test-Path -LiteralPath $manifestPath)){ # obsolete v30 installation manifest
  $manifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
  $manifest.version=("colorshading_"+$version+"_20261014")
  foreach($rel in @("scripts/on_td_complete.ps1","doc/compile/${version}_completion.json","doc/compile/${version}_completion.md")){
