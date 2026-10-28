@@ -53,7 +53,20 @@ def main():
    if found and error>2:raise AssertionError('Accepted inaccurate match: '+name+' '+str(probes[-1]))
    if found:px,py=map(int,actual)
    rows.append((px,py,int(found),best));frames.append(g);meta.append((x,y,adaptive,rows))
-  report.append(dict(photo=name,sha256=hashlib.sha256(path.read_bytes()).hexdigest(),adaptive=bool(adaptive),texture=texture,probes=probes))
+  negatives=[]
+  fruit=cv2.imread(str(a.fixtures/'fruits.png'))
+  if fruit is None:raise ValueError('fruits.png negative fixture missing')
+  for label,g in [('blank',np.full((90,160),80,np.int16)),
+                  ('noise',np.random.default_rng(31).integers(0,256,(90,160),dtype=np.int16)),
+                  ('unrelated',gray(fruit)[:90])]:
+   ox,oy=origin(seed_px,seed_py);roi=g[oy:oy+24,ox:ox+24]
+   scores=[int(np.abs(np.diff(roi[cy:cy+8,cx:cx+8],axis=1)-tg).sum()) for cy in range(17) for cx in range(17)]
+   k=int(np.argmin(scores));best=scores[k];second=sorted(scores)[1]
+   found=texture>=400 and best<=1800 and second>=best+max(64,best>>3)
+   negatives.append(dict(label=label,found=bool(found),best=best,second=second))
+   if found:raise AssertionError('False acceptance in negative probe: '+name+' '+str(negatives[-1]))
+   frames.extend([src,g]);meta.append((x,y,adaptive,[(seed_px,seed_py,int(not adaptive or texture>=400),0),(seed_px,seed_py,0,best)]))
+  report.append(dict(photo=name,sha256=hashlib.sha256(path.read_bytes()).hexdigest(),adaptive=bool(adaptive),texture=texture,probes=probes,negatives=negatives))
  np.savetxt(a.out/'frames.hex',np.stack(frames).astype(np.uint8).reshape(-1),fmt='%02x')
  with (a.out/'expected.txt').open('w',encoding='ascii') as f:
   f.write(str(len(meta))+'\n')
@@ -61,6 +74,6 @@ def main():
    f.write(f'{x} {y} {adaptive} {len(rows)}\n')
    for row in rows:f.write(' '.join(map(str,row))+'\n')
  (a.out/'photo_report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
- print('PHOTO PROBES',len(report),'photos,',sum(len(r['probes']) for r in report),'transforms,',sum(p['found'] for r in report for p in r['probes']),'accepted; rejected probes are recorded, not hidden')
+ print('PHOTO PROBES',len(report),'photos,',sum(len(r['probes']) for r in report),'transforms,',sum(p['found'] for r in report for p in r['probes']),'accepted;',sum(len(r['negatives']) for r in report),'negative probes rejected')
 
 if __name__=='__main__':main()
