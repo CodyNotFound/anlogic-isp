@@ -27,11 +27,11 @@ module yunet_network #(
  (* ram_style="bram" *) reg signed [7:0] wm0[0:WEIGHT_DEPTH-1],wm1[0:WEIGHT_DEPTH-1],wm2[0:WEIGHT_DEPTH-1],wm3[0:WEIGHT_DEPTH-1];
  (* ram_style="dram" *) reg [159:0] program_rom[0:PROGRAM_DEPTH-1];
  (* ram_style="dram" *) reg [15:0] biases[0:BIAS_DEPTH-1];
- (* ram_style="dram" *) reg [2:0] shifts[0:BIAS_DEPTH-1];
  `include "yunet_rom_unpack.vh"
+ (* ram_style="dram" *) reg [MODEL_SHIFT_BITS-1:0] shifts[0:BIAS_DEPTH-1];
  initial begin
   $readmemh(PROGRAM_FILE,program_rom);$readmemh(W0_FILE,wm0);$readmemh(W1_FILE,wm1);$readmemh(W2_FILE,wm2);$readmemh(W3_FILE,wm3);
-  $readmemh({BIAS_FILE,".lo16"},biases);$readmemh({SHIFT_FILE,".code3"},shifts);
+  $readmemh({BIAS_FILE,".lo16"},biases);$readmemh({SHIFT_FILE,".packed"},shifts);
  end
  reg [159:0] instruction;reg [3:0] opcode;
  reg [16:0] src_base,src2_base,dst_base;

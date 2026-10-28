@@ -49,7 +49,7 @@ $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/hardware/hdl
 $faceRomRoot=Join-Path $projectRoot 'rtl/analytics/face_lbp'
 $sources += @('weak.hex','stage.hex','geometry.hex','human_weak.hex','human_stage.hex','human_geometry.hex') | ForEach-Object {Join-Path $faceRomRoot $_}
 $cnnRoot=Join-Path $projectRoot 'rtl/analytics/face_cnn'
-if(Test-Path -LiteralPath $cnnRoot){$sources+=Get-ChildItem -LiteralPath $cnnRoot -File | Where-Object {$_.Extension -in @('.hex','.vh','.lo16','.code3')} | ForEach-Object FullName}
+if(Test-Path -LiteralPath $cnnRoot){$sources+=Get-ChildItem -LiteralPath $cnnRoot -File | Where-Object {$_.Extension -in @('.hex','.vh','.lo16','.packed')} | ForEach-Object FullName}
 New-Item -ItemType Directory -Force -Path $synDir,$phyDir | Out-Null
 $manifest = foreach ($source in ($sources | Sort-Object -Unique)) {
     $hash = Get-FileHash -LiteralPath $source -Algorithm SHA256
@@ -146,7 +146,7 @@ try {
         }
         if($checkText -match 'elaborate module yunet_network\('){
             foreach($rom in @('program','weights0','weights1','weights2','weights3','bias','shift','sigmoid','offset','size')){
-                if($checkText -notmatch ("readmemh: reading from file '"+$rom+"\.hex"+$(if($rom -eq 'bias'){'\.lo16'}elseif($rom -eq 'shift'){'\.code3'}else{''})+"'")){throw "CNN ROM load confirmation missing: $rom"}
+                if($checkText -notmatch ("readmemh: reading from file '"+$rom+"\.hex"+$(if($rom -eq 'bias'){'\.lo16'}elseif($rom -eq 'shift'){'\.packed'}else{''})+"'")){throw "CNN ROM load confirmation missing: $rom"}
             }
         }
     }

@@ -1,6 +1,7 @@
 ﻿param([string]$RunName=('anlogic-isp_runs_'+(Get-Date -Format 'yyyyMMdd_HHmmss')),
 [switch]$DisableFsmInference,
-[switch]$AllowSlicePackingProbe)
+[switch]$AllowSlicePackingProbe,
+[int]$MinRippleLength=-1)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $installedRoot='[LOCAL_PATH]'
@@ -9,7 +10,7 @@ if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run nam
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
 $jobPath=Join-Path $root "build/verification/${version}_job.json"
 $utf8=[Text.UTF8Encoding]::new($false)
-$job=[ordered]@{status='running';run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');stage='Check';completed_utc=$null;error=$null;disable_fsm_inference=[bool]$DisableFsmInference;slice_packing_probe=[bool]$AllowSlicePackingProbe}
+$job=[ordered]@{status='running';run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');stage='Check';completed_utc=$null;error=$null;disable_fsm_inference=[bool]$DisableFsmInference;slice_packing_probe=[bool]$AllowSlicePackingProbe;min_ripple_length=$MinRippleLength}
 function Save-Job{[IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json -Depth 5),$utf8)}
 New-Item -ItemType Directory -Force -Path (Split-Path $jobPath) | Out-Null
 Save-Job
@@ -18,6 +19,7 @@ try{
   $job.stage=$stage;Save-Job
   $buildArguments=@{Stage=$stage;RunName=$RunName;AllowGateTimingExploration=$true}
   if($DisableFsmInference){$buildArguments.DisableFsmInference=$true}
+  if($MinRippleLength -ge 0){$buildArguments.MinRippleLength=$MinRippleLength}
   & (Join-Path $root 'scripts/build.ps1') @buildArguments
   if($stage -eq 'Synthesis'){
    $area=[IO.File]::ReadAllText((Join-Path $root "td_project/$RunName/syn/anlogic-isp_gate.area"))
