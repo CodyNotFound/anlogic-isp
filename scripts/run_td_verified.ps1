@@ -7,7 +7,7 @@ $installedRoot='[LOCAL_PATH]'
 if($root -ne $installedRoot -and -not($root.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^colorshading_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}
-$jobPath=Join-Path $root "doc/compile/${version}_job.json"
+$jobPath=Join-Path $root "build/verification/${version}_job.json"
 $utf8=[Text.UTF8Encoding]::new($false)
 $job=[ordered]@{status='running';run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');stage='Check';completed_utc=$null;error=$null;disable_fsm_inference=[bool]$DisableFsmInference;slice_packing_probe=[bool]$AllowSlicePackingProbe}
 function Save-Job{[IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json -Depth 5),$utf8)}
@@ -34,7 +34,7 @@ try{
  }
  # Deterministic process completion: no model polling while TD is running.
  & (Join-Path $PSScriptRoot 'on_td_complete.ps1') -TdProcessId 0 -ProjectRoot $root -RunName $RunName
- $report=Get-Content -LiteralPath (Join-Path $root "doc/compile/${version}_completion.json") -Raw|ConvertFrom-Json
+ $report=Get-Content -LiteralPath (Join-Path $root "build/verification/${version}_completion.json") -Raw|ConvertFrom-Json
  $job.status=$report.status
  if($report.status -ne 'passed'){$job.error=$report.errors -join '; '}
 }catch{

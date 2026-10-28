@@ -11,7 +11,8 @@ if($RunName -notmatch '^colorshading_runs_[A-Za-z0-9_]+$'){throw 'Invalid run na
 $run=Join-Path $ProjectRoot "td_project/$RunName"
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}
 $phy=Join-Path $run 'phy'
-$compile=Join-Path $ProjectRoot 'doc/compile'
+$compile=Join-Path $ProjectRoot 'build/verification'
+New-Item -ItemType Directory -Force -Path $compile | Out-Null
 $utf8=[Text.UTF8Encoding]::new($false)
 # Native process-completion wait: no timer, progress polling, or model calls.
 $process=Get-Process -Id $TdProcessId -ErrorAction SilentlyContinue
@@ -91,7 +92,7 @@ $manifestPath=Join-Path $compile 'install_manifest.json'
 if($false -and (Test-Path -LiteralPath $manifestPath)){ # obsolete v30 installation manifest
  $manifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
  $manifest.version=("colorshading_"+$version+"_20261014")
- foreach($rel in @("scripts/on_td_complete.ps1","doc/compile/${version}_completion.json","doc/compile/${version}_completion.md")){
+ foreach($rel in @("scripts/on_td_complete.ps1","build/verification/${version}_completion.json","build/verification/${version}_completion.md")){
   if(-not($manifest.files|Where-Object path -eq $rel)){$manifest.files+=[pscustomobject]@{path=$rel;sha256=''}}
  }
  foreach($entry in $manifest.files){$entry.sha256=(Get-FileHash -LiteralPath (Join-Path $ProjectRoot $entry.path) -Algorithm SHA256).Hash}

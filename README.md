@@ -29,12 +29,18 @@ TD入口为td_project/camera_to_dsi_display.al，顶层design_top_wrapper。保�
 
 bit、数据库、仿真工作库和报告外部归档，不入源码历史。后续优化候选在独立分支验证。
 
-## 文档
+## 工程目录
 
-- [迁入记录](doc/history/README.md)
-- [技术文档](doc/submission/01_技术文档初稿.md)
-- [视频拍摄](doc/submission/02_视频拍摄与剪辑大纲.md)
-- [按键与接线](doc/submission/04_按键交互与简明接线.md)
-- [五点可行性](doc/submission/05_五点关键点可行性与数据口径.md)
+`rtl/` 为应用、控制和图像算法；`user_source/` 为摄像头、原始数据 ISP、DDR、HDMI 和厂商 IP。两者共同构成当前工程，不能互相替代。`vendor_reference/rtl/vendor_lab1_core.v` 是仍参与综合的平台核心。模型、ROM 初始化与许可证保留在原路径。
 
-官方平台来源见vendor_reference/README.md。
+## 接线
+
+水平 PWM：J1-1（C18）；俯仰 PWM：J1-2（D15）。两只舵机使用独立 6 V 电源，与 J1-12 共地。串口屏 TX 接 J1-3（E12，FPGA RX），RX 接 J1-4（E16，FPGA TX）；串口信号须兼容 FPGA 的 3.3 V 电平，屏幕按其规格独立供电。
+
+## 历史与交付边界
+
+过程文档、旧发布包和报告已从当前树移除。清理前完整资料见 Git 标签 `archive/pre-final-cleanup-20261028`；例如可用 `git restore --source=archive/pre-final-cleanup-20261028 -- doc docs reports releases` 恢复。
+
+构建状态和时序结果新写入 `build/verification/`，不再混入文档目录；仿真脚本按需生成 `reports/`。清理没有更改 RTL、约束、模型或 ROM 数据，不代表新的综合或板上验收。
+
+当前优化候选 v74_widget_r1 的最终时序未通过（setup WNS -0.122 ns、TNS -0.200 ns），不得当作通过版交付。通过版 `stable_controls_baseline` 的源码、bit 与证据保存在上述历史标签的 `releases/` 中。

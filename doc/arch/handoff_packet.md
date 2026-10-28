@@ -1,2 +1,0 @@
-# 架构交接
-接口已冻结，现有design_top_wrapper是唯一板级顶层。按raw_lsc_grid4、frame_awb4、color_tone4分别调用fpga-rtl-build，随后同技能集成isp_top。查表常量由Python从已确认BGGR标定数据生成，不包含业务RTL。参考interface_contract.yaml及integration文档。

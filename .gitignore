@@ -35,3 +35,6 @@ doc/compile/*_completion.json
 sim/*_work/
 sim/work*/
 **/__pycache__/
+
+# Generated final-build verification output
+/build/

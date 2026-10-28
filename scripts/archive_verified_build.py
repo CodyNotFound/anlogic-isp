@@ -10,7 +10,7 @@ root=Path(__file__).resolve().parents[1]
 run=root/'td_project'/args.run
 match=re.search(r'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$',args.run)
 version=match.group(1) if match else args.run.split('_')[-1]
-completion=root/'doc/compile'/f'{version}_completion.json'
+completion=root/'build/verification'/f'{version}_completion.json'
 record=json.loads(completion.read_text(encoding='utf-8-sig'))
 assert record['status']=='passed',record
 for key in ('setup_wns_ns','hold_wns_ns'):assert record[key]>=0
