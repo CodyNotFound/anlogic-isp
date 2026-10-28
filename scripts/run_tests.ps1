@@ -37,6 +37,7 @@ try{
  if($Tests -contains 'isp'){& ./scripts/run_isp_tests.ps1}
  if($Tests -contains 'ddr'){& ./scripts/run_ddr_tests.ps1}
  if($Tests -contains 'reliability'){
+  Simulate -name 'i2c_ce' -top 'tb_i2c_clock_enable' -files @('rtl/common/reset_sync.v','rtl/hardware/hdl_source/uics500_cfg/uii2c.v','sim/reference/uii2c_divided_reference.v','sim/tb_i2c_clock_enable.sv')
   Simulate -name 'reset_ae' -top 'tb_reset_ae_cdc' -files @('rtl/common/reset_sync.v','rtl/common/frame_stat_cdc.v','rtl/isp/auto_exposure.v','sim/tb_reliability.sv')
   Simulate -name 'shift' -top 'tb_model_shift' -files @('rtl/analytics/face_cnn/yunet_dot4.v','sim/tb_reliability.sv')
  }

@@ -49,7 +49,7 @@ try{
   [IO.File]::WriteAllText($auditTcl,$auditScript,$utf8)
   $tool=(Get-Command td_commands_prompt.exe -ErrorAction Stop).Source
   Push-Location $auditDir
-  try{& $tool $auditTcl *> audit.log;$auditExit=$LASTEXITCODE}finally{Pop-Location}
+  try{& $tool 'audit.tcl' *> audit.log;$auditExit=$LASTEXITCODE}finally{Pop-Location}
   if($auditExit){$errors.Add('Post-route timing coverage audit failed')}
   $checkFile=Join-Path $auditDir 'check_timing.rpt'
   if(Test-Path -LiteralPath $checkFile){

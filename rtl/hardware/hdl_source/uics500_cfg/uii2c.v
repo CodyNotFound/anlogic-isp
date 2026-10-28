@@ -107,10 +107,11 @@ assign  IO_iic_sda = (sda_o == 1'b0) ?  1'b0 : 1'bz;    //写总线，1'bz代表高阻，
 //);
 
 //scl 时钟分频器
-// Synchronize release for both edges used by this divided clock domain.
-wire scl_reset_pos_n,scl_reset_neg_n;
-reset_sync u_reset_scl_pos(.clk(scl_clk),.async_rst_n(I_rstn),.rst_n(scl_reset_pos_n));
-reset_sync #(.NEG_EDGE(1)) u_reset_scl_neg(.clk(scl_clk),.async_rst_n(I_rstn),.rst_n(scl_reset_neg_n));
+// Use parent-clock enables instead of a fabric-generated clock. The caller's
+// reset is synchronous to I_clk. SCL remains a data signal with identical phase.
+wire scl_reset_pos_n=I_rstn,scl_reset_neg_n=I_rstn;
+wire scl_rise=(clkdiv==SCL_DIV)&&!scl_clk;
+wire scl_fall=(clkdiv==SCL_DIV)&&scl_clk;
 always@(posedge I_clk)
     if(clkdiv < SCL_DIV)    
         clkdiv <= clkdiv + 1'b1;
@@ -143,7 +144,7 @@ always @(*)
     else  sda_o <= 1'b1; //否则其他状态都为1，当(IIC_S == R_ACK && (rcnt == I_rd_cnt) 产生一个NACK 
 
 //I2C数据发送模块，所有的写数据都通过此模块发送
-always @(posedge scl_clk) 
+always @(posedge I_clk) if(scl_rise) 
     if(IIC_S == W_ACK || IIC_S == START)begin//IIC_S=START和W_ACK，把需要发送的数据，寄存到sda_r
         sda_r <= I_wr_data[(wcnt*8) +: 8];//寄存需要发发送的数据到sda_r
         if( rd_req ) sda_r <= {I_wr_data[7:1],1'b1};//对于读操作，rd_req由内部代码产生，当写完第一个数据(器件地址)，后通过判断I_rd_cnt，确认是否数据需要读
@@ -155,7 +156,7 @@ always @(posedge scl_clk)
 
 //sda data bus read and hold data to O_rd_data register when IIC_S=R_ACK
 //I2C数据接收模块，I2C读期间，把数据通过移位操作，移入O_rd_data
-always @(negedge scl_clk)begin
+always @(posedge I_clk) if(scl_fall)begin
     if(IIC_S == R_WAIT ) //当IIC_S == R_WAIT ||IIC_S == W_ACK(如果读操作，第1个BIT是W_ACK这个状态读)启动移位操作
         sda_i_r <= {sda_i_r[6:0],sda_i};
     else if(IIC_S == R_ACK)//当IIC_S == R_ACK,完成一个BYTE读，把数据保存到O_rd_data
@@ -165,10 +166,10 @@ always @(negedge scl_clk)begin
 end
 
 //总线忙状态
-always @(posedge scl_clk or negedge scl_reset_pos_n )begin
+always @(posedge I_clk or negedge scl_reset_pos_n)begin
 	if(scl_reset_pos_n == 1'b0)
     	O_iic_busy <= 1'b0; 
-	else begin
+	else if(scl_rise)begin
     	if((I_iic_req == 1'b1 || rd_req == 1'b1 || O_iic_bus_error))//I_iic_req == 1'b1 || rd_req == 1'b1总线进入忙状态
     	    O_iic_busy <= 1'b1; 
         else if(IIC_S == IDLE)
@@ -177,10 +178,10 @@ always @(posedge scl_clk or negedge scl_reset_pos_n )begin
 end
 
 //总线忙状态
-always @(negedge scl_clk or negedge scl_reset_neg_n )begin
+always @(posedge I_clk or negedge scl_reset_neg_n)begin
 	if(scl_reset_neg_n == 1'b0)
     	O_iic_bus_error <= 1'b0;  	
-	else begin
+	else if(scl_fall)begin
     	if(IIC_S  == W_ACK && sda_i == 1'b1)//I_iic_req == 1'b1 || rd_req == 1'b1总线进入忙状态
     	    O_iic_bus_error <= 1'b1; 
         else if(I_iic_req == 0)
@@ -189,14 +190,14 @@ always @(negedge scl_clk or negedge scl_reset_neg_n )begin
 end
 
 //I2C Master控制器状态机
-always @(posedge scl_clk or negedge scl_reset_pos_n )begin
+always @(posedge I_clk or negedge scl_reset_pos_n)begin
 		if(scl_reset_pos_n == 1'b0)begin //异步复位，复位相关寄存器
            wcnt 	<= 8'd0;
            rcnt 	<= 8'd0;
            rd_req 	<= 1'b0;   
            IIC_S    <= IDLE;
         end
-        else begin
+        else if(scl_rise)begin
         case(IIC_S) //sda = 1 scl =1
         IDLE:begin//在空闲状态，sda=1 scl=1 
            if(I_iic_req == 1'b1 || rd_req == 1'b1) //当I_iic_req == 1'b1代表启动传输 当 rd_req == 1'b1 代表读操作需要产生repeated start 重复启动  
