@@ -10,6 +10,12 @@ cd $audit_dir
 import_device ph1_35p.db -package PH1P35MDG324 -speed 3
 import_db $route_db
 update_timing -mode final
+foreach wanted {audit_status.ts check_timing.rpt ignored_paths.timing abnormal_targets.rpt} {
+    if {[file exists $wanted]} {file delete $wanted}
+}
+foreach pattern {*.check_timing *.timingignored *.abnormal_timing_target} {
+    foreach old [glob -nocomplain $pattern] {file delete $old}
+}
 report_timing_status -file audit_status.ts
 check_timing -verbose -file check_timing.rpt
 report_timing_ignored -file ignored_paths.timing -ep_num 200

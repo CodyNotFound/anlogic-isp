@@ -3,7 +3,13 @@ module tb_reset_ae_cdc;
  reg src=0,dst=0,run_dst=0,arst=0,frame_start=0;
  always #7 src=~src;
  always #19.5 if(run_dst)dst=~dst;
- wire srst,drst;
+ wire srst,drst,nrst;
+ reset_sync #(.NEG_EDGE(1)) neg_reset(.clk(dst),.async_rst_n(arst),.rst_n(nrst));
+ integer neg_edges=0;
+ always @(negedge dst or negedge arst)begin
+  if(!arst)neg_edges=0;else neg_edges=neg_edges+1;
+  #1;if(nrst&&neg_edges<2)$fatal(1,"falling-edge reset released early");
+ end
  reset_sync a(.clk(src),.async_rst_n(arst),.rst_n(srst));
  reset_sync b(.clk(dst),.async_rst_n(arst),.rst_n(drst));
  wire[7:0] stat,delayed_stat,received;wire toggle,valid;wire[23:0]pixel;
@@ -35,10 +41,10 @@ module tb_reset_ae_cdc;
   end
  endtask
  initial begin
-  #3;arst=1;#150;if(drst!==0)$fatal(1,"stopped destination clock released reset");
+  #3;arst=1;#150;if(drst!==0||nrst!==0)$fatal(1,"stopped destination clock released reset");
   run_dst=1;wait(srst&&drst);
   for(i=0;i<32;i=i+1)emit(i%2?8'haa+i:8'h55-i);
-  #3;arst=0;#1;if(srst!==0||drst!==0)$fatal(1,"reset assertion not asynchronous");
+  #3;arst=0;#1;if(srst!==0||drst!==0||nrst!==0)$fatal(1,"reset assertion not asynchronous");
   #2;arst=1;wait(srst&&drst);emit(8'hfe);emit(8'h01);
   if(events!=34)$fatal(1,"event count %0d",events);
   $display("PASS tb_reset_ae_cdc: stopped clock, async reassertion, two-edge release, 34 coherent AE events with bit skew");$finish;

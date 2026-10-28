@@ -107,6 +107,10 @@ assign  IO_iic_sda = (sda_o == 1'b0) ?  1'b0 : 1'bz;    //写总线，1'bz代表高阻，
 //);
 
 //scl 时钟分频器
+// Synchronize release for both edges used by this divided clock domain.
+wire scl_reset_pos_n,scl_reset_neg_n;
+reset_sync u_reset_scl_pos(.clk(scl_clk),.async_rst_n(I_rstn),.rst_n(scl_reset_pos_n));
+reset_sync #(.NEG_EDGE(1)) u_reset_scl_neg(.clk(scl_clk),.async_rst_n(I_rstn),.rst_n(scl_reset_neg_n));
 always@(posedge I_clk)
     if(clkdiv < SCL_DIV)    
         clkdiv <= clkdiv + 1'b1;
@@ -161,8 +165,8 @@ always @(negedge scl_clk)begin
 end
 
 //总线忙状态
-always @(posedge scl_clk or negedge I_rstn )begin
-	if(I_rstn == 1'b0)
+always @(posedge scl_clk or negedge scl_reset_pos_n )begin
+	if(scl_reset_pos_n == 1'b0)
     	O_iic_busy <= 1'b0; 
 	else begin
     	if((I_iic_req == 1'b1 || rd_req == 1'b1 || O_iic_bus_error))//I_iic_req == 1'b1 || rd_req == 1'b1总线进入忙状态
@@ -173,8 +177,8 @@ always @(posedge scl_clk or negedge I_rstn )begin
 end
 
 //总线忙状态
-always @(negedge scl_clk or negedge I_rstn )begin
-	if(I_rstn == 1'b0)
+always @(negedge scl_clk or negedge scl_reset_neg_n )begin
+	if(scl_reset_neg_n == 1'b0)
     	O_iic_bus_error <= 1'b0;  	
 	else begin
     	if(IIC_S  == W_ACK && sda_i == 1'b1)//I_iic_req == 1'b1 || rd_req == 1'b1总线进入忙状态
@@ -185,8 +189,8 @@ always @(negedge scl_clk or negedge I_rstn )begin
 end
 
 //I2C Master控制器状态机
-always @(posedge scl_clk or negedge I_rstn )begin
-		if(I_rstn == 1'b0)begin //异步复位，复位相关寄存器
+always @(posedge scl_clk or negedge scl_reset_pos_n )begin
+		if(scl_reset_pos_n == 1'b0)begin //异步复位，复位相关寄存器
            wcnt 	<= 8'd0;
            rcnt 	<= 8'd0;
            rd_req 	<= 1'b0;   

@@ -55,14 +55,14 @@
 
 ## 主线与安全复核
 
-本地开发统一到 `main`；整合没有生成 merge 提交。各旧分支原始提交保存在 `archive/consolidate-20261028/*` 标签，原工作树和外部构建证据保留。
+本地开发统一到 `main`，整合未产生 merge 提交。各旧分支原始提交保存在 `archive/consolidate-20261028/*` 标签。
 
-PowerShell 入口使用 UTF-8 BOM，已在 Windows PowerShell 5.1 实测解析和执行。AE 数据先于事件发布，目的端延迟消费；PLL/外部复位按各时钟域异步断言、同步释放。FIFO 复位例外覆盖事件桥及视频 FIFO，不豁免 Gray 指针路径。零移位已有显式分支，构建时校验模型移位为 0..31；原始零移位饱和的报告未在仿真中复现。
+PowerShell 入口采用 UTF-8 BOM，并在 Windows PowerShell 5.1 实测。AE 统计先发布数据、延后事件，目的端增加稳定等待；复位按系统、视频、DDR、MIPI、串行发送及 I2C 正负边沿同步释放。FIFO 复位例外覆盖事件桥，不豁免 Gray 指针数据路径。模型右移支持0..31，构建时检查范围，零移位有明确实现。
 
-`calibrate_lsc.py` 改为接收经验证的 720x1280 RAW10 `.npy`，生成与当前 17x13 BGGR 网格兼容的标定数组；不再从手机拍显示器的照片生成未接入的 `lsc_corr` 模块。生成后先检查，再显式更新室内/补光标定文件和导出表，不自动改写 RTL。
+`calibrate_lsc.py` 接收经验证的720x1280 RAW10 `.npy`，生成兼容当前17x13 BGGR网格的数组，不再从手机拍屏照片生成未接入的径向模块。先检查结果，再显式更新标定文件并导出RTL表。
 
-新构建 `anlogic-isp_runs_20261028_main_safety_r1` 使用独立源码快照；旧 layout 的 Check 不是当前版本的 P&R 证据。完成验证必须具备路由 timing/exception 报告、STA 覆盖率、最终 setup/hold、资源、输入 SHA256 与 bit 校验。保留 coverage 数值不等于声称未约束路径为零；最终结果以 `build/verification/` 中对应完整 RunName 的 completion.json 为准。
+传感器I2C按CLK_DIV=239定义24MHz/240派生时钟；DDR2-533 IP使用系统PLL的100MHz参考与该域复位。这改变了原来50MHz参考下的DDR实际速率，必须重新路由和上板验证，不能套用旧版成绩。
 
-时钟深入复核发现：传感器 I2C 的内部 SCL 时钟未建模；现已按实际 CLK_DIV=239 定义 24MHz/240 的派生时钟。DDR2-533 IP 的100MHz参考配置曾接到50MHz；现接到系统 PLL 的100MHz输出，并使用100MHz域复位。这改变 DDR 实际速率，需要重新路由和上板验证，不能复用旧版通过结论。
+完成验证要求路由时序、例外报告、STA覆盖率、输入SHA256及bit校验；还会重开路由数据库，检查漏时钟、无效约束、组合环、FIFO例外及PLL频率匹配，并输出复位同步器覆盖清单。外部I/O延迟及厂商宏提示保留供审查，不声称所有未计时对象为零。
 
-`main_safety_r1` 在发现上述问题后主动停止，保留为未通过尝试；新构建为 `anlogic-isp_runs_20261028_main_safety_r2`。完成脚本会重开路由数据库生成 `check_timing.rpt`、忽略路径、异常目标及三组 FIFO/复位同步器覆盖清单。无时钟、时钟定义错误、无效约束、组合环、FIFO例外缺失和PLL频率不匹配均阻止通过。外部I/O延迟及厂商宏的其他提示仍保留在原报告供审查，不声称所有未计时对象为零。
+当前完整验证运行名为 `anlogic-isp_runs_20261028_main_safety_r2`；实际状态见 `build/verification/` 的对应job/completion.json。旧layout仅有Check，不能作为当前时序证据。只允许归档完成验证通过的构建。
