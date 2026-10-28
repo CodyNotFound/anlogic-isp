@@ -9,6 +9,7 @@ module vision_pipeline #(
     parameter integer ENABLE_EDGE = `VISION_ENABLE_EDGE,
     parameter integer ENABLE_OSD = `VISION_ENABLE_OSD,
     parameter integer FACE_CNN_ENABLE = 0,
+    parameter integer FACE_MOTION_ENABLE = 1,
     parameter integer ENABLE_HMI = 0,
     parameter integer DEBUG_MODE = `VISION_DEBUG_MODE,
     // TD resolves readmemh beside the source file containing that statement.
@@ -128,6 +129,10 @@ module vision_pipeline #(
     wire [7:0] shared_track_wdata,shared_track_rdata;wire [31:0] shared_track_word;
     wire [11:0] face_x,face_y,face_size,face_center_x,face_center_y;
     wire face_de,face_sof,face_eol,face_vsync,face_hsync;
+    wire face_fast,face_fs,face_sv,face_fe,face_abort;
+    wire [7:0] face_sx,face_sy,face_gray;
+    wire raw_face_valid,raw_face_found;
+    wire [11:0] raw_face_x,raw_face_y,raw_face_size,raw_face_cx,raw_face_cy;
     wire [23:0] face_pixel;
     wire task_vsync,task_hsync,task_de,task_sof,task_eol;
     wire [23:0] task_pixel;
@@ -338,13 +343,28 @@ module vision_pipeline #(
     generate if(FACE_CNN_ENABLE)begin: cnn_mode
         face_video_cnn #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.SHARED_TRACK_FRAME(1)) u_cnn(
             .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
-            .position_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
-            .center_x(face_center_x),.center_y(face_center_y),.busy(),.stream_error(),.completed_frames(),
+            .position_valid(raw_face_valid),.found(raw_face_found),.box_x(raw_face_x),.box_y(raw_face_y),.box_size(raw_face_size),
+            .center_x(raw_face_cx),.center_y(raw_face_cy),.busy(),.stream_error(),.completed_frames(),
             .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==13||mode==14)),.shared_write_en(shared_track_write),
             .shared_write_address(shared_track_waddr),.shared_read_address(shared_track_raddr),
             .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.inference_cycles(face_compute_cycles),.capture_started(face_capture_started));
+        if(FACE_MOTION_ENABLE)begin: motion_assist
+         face_motion_fusion #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT)) fusion(
+          .clk(clk),.rst_n(rst_n),.enable(face_enable),.clear(task_action),
+          .capture_start(face_capture_started),.cnn_valid(raw_face_valid),.cnn_found(raw_face_found),
+          .cnn_cx(raw_face_cx),.cnn_cy(raw_face_cy),.cnn_size(raw_face_size),
+          .frame_start(face_fs),.frame_end(face_fe),.frame_error(face_abort),.sample_valid(face_sv),
+          .sample_x(face_sx),.sample_y(face_sy),.gray(face_gray),
+          .result_valid(face_position_valid),.found(face_found),.box_x(face_x),.box_y(face_y),.box_size(face_size),
+          .center_x(face_center_x),.center_y(face_center_y),.fast_source(face_fast),.match_cycles(),
+          .accepted_corrections(),.rejected_corrections());
+        end else begin: detector_only
+         assign {face_position_valid,face_found,face_x,face_y,face_size,face_center_x,face_center_y}=
+          {raw_face_valid,raw_face_found,raw_face_x,raw_face_y,raw_face_size,raw_face_cx,raw_face_cy};
+         assign face_fast=1'b0;
+        end
     end else begin: lbp_mode
-        assign face_capture_started=1'b0;assign face_position_valid=lbp_valid;assign face_found=lbp_found;
+        assign face_fast=1'b0;assign face_capture_started=1'b0;assign face_position_valid=lbp_valid;assign face_found=lbp_found;
         assign face_x=lbp_x;assign face_y=lbp_y;assign face_size=lbp_size;assign face_center_x=lbp_cx;assign face_center_y=lbp_cy;
         assign shared_track_rdata=8'd0;assign shared_track_word=32'd0;assign face_compute_cycles=32'd0;
     end endgenerate
@@ -373,7 +393,9 @@ module vision_pipeline #(
         .target_valid(track_valid),.target_found(track_found),.target_x(track_x),.target_y(track_y),.manual_mode(manual_motion),
         .osd_enable(info_enabled_f),.hud_status(task_hud_status),
         .shared_write_en(shared_track_write),.shared_write_addr(shared_track_waddr),.shared_read_addr(shared_track_raddr),
-        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles),.camera_moving(motion_camera_moving));
+        .shared_write_data(shared_track_wdata),.shared_read_data(shared_track_rdata),.shared_read_word(shared_track_word),.target_compute_cycles(task_compute_cycles),.camera_moving(motion_camera_moving),
+        .face_assist(face_enable&&FACE_CNN_ENABLE&&FACE_MOTION_ENABLE),.face_fs(face_fs),.face_sv(face_sv),.face_fe(face_fe),.face_abort(face_abort),
+        .face_sx(face_sx),.face_sy(face_sy),.face_gray(face_gray));
 
     wire tracking_mode=mode==11||mode==12||mode==13||mode==14;
     wire coordinate_found=tracking_mode&&(face_enable?face_found:track_found);
@@ -385,7 +407,7 @@ module vision_pipeline #(
      else begin
       compute_mode<=mode;
       if(mode!=compute_mode||!tracking_mode)compute_seen<=0;
-      else if(face_enable?face_position_valid:track_valid)begin
+      else if(face_enable?(FACE_CNN_ENABLE?raw_face_valid:face_position_valid):track_valid)begin
        completed_compute_cycles<=face_enable?face_compute_cycles:task_compute_cycles;
        compute_seen<=!face_enable||FACE_CNN_ENABLE;
       end
@@ -462,7 +484,7 @@ module vision_pipeline #(
         .result_valid(face_enable?face_position_valid:track_valid),.found(face_enable?face_found:track_found),
         .cx(face_enable?face_center_x[10:3]:track_x),.cy(face_enable?face_center_y[10:3]:track_y),
         .manual_mode(manual_motion),.keys_pressed(keys_pressed),.pwm_h(servo_pwm_h),.pwm_v(servo_pwm_v),
-        .pulse_h_us(pulse_h),.pulse_v_us(pulse_v),.ctl_state(gimbal_state),.slow_source(face_enable&&FACE_CNN_ENABLE),.capture_valid(face_capture_started));
+        .pulse_h_us(pulse_h),.pulse_v_us(pulse_v),.ctl_state(gimbal_state),.slow_source(face_enable&&FACE_CNN_ENABLE&&!face_fast),.capture_valid(face_capture_started));
     gimbal_panel u_panel(.clk(clk),.rst_n(rst_n),.features(feature_requested),.pulse_h(pulse_h),.pulse_v(pulse_v),
         .leds(panel_leds),.segments(panel_segments),.selects(panel_selects),.h_digits(h_digits),.v_digits(v_digits),.display_h(display_h),.display_v(display_v));
     // Keep the existing two registered video clocks. All text/position drawing

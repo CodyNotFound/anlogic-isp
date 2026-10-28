@@ -12,15 +12,18 @@ module vision_task_suite #(parameter WIDTH=1280,HEIGHT=720,RESULT_TTL=15000000,H
     input wire manual_mode,osd_enable,
     output wire [3:0] hud_status,
     output wire shared_write_en,output wire [14:0] shared_write_addr,shared_read_addr,
-    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word,output wire [31:0] target_compute_cycles,input wire camera_moving
+    output wire [7:0] shared_write_data,input wire [7:0] shared_read_data,input wire [31:0] shared_read_word,output wire [31:0] target_compute_cycles,input wire camera_moving,
+    input wire face_assist,output wire face_fs,face_sv,face_fe,face_abort,
+    output wire [7:0] face_sx,face_sy,face_gray
 );
     wire tracking=enabled && mode==12,region=enabled && mode==13,motion=enabled&&mode==14&&SHARED_TRACK_FRAME;
     wire fs,sv,fe,abort;
     wire [7:0] sx,sy,gray;
     wire [23:0] srgb;
     vision_rgb_sampler #(.WIDTH(WIDTH),.HEIGHT(HEIGHT)) sampler(
-        .clk(clk),.rst_n(rst_n),.enable(tracking||region||motion),.sof(source_sof),.eol(source_eol),.de(source_de),.rgb(source_rgb),
+        .clk(clk),.rst_n(rst_n),.enable(tracking||region||motion||(face_assist===1'b1)),.sof(source_sof),.eol(source_eol),.de(source_de),.rgb(source_rgb),
         .frame_start(fs),.sample_valid(sv),.frame_end(fe),.frame_error(abort),.sample_x(sx),.sample_y(sy),.sample_rgb(srgb),.sample_gray(gray));
+    assign {face_fs,face_sv,face_fe,face_abort,face_sx,face_sy,face_gray}={fs,sv,fe,abort,sx,sy,gray};
     wire tv,tf,rv,rf,rc,ro,picking;wire [31:0] tracker_cycles,region_cycles,motion_cycles;
     assign target_compute_cycles=tracking?tracker_cycles:region?region_cycles:motion?motion_cycles:32'd0;
     wire [7:0] tx,ty,tq,rx,ry,rw,rh,rcx,rcy;

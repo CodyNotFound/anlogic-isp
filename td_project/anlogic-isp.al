@@ -680,6 +680,22 @@
                     <Attr Name="CompileOrder" Val="66"/>
                 </FileInfo>
             </File>
+            <File Path="../rtl/analytics/face_cnn/face_patch_motion.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="101"/>
+                </FileInfo>
+            </File>
+            <File Path="../rtl/analytics/face_cnn/face_motion_fusion.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="102"/>
+                </FileInfo>
+            </File>
             <File Path="../rtl/analytics/face_cnn/face_video_cnn.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

@@ -4,7 +4,7 @@ module tb_face_patch_motion;
  reg rst_n=0,enable=1,seed_valid=0,fs=0,fe=0,err=0,sv=0;
  reg [7:0] seed_x=70,seed_y=40,sx=0,sy=0,g=0;
  wire valid,found,busy;wire [7:0] x,y;wire [31:0] cycles;wire [15:0] sad;
- face_patch_motion dut(clk,rst_n,enable,seed_valid,fs,fe,err,sv,seed_x,seed_y,sx,sy,g,valid,found,x,y,busy,cycles,sad);
+ face_patch_motion dut(clk,rst_n,enable,seed_valid,fs,fe,err,sv,seed_x,seed_y,sx,sy,g,valid,found,x,y,busy,cycles,sad,1'b0);
  integer tx,ty,light,i,j,f,seen=0,frame_seen=0;reg visible=1,expected_found=1,duplicate=0,noise=0;
  reg last_found;reg [7:0] last_x,last_y;reg [15:0] last_sad;reg [31:0] last_cycles;
  always @(negedge clk)if(valid)begin seen=seen+1;last_found=found;last_x=x;last_y=y;last_sad=sad;last_cycles=cycles;end
