@@ -20,16 +20,16 @@ function Simulate([string]$name,[string]$top,[string[]]$files,[string[]]$include
 Push-Location $root
 try{
  if($Tests -contains 'tone'){
-  Simulate 'tone' 'tb_tone_exact_v73' @('rtl/isp/color_tone4.v','sim/reference/color_tone4_ref.v','sim/tb_tone_exact_v73.sv') @('+incdir+rtl/isp')
+  Simulate -name 'tone' -top 'tb_tone_exact_v73' -files @('rtl/isp/color_tone4.v','sim/reference/color_tone4_ref.v','sim/tb_tone_exact_v73.sv') -includes @('+incdir+rtl/isp')
  }
  if($Tests -contains 'osd'){
   New-Item -ItemType Directory -Force reports/osd_v73 | Out-Null
-  Simulate 'osd' 'tb_osd_v73' @('user_source/hdl_source/hdmi_mixer.v','sim/osd_rom_full_models.v','sim/tb_osd_v73.sv') @() (Join-Path $root 'sim')
+  Simulate -name 'osd' -top 'tb_osd_v73' -files @('user_source/hdl_source/hdmi_mixer.v','sim/osd_rom_full_models.v','sim/tb_osd_v73.sv') -cwd (Join-Path $root 'sim')
   & $PythonExe scripts/validate_optimized_osd.py
   if($LASTEXITCODE){throw 'OSD reference comparison failed'}
  }
  if($Tests -contains 'network'){
-  Simulate 'cnn' 'tb_yunet_network_v73' @('rtl/analytics/face_cnn/yunet_dot4.v','rtl/analytics/face_cnn/yunet_network.v','sim/face_cnn/tb_yunet_network_v73.sv') @('+incdir+rtl/analytics/face_cnn')
+  Simulate -name 'cnn' -top 'tb_yunet_network_v73' -files @('rtl/analytics/face_cnn/yunet_dot4.v','rtl/analytics/face_cnn/yunet_network.v','sim/face_cnn/tb_yunet_network_v73.sv') -includes @('+incdir+rtl/analytics/face_cnn')
  }
  if($Tests -contains 'controls'){& ./scripts/run_hmi_v72.ps1}
 }finally{Pop-Location}
