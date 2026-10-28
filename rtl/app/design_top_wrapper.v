@@ -96,7 +96,7 @@ module design_top_wrapper (
     // Application layer: mode control, pixel algorithms, Logo, and HDMI
     // composition. It runs in the platform-provided HDMI pixel clock domain.
     // v45 isolated candidate: compile the actual CNN replacement, not both cores.
-    vision_pipeline #(.FACE_CNN_ENABLE(1),.ENABLE_HMI(1)) u_vision_pipeline (
+    vision_pipeline #(.FACE_CNN_ENABLE(1),.ENABLE_HMI(0)) u_vision_pipeline (
         .clk             (hdmi_pixel_clk),
         .rst_n           (hdmi_rst_n),
         .switches_n      (I_switch),
