@@ -26,11 +26,12 @@ module yunet_network #(
  reg [7:0] cq0,cq1,cq2,cq3,pq0,pq1,pq2,pq3;
  (* ram_style="bram" *) reg signed [7:0] wm0[0:WEIGHT_DEPTH-1],wm1[0:WEIGHT_DEPTH-1],wm2[0:WEIGHT_DEPTH-1],wm3[0:WEIGHT_DEPTH-1];
  (* ram_style="dram" *) reg [159:0] program_rom[0:PROGRAM_DEPTH-1];
- (* ram_style="dram" *) reg signed [31:0] biases[0:BIAS_DEPTH-1];
- (* ram_style="dram" *) reg signed [6:0] shifts[0:BIAS_DEPTH-1];
+ (* ram_style="dram" *) reg [15:0] biases[0:BIAS_DEPTH-1];
+ (* ram_style="dram" *) reg [2:0] shifts[0:BIAS_DEPTH-1];
+ `include "yunet_rom_unpack.vh"
  initial begin
   $readmemh(PROGRAM_FILE,program_rom);$readmemh(W0_FILE,wm0);$readmemh(W1_FILE,wm1);$readmemh(W2_FILE,wm2);$readmemh(W3_FILE,wm3);
-  $readmemh(BIAS_FILE,biases);$readmemh(SHIFT_FILE,shifts);
+  $readmemh({BIAS_FILE,".lo16"},biases);$readmemh({SHIFT_FILE,".code3"},shifts);
  end
  reg [159:0] instruction;reg [3:0] opcode;
  reg [16:0] src_base,src2_base,dst_base;
@@ -127,7 +128,7 @@ module yunet_network #(
   // 1x1 in-place pixels already have a one-cycle cache read. Prefetch the
   // next four weights when a beat is accepted, avoiding a redundant WAIT.
   weight_address<=prefetch_beat?conv_weight+17'd4:conv_weight;
-  instruction<=program_rom[operation_index];bias_q<=biases[bias_base+oc];shift_q<=shifts[bias_base+oc];
+  instruction<=program_rom[operation_index];bias_q<=unpack_model_bias(bias_base+oc,biases[bias_base+oc]);shift_q<=unpack_model_shift(bias_base+oc,shifts[bias_base+oc]);
   aq0<=fm0[memory_address[15:2]];aq1<=fm1[memory_address[15:2]];aq2<=fm2[memory_address[15:2]];aq3<=fm3[memory_address[15:2]];
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
   // READ captures the address; WAIT reads RAM; FEED consumes its registered data.

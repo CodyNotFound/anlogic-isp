@@ -37,6 +37,10 @@ $shiftFile=Join-Path $projectRoot 'rtl/analytics/face_cnn/shift.hex'
 foreach($line in [IO.File]::ReadAllLines($shiftFile)){
  if($line.Trim() -and [Convert]::ToInt32($line.Trim(),16) -gt 31){throw 'MODEL_SHIFT must be in 0..31; re-export or extend RTL explicitly.'}
 }
+$packingPython=Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+if(-not(Test-Path -LiteralPath $packingPython)){$packingPython=(Get-Command python.exe -ErrorAction Stop).Source}
+& $packingPython (Join-Path $projectRoot 'scripts/pack_yunet_rom.py') --root $projectRoot --check
+if($LASTEXITCODE){throw 'Packed CNN constants stale or incompatible; regenerate after model export.'}
 $sources += $alFile # The active source-set definition is a reproducibility input too.
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/isp') -Filter 'colorshading_*.vh' | ForEach-Object { $_.FullName }
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/config') -Filter '*.vh' | ForEach-Object { $_.FullName }
@@ -45,7 +49,7 @@ $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/hardware/hdl
 $faceRomRoot=Join-Path $projectRoot 'rtl/analytics/face_lbp'
 $sources += @('weak.hex','stage.hex','geometry.hex','human_weak.hex','human_stage.hex','human_geometry.hex') | ForEach-Object {Join-Path $faceRomRoot $_}
 $cnnRoot=Join-Path $projectRoot 'rtl/analytics/face_cnn'
-if(Test-Path -LiteralPath $cnnRoot){$sources+=Get-ChildItem -LiteralPath $cnnRoot -File | Where-Object {$_.Extension -in @('.hex','.vh')} | ForEach-Object FullName}
+if(Test-Path -LiteralPath $cnnRoot){$sources+=Get-ChildItem -LiteralPath $cnnRoot -File | Where-Object {$_.Extension -in @('.hex','.vh','.lo16','.code3')} | ForEach-Object FullName}
 New-Item -ItemType Directory -Force -Path $synDir,$phyDir | Out-Null
 $manifest = foreach ($source in ($sources | Sort-Object -Unique)) {
     $hash = Get-FileHash -LiteralPath $source -Algorithm SHA256
@@ -142,7 +146,7 @@ try {
         }
         if($checkText -match 'elaborate module yunet_network\('){
             foreach($rom in @('program','weights0','weights1','weights2','weights3','bias','shift','sigmoid','offset','size')){
-                if($checkText -notmatch ("readmemh: reading from file '"+$rom+"\.hex'")){throw "CNN ROM load confirmation missing: $rom"}
+                if($checkText -notmatch ("readmemh: reading from file '"+$rom+"\.hex"+$(if($rom -eq 'bias'){'\.lo16'}elseif($rom -eq 'shift'){'\.code3'}else{''})+"'")){throw "CNN ROM load confirmation missing: $rom"}
             }
         }
     }

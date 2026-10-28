@@ -29,6 +29,8 @@ try{
   if($LASTEXITCODE){throw 'OSD reference comparison failed'}
  }
  if($Tests -contains 'network'){
+  & $PythonExe scripts/pack_yunet_rom.py --check;if($LASTEXITCODE){throw 'Packed model constants mismatch'}
+  Simulate -name 'cnn_rom' -top 'tb_yunet_rom_unpack' -files @('sim/face_cnn/tb_yunet_rom_unpack.sv') -includes @('+incdir+rtl/analytics/face_cnn')
   Simulate -name 'cnn' -top 'tb_yunet_network_v73' -files @('rtl/analytics/face_cnn/yunet_dot4.v','rtl/analytics/face_cnn/yunet_network.v','sim/face_cnn/tb_yunet_network_v73.sv') -includes @('+incdir+rtl/analytics/face_cnn')
  }
  if($Tests -contains 'controls'){& ./scripts/run_controls_tests.ps1}
