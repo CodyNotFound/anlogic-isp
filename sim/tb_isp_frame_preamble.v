@@ -14,7 +14,7 @@ isp_top #(.ENABLE_LSC(1),.ENABLE_AWB(1),.ENABLE_COLOR(1),.BLACK_LEVEL(67),.SAT_Q
 .I_awb_enable(1'b1),.axi4s_video_aclk(axi4s_video_aclk),.I_rst_n(I_rst_n),.I_tlast(I_tlast),.I_tuser(I_tuser),
 .I_tdata(I_tdata),.I_tvalid(I_tvalid),.I_tdest(I_tdest),.O_tready(O_tready),
 .O_tdata(O_tdata),.O_tlast(O_tlast),.O_tuser(O_tuser),.O_tvalid(O_tvalid),.I_tready(I_tready));
-always #8.334 axi4s_video_aclk=~axi4s_video_aclk;
+always #10.0 axi4s_video_aclk=~axi4s_video_aclk;
 task fail;input [1023:0] reason;
 begin $display("FAIL tb_isp_frame_preamble time=%0t cycle=%0d: %0s",$time,cycle_count,reason);$fatal(1);end endtask
 task drive_cycle;input valid_value,last_value,user_value;input [39:0] data_value;

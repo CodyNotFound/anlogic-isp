@@ -17,9 +17,10 @@ module tb_video_in_frame_preamble;
         .O_ddr_user_wr_en(ddr_user_wr_en),.O_ddr_user_addr(ddr_user_addr),
         .O_ddr_user_wr_data(ddr_user_wr_data),.I_ddr_user_ready(1'b0)
     );
-    // v7 routed clock periods: camera byte clock 16.668 ns, DDR user 15 ns.
-    initial begin camera_clk=0;forever #8.334 camera_clk=~camera_clk;end
-    initial begin ddr_clk=0;forever #7.5 ddr_clk=~ddr_clk;end
+    // Current processing clock50MHz and nominal DDR user133.333MHz.
+    // Sweep source launch phases modulo15ns (two DDR periods).
+    initial begin camera_clk=0;forever #10.0 camera_clk=~camera_clk;end
+    initial begin ddr_clk=0;forever #3.75 ddr_clk=~ddr_clk;end
     function [127:0] make_word;
         input integer word_index;
         begin
@@ -98,7 +99,7 @@ module tb_video_in_frame_preamble;
         repeat(8) @(negedge camera_clk);
         rst_n=1;repeat(8) @(negedge camera_clk);
         for(phase_index=0;phase_index<3;phase_index=phase_index+1)begin
-            phase_ns=phase_index*2;
+            phase_ns=phase_index*5;
             warm_reset;send_frame(1,phase_ns);sample_count(bad_used);
             case_count=case_count+1;
             if((bad_used>400)&&(bad_used<480))begin
