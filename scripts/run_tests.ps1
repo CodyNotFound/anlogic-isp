@@ -1,5 +1,5 @@
 param(
- [ValidateSet('tone','osd','network','controls','tracking','isp','ddr')][string[]]$Tests=@('tone','osd','network','controls','tracking','isp','ddr'),
+ [ValidateSet('tone','osd','network','controls','tracking','reticle','isp','ddr')][string[]]$Tests=@('tone','osd','network','controls','tracking','reticle','isp','ddr'),
  [string]$PythonExe="$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
 )
 $ErrorActionPreference='Stop'
@@ -32,6 +32,7 @@ try{
   Simulate -name 'cnn' -top 'tb_yunet_network_v73' -files @('rtl/analytics/face_cnn/yunet_dot4.v','rtl/analytics/face_cnn/yunet_network.v','sim/face_cnn/tb_yunet_network_v73.sv') -includes @('+incdir+rtl/analytics/face_cnn')
  }
  if($Tests -contains 'controls'){& ./scripts/run_controls_tests.ps1}
+ if($Tests -contains 'reticle'){Simulate -name 'reticle' -top 'tb_region_reticle' -files @('rtl/analytics/vision_tasks/vision_bcd.v','rtl/analytics/vision_tasks/vision_task_hud.v','sim/tb_region_reticle.sv')}
  if($Tests -contains 'tracking'){& ./scripts/run_tracking_tests.ps1}
  if($Tests -contains 'isp'){& ./scripts/run_isp_tests.ps1}
  if($Tests -contains 'ddr'){& ./scripts/run_ddr_tests.ps1}

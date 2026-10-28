@@ -33,8 +33,6 @@
     wire crosshair=f && ((px+1>=midx && px<=midx+1 && py+7>=midy && py<=midy+7)||(py+1>=midy && py<=midy+1 && px+7>=midx && px<=midx+7));
     wire reticle=mode!=14&&(!f || mode==13) && ((px==WIDTH/2 && py+12>=HEIGHT/2 && py<=HEIGHT/2+12)||
         (py==HEIGHT/2 && px+12>=WIDTH/2 && px<=WIDTH/2+12));
-    wire sample_box=mode==13 && px>=WIDTH/2-8 && px<WIDTH/2+16 && py>=HEIGHT/2-8 && py<HEIGHT/2+16 &&
-        (px==WIDTH/2-8 || px==WIDTH/2+15 || py==HEIGHT/2-8 || py==HEIGHT/2+15);
     reg [7:0] character;
     reg [191:0] header;
     integer slot,col,row;
@@ -129,7 +127,7 @@
             end
             if(de)begin x<=eol?0:px+1'b1;y<=eol?py+1'b1:py;end
             char_a<=character;row_a<=row[2:0];col_a<=col[2:0];rgb_a<=rgb;ctl_a<={vsync,hsync,de,sof,eol};
-            enable_a<=sof?enable:enable_f;panel_a<=panel;cross_a<=crosshair;border_a<=border;reticle_a<=reticle || sample_box;
+            enable_a<=sof?enable:enable_f;panel_a<=panel;cross_a<=crosshair;border_a<=border;reticle_a<=reticle;
             {out_vsync,out_hsync,out_de,out_sof,out_eol}<=ctl_a;
             if(!ctl_a[2])out_rgb<=0;
             else if(!enable_a)out_rgb<=rgb_a;

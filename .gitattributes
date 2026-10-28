@@ -73,7 +73,7 @@ rtl/overlay/logo_overlay.v -text
 rtl/overlay/status_overlay.v -text
 rtl/platform/camera_raw_clock_bridge.v -text
 rtl/platform/ddr_user_arbiter.v -text
-td_project/camera_to_dsi_display.sdc -text
+td_project/anlogic-isp.sdc -text
 rtl/hardware/constraints_source/pin.adc -text
 rtl/hardware/hdl_source/audio_arc_calculate.v -text
 rtl/hardware/hdl_source/awb.v -text
@@ -132,7 +132,7 @@ rtl/hardware/ip_source/w128_d512_fifo/w128_d512_fifo.xml -text
 rtl/hardware/ip_source/w155_d512_fifo/w155_d512_fifo.xml -text
 rtl/vendor/rtl/vendor_lab1_core.v -text
 
-td_project/camera_to_dsi_display.al -text
+td_project/anlogic-isp.al -text
 
 # Restore historical evidence without newline conversion.
 /releases/** -text
@@ -143,3 +143,6 @@ td_project/camera_to_dsi_display.al -text
 # Preserve relocated vendor RTL and generated IP bytes.
 /rtl/hardware/** -text
 /rtl/vendor/** -text
+
+# Match preserved synthesis inputs exactly after a fresh checkout.
+/rtl/** -text
