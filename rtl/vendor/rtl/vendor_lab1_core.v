@@ -824,8 +824,8 @@ isp_top u_isp_top (
 
 
     ph1p35_324_ddr_wrapper u_ph1p35_324_ddr_wrapper(
-        .I_sys_clk              ( I_sys_clk              ),
-        .I_sys_rst_n            ( S_rst_n                ),
+        .I_sys_clk              ( S_100m_clk              ),
+        .I_sys_rst_n            ( S_rst_100m_n                ),
 
         .O_ddr_clk              ( S_ddr_clk              ),
         .O_init_calib_complete  ( S_init_calib_complete  ),

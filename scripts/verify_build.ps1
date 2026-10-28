@@ -23,7 +23,7 @@ $result=[ordered]@{
  process_id=$TdProcessId; setup_wns_ns=$null; setup_tns_ns=$null
  hold_wns_ns=$null; hold_tns_ns=$null; slices=$null; ram=$null; dsp=$null; memory_slices=$null
  source_files_checked=0; bit_path=(Join-Path $phy 'anlogic-isp.bit')
- bit_bytes=0; bit_sha256=$null; sta_coverage_percent=$null; errors=@()
+ bit_bytes=0; bit_sha256=$null; sta_coverage_percent=$null; timing_checks=@{}; errors=@()
 }
 try{
  foreach($marker in @('.opt_place.end.f','.opt_route.end.f','.bitgen.end.f')){
@@ -38,6 +38,35 @@ try{
   if($routedText -notmatch 'Confidence\s*:\s*Routed'){$errors.Add('Detailed timing report is not routed')}
   else{Copy-Item -LiteralPath $routedReport -Destination (Join-Path $phy 'final_timing.rpt') -Force}
  }else{$errors.Add('Detailed routed timing report missing')}
+ # Reopen the completed routed DB for clock/exception coverage, without edits.
+ $routeDb=Join-Path $phy 'anlogic-isp_pr.db'
+ if(Test-Path -LiteralPath $routeDb){
+  $auditDir=Join-Path $phy 'sta_audit'
+  New-Item -ItemType Directory -Force $auditDir | Out-Null
+  $helper=(Join-Path $ProjectRoot 'scripts/report_sta.tcl').Replace('\','/')
+  $auditScript="set route_db {$($routeDb.Replace('\','/'))}`nset audit_dir {$($auditDir.Replace('\','/'))}`nif {[catch {source {$helper}} message]} {puts stderr `$message;exit 1}`nexit 0`n"
+  $auditTcl=Join-Path $auditDir 'audit.tcl'
+  [IO.File]::WriteAllText($auditTcl,$auditScript,$utf8)
+  $tool=(Get-Command td_commands_prompt.exe -ErrorAction Stop).Source
+  Push-Location $auditDir
+  try{& $tool $auditTcl *> audit.log;$auditExit=$LASTEXITCODE}finally{Pop-Location}
+  if($auditExit){$errors.Add('Post-route timing coverage audit failed')}
+  $checkFile=Join-Path $auditDir 'check_timing.rpt'
+  if(Test-Path -LiteralPath $checkFile){
+   $checks=[IO.File]::ReadAllText($checkFile)
+   foreach($name in @('no clock','clock definition','invalid constraint','combinational loops','soft fifo timing exception constraints','pll/clock buffer clock constraints')){
+    $m=[regex]::Match($checks,('checking '+[regex]::Escape($name)+'\((\d+)\)'))
+    if(-not $m.Success){$errors.Add("Missing timing check: $name")}
+    else{$result.timing_checks[$name]=[int]$m.Groups[1].Value;if([int]$m.Groups[1].Value -gt 0){$errors.Add("Timing check requires correction: $name=$($m.Groups[1].Value)")}}
+   }
+  }else{$errors.Add('Clock constraint audit report missing')}
+  $resetFile=Join-Path $auditDir 'reset_coverage.txt'
+  if(Test-Path -LiteralPath $resetFile){
+   $resetRows=[IO.File]::ReadAllLines($resetFile)
+   if($resetRows.Count -ne 7){$errors.Add('Reset coverage report incomplete')}
+   foreach($row in $resetRows){if($row -notmatch ' : ([1-9][0-9]*) : '){$errors.Add("Reset synchronizer collection did not match: $row")}}
+  }else{$errors.Add('Reset synchronizer coverage missing')}
+ }else{$errors.Add('Routed database missing for clock/exception audit')}
  $timingFile=Join-Path $phy 'anlogic-isp_phy.ts'
  if(Test-Path -LiteralPath $timingFile){
   $timing=[IO.File]::ReadAllText($timingFile)

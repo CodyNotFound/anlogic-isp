@@ -62,3 +62,7 @@ PowerShell 入口使用 UTF-8 BOM，已在 Windows PowerShell 5.1 实测解析�
 `calibrate_lsc.py` 改为接收经验证的 720x1280 RAW10 `.npy`，生成与当前 17x13 BGGR 网格兼容的标定数组；不再从手机拍显示器的照片生成未接入的 `lsc_corr` 模块。生成后先检查，再显式更新室内/补光标定文件和导出表，不自动改写 RTL。
 
 新构建 `anlogic-isp_runs_20261028_main_safety_r1` 使用独立源码快照；旧 layout 的 Check 不是当前版本的 P&R 证据。完成验证必须具备路由 timing/exception 报告、STA 覆盖率、最终 setup/hold、资源、输入 SHA256 与 bit 校验。保留 coverage 数值不等于声称未约束路径为零；最终结果以 `build/verification/` 中对应完整 RunName 的 completion.json 为准。
+
+时钟深入复核发现：传感器 I2C 的内部 SCL 时钟未建模；现已按实际 CLK_DIV=239 定义 24MHz/240 的派生时钟。DDR2-533 IP 的100MHz参考配置曾接到50MHz；现接到系统 PLL 的100MHz输出，并使用100MHz域复位。这改变 DDR 实际速率，需要重新路由和上板验证，不能复用旧版通过结论。
+
+`main_safety_r1` 在发现上述问题后主动停止，保留为未通过尝试；新构建为 `anlogic-isp_runs_20261028_main_safety_r2`。完成脚本会重开路由数据库生成 `check_timing.rpt`、忽略路径、异常目标及三组 FIFO/复位同步器覆盖清单。无时钟、时钟定义错误、无效约束、组合环、FIFO例外缺失和PLL频率不匹配均阻止通过。外部I/O延迟及厂商宏的其他提示仍保留在原报告供审查，不声称所有未计时对象为零。

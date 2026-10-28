@@ -9,6 +9,8 @@ rename_clock -name {HDMI_PIXEL_CLK} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_ph
 rename_clock -name {HDMI_SERIAL_CLK} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[5]}]
 
 rename_clock -name {MIPI_RX_BYTE_CLK} [get_clocks {u_vendor_pipeline/u_mipi_dphy_rx_ph1p_mipiio_wrapper/u_ph1p_mipiio_rx_wrapper/u_PH1P_LOGIC_DPHY_MIPI_RX.o_fabric_div4_8_clk}]
+# uii2c CLK_DIV=239, SCL_DIV=119: toggle each120 parent cycles, divide240.
+create_generated_clock -name {sensor_i2c_clk} -master_clock {pll_clk_24m} -source [get_pins {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[1]}] -divide_by 240 [get_nets {u_vendor_pipeline/u_uicfgcs500/u_i2c/scl_clk}]
 # Keep MIPI<->sys50, sys50<->DDR and DDR<->HDMI ungrouped so async-FIFO
 # Gray pointers retain their datapath-only max-delay checks. The buffered
 # ISP and video_in producer now run on the continuous sys50 clock.

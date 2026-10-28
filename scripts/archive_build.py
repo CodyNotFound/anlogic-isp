@@ -43,6 +43,13 @@ if (root/'reports/optimized_validation.json').exists():
             out=target/'functional_logs'/source.name
             out.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(source,out)
+audit=run/'phy/sta_audit'
+assert (audit/'check_timing.rpt').exists(),'Clock audit evidence missing'
+for source in audit.rglob('*'):
+    if source.is_file():
+        out=target/'sta_audit'/source.relative_to(audit)
+        out.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(source,out)
 manifest={str(p.relative_to(target)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest() for p in target.rglob('*') if p.is_file()}
 (target/'archive_sha256.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
 print(f'Retained {len(entries)} source inputs and {len(manifest)} archive files: {target}')
