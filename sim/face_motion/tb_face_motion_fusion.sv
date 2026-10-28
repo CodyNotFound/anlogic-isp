@@ -55,14 +55,33 @@ module tb_face_motion_fusion;
   if(dut.confirmed)$fatal(1,"clear accepted a pre-clear CNN result");
   f=11;tx=50;visible=1;frame(1);cnn(1,400,320,128);
   f=12;frame(0);check(400,320);
+  // A second detector snapshot overlaps a still-applying earlier correction.
+  f=13;frame(1);cnn(1,424,320,128);
+  f=14;frame(1);check(408,320);
+  f=15;frame(0);check(416,320);
+  f=16;frame(0);check(424,320);
+  cnn(1,400,320,128);
+  f=17;frame(0);check(416,320);
+  f=18;frame(0);check(408,320);
+  f=19;frame(0);check(400,320);
   clear=1;tick;clear=0;big_patch=1;
   f=13;frame(1);cnn(1,400,320,400);
   f=14;frame(0);check(400,320);
-  if(dut.patch_x!=42||dut.patch_y!=32)$fatal(1,"adaptive texture anchor not selected");
+  if(dut.px!=42||dut.py!=32)$fatal(1,"adaptive texture anchor not selected");
   f=15;tx=53;frame(0);check(424,320);
   // Frame age expiry must stop output even without fresh CNN or patch results.
   repeat(46)begin fs=1;tick;fs=0;tick;end
   if(found||fast)$fatal(1,"unconfirmed tracking did not expire");
+  // An unsupported weak patch must fall back to CNN, not hide every face.
+  clear=1;tick;clear=0;visible=0;big_patch=0;tx=70;ty=40;
+  frame(1);cnn(1,560,320,400);frame(0);
+  if(!dut.suspended||fast)$fatal(1,"weak seed did not suspend assistance");
+  frame(1);cnn(1,568,320,400);
+  if(!found||fast||x!=568||y!=320)$fatal(1,"detector-only fallback lost face");
+  frame(1);cnn(0,0,0,0);
+  if(found)$fatal(1,"fallback ignored negative CNN");
+  // Explicit reselect restores assistance when useful texture becomes available.
+  clear=1;tick;clear=0;visible=1;frame(1);cnn(1,560,320,128);frame(0);check(560,320);
   // Processing never changes video qualifiers: module has no video output ports.
   $display("PASS tb_face_motion_fusion results=%0d; delayed CNN, bounded correction, target association, loss, clear, reacquire",results);$finish;
  end
