@@ -44,5 +44,8 @@ set_false_path -hold   -to [get_regs -nowarn {*u_video_out/S_video_vsync_*}]
 
 # Async reset assertion/deassertion into each domain's reset synchronizer.
 set_false_path -to [get_regs -nowarn {*u_video_out/pixel_reset_sync*}]
-set_false_path -to [get_regs -nowarn {*u_video_in/U_w128_d512_fifo/*/asy_w_rst1*}]
-set_false_path -to [get_regs -nowarn {*u_video_out/U_w128_d512_fifo/*/asy_r_rst0*}]
+
+# Reset-only exceptions cover EVERY generated FIFO instance, including the
+# MIPI-to-sys50 event bridge. Do not mask Gray pointer datapath constraints.
+set_false_path -to [get_regs -nowarn {*asy_w_rst* *asy_r_rst*}]
+set_false_path -to [get_regs -nowarn {*u_reset_*/release_ff*}]

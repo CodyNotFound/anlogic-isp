@@ -1,5 +1,5 @@
-param(
- [ValidateSet('tone','osd','network','controls','tracking','reticle','isp','ddr')][string[]]$Tests=@('tone','osd','network','controls','tracking','reticle','isp','ddr'),
+﻿param(
+ [ValidateSet('tone','osd','network','controls','tracking','reticle','reliability','gimbal','isp','ddr')][string[]]$Tests=@('tone','osd','network','controls','tracking','reticle','reliability','gimbal','isp','ddr'),
  [string]$PythonExe="$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
 )
 $ErrorActionPreference='Stop'
@@ -36,4 +36,9 @@ try{
  if($Tests -contains 'tracking'){& ./scripts/run_tracking_tests.ps1}
  if($Tests -contains 'isp'){& ./scripts/run_isp_tests.ps1}
  if($Tests -contains 'ddr'){& ./scripts/run_ddr_tests.ps1}
+ if($Tests -contains 'reliability'){
+  Simulate -name 'reset_ae' -top 'tb_reset_ae_cdc' -files @('rtl/common/reset_sync.v','rtl/common/frame_stat_cdc.v','rtl/isp/auto_exposure.v','sim/tb_reliability.sv')
+  Simulate -name 'shift' -top 'tb_model_shift' -files @('rtl/analytics/face_cnn/yunet_dot4.v','sim/tb_reliability.sv')
+ }
+ if($Tests -contains 'gimbal'){Simulate -name 'gimbal' -top 'tb_gimbal_equivalence' -files @('rtl/control/servo_gimbal_ctrl.v','sim/reference/servo_gimbal_reference.v','sim/tb_gimbal_equivalence.sv')}
 }finally{Pop-Location}

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('Check','Synthesis','Implementation')]
     [string]$Stage = 'Check',
     [string]$RunName = ('anlogic-isp_runs_'+(Get-Date -Format 'yyyyMMdd_HHmmss')),
@@ -31,6 +31,11 @@ $sources = foreach ($match in [regex]::Matches($alText,'<File Path="([^"]+)"')) 
     $resolved = [IO.Path]::GetFullPath((Join-Path $projectDir $match.Groups[1].Value))
     if (-not (Test-Path -LiteralPath $resolved)) { throw "Project source missing: $resolved" }
     $resolved
+}
+# Reject model shifts outside the resource-bounded requantizer contract.
+$shiftFile=Join-Path $projectRoot 'rtl/analytics/face_cnn/shift.hex'
+foreach($line in [IO.File]::ReadAllLines($shiftFile)){
+ if($line.Trim() -and [Convert]::ToInt32($line.Trim(),16) -gt 31){throw 'MODEL_SHIFT must be in 0..31; re-export or extend RTL explicitly.'}
 }
 $sources += $alFile # The active source-set definition is a reproducibility input too.
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/isp') -Filter 'colorshading_*.vh' | ForEach-Object { $_.FullName }

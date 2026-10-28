@@ -1,4 +1,4 @@
-param([string]$RunName=('anlogic-isp_runs_'+(Get-Date -Format 'yyyyMMdd_HHmmss')),
+﻿param([string]$RunName=('anlogic-isp_runs_'+(Get-Date -Format 'yyyyMMdd_HHmmss')),
 [switch]$DisableFsmInference,
 [switch]$AllowSlicePackingProbe)
 $ErrorActionPreference='Stop'
@@ -6,7 +6,7 @@ $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $installedRoot='[LOCAL_PATH]'
 if($root -ne $installedRoot -and -not($root.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
-$match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}
+$match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
 $jobPath=Join-Path $root "build/verification/${version}_job.json"
 $utf8=[Text.UTF8Encoding]::new($false)
 $job=[ordered]@{status='running';run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');stage='Check';completed_utc=$null;error=$null;disable_fsm_inference=[bool]$DisableFsmInference;slice_packing_probe=[bool]$AllowSlicePackingProbe}

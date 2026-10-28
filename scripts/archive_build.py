@@ -9,7 +9,7 @@ assert re.fullmatch(r'anlogic-isp_runs_[A-Za-z0-9_]+',args.run)
 root=Path(__file__).resolve().parents[1]
 run=root/'td_project'/args.run
 match=re.search(r'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$',args.run)
-version=match.group(1) if match else args.run.split('_')[-1]
+version=args.run
 completion=root/'build/verification'/f'{version}_completion.json'
 record=json.loads(completion.read_text(encoding='utf-8-sig'))
 assert record['status']=='passed',record
@@ -31,7 +31,7 @@ for _,source,rel in entries:
     out=target/'source'/rel
     out.parent.mkdir(parents=True,exist_ok=True)
     shutil.copyfile(source,out)
-for source in (bit,run/'source_sha256.txt',completion,run/'phy/anlogic-isp_phy.ts',run/'phy/anlogic-isp_phy.area',run/'phy/final_timing.rpt',run/'phy/settings.cfg'):
+for source in (bit,run/'source_sha256.txt',completion,run/'phy/anlogic-isp_phy.ts',run/'phy/anlogic-isp_phy.area',run/'phy/final_timing.rpt',run/'phy/anlogic-isp_exception.timing',run/'phy/settings.cfg'):
     shutil.copyfile(source,target/source.name)
 if (root/'reports/optimized_validation.json').exists():
     shutil.copyfile(root/'reports/optimized_validation.json',target/'functional_validation.json')

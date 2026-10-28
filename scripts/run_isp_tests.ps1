@@ -1,4 +1,4 @@
-param([string]$PlatformRoot='', [switch]$FullFrame)
+﻿param([string]$PlatformRoot='', [switch]$FullFrame)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if(-not $PlatformRoot){$PlatformRoot=$root}
@@ -9,6 +9,7 @@ $modelSimBin=Split-Path (Get-Command vlog.exe -ErrorAction Stop).Source
 $tdRoot=Split-Path (Split-Path (Get-Command td_commands_prompt.exe -ErrorAction Stop).Source)
 $d=Join-Path $PlatformRoot 'rtl/hardware/hdl_source/isp/demosaic_4x_2_0'
 $sources=@(
+ "$root/rtl/common/reset_sync.v",
  (Join-Path $tdRoot 'sim_release/ph1p/ph1p_phy_gsr.v'),
  (Join-Path $tdRoot 'sim_release/ph1p/ph1p_logic_eram.v'),
  "$d/blk_mem_gen_zhenghe/RTL/ram_d32970204f32.v",

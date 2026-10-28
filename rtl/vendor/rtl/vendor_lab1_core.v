@@ -81,41 +81,16 @@ module vendor_lab1_core (
     // acts as the event; the data bus is held stable for an entire frame.
     reg             S_ae_enable_sync1;
     reg             S_ae_enable_sync2;
-    reg [7:0]       S_ae_stat_y_sync1;
-    reg [7:0]       S_ae_stat_y_sync2;
-    reg             S_ae_stat_toggle_sync1;
-    reg             S_ae_stat_toggle_sync2;
-    reg             S_ae_stat_toggle_seen;
-    reg [7:0]       S_ae_luma_avg;
-    reg             S_ae_luma_valid;
-
-    always @(posedge S_24m_clk or negedge S_rst_n) begin
-        if (!S_rst_n) begin
-            S_ae_enable_sync1      <= 1'b0;
-            S_ae_enable_sync2      <= 1'b0;
-            S_ae_stat_y_sync1      <= 8'd0;
-            S_ae_stat_y_sync2      <= 8'd0;
-            S_ae_stat_toggle_sync1 <= 1'b0;
-            S_ae_stat_toggle_sync2 <= 1'b0;
-            S_ae_stat_toggle_seen  <= 1'b0;
-            S_ae_luma_avg          <= 8'd0;
-            S_ae_luma_valid        <= 1'b0;
-        end else begin
-            S_ae_enable_sync1      <= I_ae_enable;
-            S_ae_enable_sync2      <= S_ae_enable_sync1;
-            S_ae_stat_y_sync1      <= I_ae_stat_y;
-            S_ae_stat_y_sync2      <= S_ae_stat_y_sync1;
-            S_ae_stat_toggle_sync1 <= I_ae_stat_toggle;
-            S_ae_stat_toggle_sync2 <= S_ae_stat_toggle_sync1;
-            S_ae_luma_valid        <= 1'b0;
-            if (S_ae_stat_toggle_sync2 != S_ae_stat_toggle_seen) begin
-                S_ae_stat_toggle_seen <= S_ae_stat_toggle_sync2;
-                S_ae_luma_avg   <= S_ae_stat_y_sync2;
-                S_ae_luma_valid <= 1'b1;
-            end
-        end
+    wire [7:0] S_ae_luma_avg;
+    wire S_ae_luma_valid;
+    always @(posedge S_24m_clk or negedge S_rst_24m_n)begin
+        if(!S_rst_24m_n)begin S_ae_enable_sync1<=0;S_ae_enable_sync2<=0;end
+        else begin S_ae_enable_sync1<=I_ae_enable;S_ae_enable_sync2<=S_ae_enable_sync1;end
     end
-	
+    frame_stat_cdc u_ae_stat_cdc(.clk(S_24m_clk),.rst_n(S_rst_24m_n),
+        .data_async(I_ae_stat_y),.toggle_async(I_ae_stat_toggle),
+        .data(S_ae_luma_avg),.valid(S_ae_luma_valid));
+
 	wire        	S_csi_rx_clk;  
     wire        	S_hs_rx_valid;  
     wire[15:0]  	S_hs_rx_data;   
@@ -283,11 +258,17 @@ module vendor_lab1_core (
     assign O_video_rd_data = S_video_rd_data;
 	
 	
-    assign S_rst_n 		= S_pll_lock;
-    assign S_hdmi_rst_n = S_pll_lock;
+    wire S_reset_async_n=I_rst_n && S_pll_lock;
+    wire S_rst_24m_n,S_rst_100m_n,S_rst_mipi_n,S_rst_ddr_n;
+    reset_sync u_reset_sys(.clk(I_sys_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_n));
+    reset_sync u_reset_24m(.clk(S_24m_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_24m_n));
+    reset_sync u_reset_100m(.clk(S_100m_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_100m_n));
+    reset_sync u_reset_mipi(.clk(S_csi_rx_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_mipi_n));
+    reset_sync u_reset_ddr(.clk(S_ddr_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_ddr_n));
+    reset_sync u_reset_pixel(.clk(S_hdmi_pixel_clk),.async_rst_n(S_reset_async_n),.rst_n(S_hdmi_rst_n));
 
-    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_csi_rx_clk or negedge S_rst_mipi_n) begin
+        if(!S_rst_mipi_n)
             S_dbg_raw_seen <= 1'b0;
         else if(S_raw10_frame_start | S_raw10_valid)
             S_dbg_raw_seen <= 1'b1;
@@ -300,43 +281,43 @@ module vendor_lab1_core (
             S_dbg_isp_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_ddr_wr_seen <= 1'b0;
         else if(S_vi_ddr_wr_en)
             S_dbg_ddr_wr_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_ddr_rd_seen <= 1'b0;
         else if(S_ddr_user_rd_valid)
             S_dbg_ddr_rd_seen <= 1'b1;
     end
 
-    always @(posedge S_24m_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_24m_clk or negedge S_rst_24m_n) begin
+        if(!S_rst_24m_n)
             S_dbg_cam_cfg_seen <= 1'b0;
         else if(S_cam_cfg_done)
             S_dbg_cam_cfg_seen <= 1'b1;
     end
 
-    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_csi_rx_clk or negedge S_rst_mipi_n) begin
+        if(!S_rst_mipi_n)
             S_dbg_hs_seen <= 1'b0;
         else if(S_hs_rx_valid)
             S_dbg_hs_seen <= 1'b1;
     end
 
-    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_csi_rx_clk or negedge S_rst_mipi_n) begin
+        if(!S_rst_mipi_n)
             S_dbg_csi_seen <= 1'b0;
         else if(S_csi_frame_start | S_csi_valid)
             S_dbg_csi_seen <= 1'b1;
     end
 
-    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_csi_rx_clk or negedge S_rst_mipi_n) begin
+        if(!S_rst_mipi_n)
             S_dbg_raw10_seen <= 1'b0;
         else if(S_raw10_frame_start | S_raw10_valid)
             S_dbg_raw10_seen <= 1'b1;
@@ -356,22 +337,22 @@ module vendor_lab1_core (
             S_dbg_isp_valid_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_ddr_req_seen <= 1'b0;
         else if(S_vi_ddr_wr_en)
             S_dbg_ddr_req_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_ddr_ready_seen <= 1'b0;
         else if(S_ddr_user_ready)
             S_dbg_ddr_ready_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_video_out_rst_n) begin
-        if(!S_video_out_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_rd_req_seen <= 1'b0;
         else if(S_vo_ddr_rd_en)
             S_dbg_rd_req_seen <= 1'b1;
@@ -380,8 +361,8 @@ module vendor_lab1_core (
     // Count CSI payload words between HS packet boundaries.  This avoids
     // probing an internal net of csi_unpacket_2lane (which ChipWatcher cannot
     // legally connect to) and verifies the received line length externally.
-    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
-        if(!S_rst_n) begin
+    always @(posedge S_csi_rx_clk or negedge S_rst_mipi_n) begin
+        if(!S_rst_mipi_n) begin
             S_dbg_hs_valid_d          <= 1'b0;
             S_dbg_csi_words           <= 11'd0;
             S_dbg_good_lines          <= 11'd0;
@@ -431,43 +412,43 @@ module vendor_lab1_core (
         end
     end
 
-    always @(posedge S_ddr_clk or negedge S_video_out_rst_n) begin
-        if(!S_video_out_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_rd_valid_seen <= 1'b0;
         else if(S_ddr_user_rd_valid)
             S_dbg_rd_valid_seen <= 1'b1;
     end
 
-    always @(posedge S_hdmi_pixel_clk or negedge S_video_out_rst_n) begin
-        if(!S_video_out_rst_n)
+    always @(posedge S_hdmi_pixel_clk or negedge S_hdmi_rst_n) begin
+        if(!S_hdmi_rst_n)
             S_dbg_rd_nonzero_seen <= 1'b0;
         else if(S_hdmi_window_rd_en && (S_video_rd_data != 24'd0))
             S_dbg_rd_nonzero_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_mc_init_seen <= 1'b0;
         else if(S_init_calib_complete)
             S_dbg_mc_init_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_mc_app_rdy_seen <= 1'b0;
         else if(S_mc_dbg_app_rdy)
             S_dbg_mc_app_rdy_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_mc_wdf_rdy_seen <= 1'b0;
         else if(S_mc_dbg_wdf_rdy)
             S_dbg_mc_wdf_rdy_seen <= 1'b1;
     end
 
-    always @(posedge S_ddr_clk or negedge S_rst_n) begin
-        if(!S_rst_n)
+    always @(posedge S_ddr_clk or negedge S_rst_ddr_n) begin
+        if(!S_rst_ddr_n)
             S_dbg_mc_cmd_pop_seen <= 1'b0;
         else if(S_mc_dbg_cmd_pop)
             S_dbg_mc_cmd_pop_seen <= 1'b1;
@@ -576,7 +557,7 @@ module vendor_lab1_core (
   
   ae_set u_ae_set (
       .I_clk(S_24m_clk),
-      .I_rst(~S_rst_n),
+      .I_rst(~S_rst_24m_n),
       .I_btn(4'b1111),
       .I_cam_cfg_done(S_cam_cfg_done),
       .I_ae_cfg_done(S_ae_cfg_done),
@@ -592,7 +573,7 @@ module vendor_lab1_core (
       .CLK_DIV(24000000 / 100000 - 1)
   ) u_uicfgcs500 (
       .I_clk(S_24m_clk),  //系统时钟输入
-      .I_rst_n(S_rst_n),  //系统复位输入
+      .I_rst_n(S_rst_24m_n),  //系统复位输入
       .I_ae_req(S_ae_req),
       .I_ae(S_ae),
       .I_ag(S_ag),
@@ -610,7 +591,7 @@ module vendor_lab1_core (
         .BYTE_NUM              ( 1       )
     )u_mipi_dphy_rx_ph1p_mipiio_wrapper(
         .I_lp_clk              ( S_100m_clk       ),
-        .I_rst                 ( ~S_rst_n         ),
+        .I_rst                 ( ~S_rst_100m_n         ),
 
         .I_clk_lane_in_delay   ( 6'd0             ),
         .I_data_lane0_in_delay ( 6'd0             ),
@@ -652,7 +633,7 @@ module vendor_lab1_core (
  //csi 解码为RAW数据
 csi_unpacket_2lane u_csi_unpacket(
 .I_clk                 ( S_csi_rx_clk       ),
-.I_rst_n               ( S_rst_n        	),
+.I_rst_n               ( S_rst_mipi_n        	),
 .I_hs_valid            ( S_hs_rx_valid     ),
 .I_hs_data             ( S_hs_rx_data      ),
 
@@ -666,7 +647,7 @@ csi_unpacket_2lane u_csi_unpacket(
 //解码为RAW8
 raw10_unpacket_2lane u_raw10_unpacket (
 .I_clk  (S_csi_rx_clk),
-.I_rst_n(S_rst_n),
+.I_rst_n(S_rst_mipi_n),
 
 .I_csi_frame_start(S_csi_frame_start),
 .I_csi_frame_end  (S_csi_frame_end),
@@ -685,7 +666,7 @@ raw10_unpacket_2lane u_raw10_unpacket (
 wire [39:0] S_processing_raw;
 wire S_processing_valid,S_processing_start,S_processing_end;
 camera_raw_clock_bridge u_camera_raw_clock_bridge(
- .I_rst_n(S_rst_n),.I_rx_clk(S_csi_rx_clk),
+ .I_rst_n(S_reset_async_n),.I_rx_clk(S_csi_rx_clk),
  .I_raw_valid(S_raw10_valid),.I_frame_start(S_raw10_frame_start),
  .I_frame_end(S_raw10_frame_end),.I_raw_data(S_raw10_data),
  .I_processing_clk(I_sys_clk),.O_raw_valid(S_processing_valid),
@@ -759,7 +740,7 @@ isp_top u_isp_top (
 
     wire S_vi_user_ready,S_vo_user_ready;
     video_in u_video_in(
-        .I_rst_n              (  S_rst_n             ),
+        .I_rst_n              (  S_reset_async_n             ),
 
         .I_camera_clk         ( I_sys_clk             ),
         .I_camera_frame_start ( S_ISP_O_tuser  ),
@@ -793,7 +774,7 @@ isp_top u_isp_top (
     assign S_video_out_rst_n = S_hdmi_rst_n;
 
     video_out u_video_out(
-        .I_rst_n             ( S_video_out_rst_n    ),
+        .I_rst_n             ( S_reset_async_n    ),
         .I_ddr_clk           ( S_ddr_clk            ),
  
         .O_video_out_rd_busy ( S_video_out_rd_busy  ),
@@ -816,7 +797,7 @@ isp_top u_isp_top (
 
     mc_to_user_interface u_mc_to_user_interface(
         .I_clk                   ( S_ddr_clk               ),
-        .I_rst_n                 ( S_rst_n                 ),
+        .I_rst_n                 ( S_rst_ddr_n                 ),
 
         .I_ddr_user_wr_en        ( S_ddr_user_wr_en        ),
         .I_ddr_user_rd_en        ( S_ddr_user_rd_en        ),

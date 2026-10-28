@@ -140,7 +140,7 @@ module hdmi_tx (
 
     key_remove_shakes u_key_remove_shakes(
         .I_clk          ( I_pixel_clk ),
-        .I_rst_n        ( S_pll_lock  ),
+        .I_rst_n        ( ~I_rst      ),
         .I_key_in       ( I_key_in    ),
         .O_key_trig_out ( S_key_edid_read_trig )
     );

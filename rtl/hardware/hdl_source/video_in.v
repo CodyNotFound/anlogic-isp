@@ -22,6 +22,9 @@ module video_in (
     input wire         I_ddr_user_ready
 );
 
+    wire camera_reset_n,ddr_reset_n;
+    reset_sync u_reset_camera(.clk(I_camera_clk),.async_rst_n(I_rst_n),.rst_n(camera_reset_n));
+    reset_sync u_reset_ddr(.clk(I_ddr_clk),.async_rst_n(I_rst_n),.rst_n(ddr_reset_n));
     wire        S_fifo_rst;
     reg         S_camera_frame_start_extend; ///脉冲展宽，同步到ddr_clk时钟域
     reg[3:0]    S_extend_cnt;
@@ -71,8 +74,8 @@ module video_in (
     );
 
 
-    always @(posedge I_camera_clk or negedge I_rst_n) begin
-        if(!I_rst_n)
+    always @(posedge I_camera_clk or negedge camera_reset_n) begin
+        if(!camera_reset_n)
             S_camera_frame_start_extend <= 1'b0;
         else
             if(I_camera_frame_start)
@@ -84,8 +87,8 @@ module video_in (
     end
 
 	
-    always @ (posedge I_camera_clk or negedge I_rst_n) begin
-        if(!I_rst_n) S_extend_cnt<=0;
+    always @ (posedge I_camera_clk or negedge camera_reset_n) begin
+        if(!camera_reset_n) S_extend_cnt<=0;
     	else if(S_camera_frame_start_extend)
         	S_extend_cnt <= S_extend_cnt + 'd1;
       	else
@@ -93,8 +96,8 @@ module video_in (
     end
 
 
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n)begin
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n)begin
             S_camera_frame_start_extend_1d<=0;S_camera_frame_start_extend_2d<=0;S_camera_frame_start_extend_3d<=0;
         end else begin
             S_camera_frame_start_extend_1d <= S_camera_frame_start_extend;
@@ -108,8 +111,8 @@ module video_in (
 	/*
 		如果前一帧图像有误少行了，那么地址回退为之前的，覆盖有问题的那帧图像
 	*/
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n)
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n)
             S_video_in_wp <= 'd0;
         else
             if(I_display_pause)
@@ -126,8 +129,8 @@ module video_in (
     end
 
 
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n)
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n)
             O_video_out_rp <= 'd0;
         else
             if(I_display_pause)
@@ -148,8 +151,8 @@ module video_in (
     /*
         fifo的深度是512，实际的深度是510，因此需要注意每次读出的长度避免为256，否则连续两次读写会引起fifo读空，丢失数据
     */
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n)
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n)
             S_ddr_wr_valid <= 1'b0;
         else if(S_frame_start || S_fifo_rst) S_ddr_wr_valid<=0;
         else
@@ -161,8 +164,8 @@ module video_in (
                 S_ddr_wr_valid <= S_ddr_wr_valid;
     end
 
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n || S_frame_start || S_fifo_rst) S_ddr_wr_cnt<=0;
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n || S_frame_start || S_fifo_rst) S_ddr_wr_cnt<=0;
         else if(S_ddr_wr_valid)
             begin
                 if(S_fifo_rd_en)
@@ -177,8 +180,8 @@ module video_in (
     assign S_fifo_rd_en = S_ddr_wr_valid && I_ddr_user_ready && !S_fifo_rst && !S_frame_start;
 
     assign O_ddr_user_wr_en=write_pending && I_ddr_user_ready && !S_fifo_rst && !S_frame_start;
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n)write_pending<=0;
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n)write_pending<=0;
         else if(S_fifo_rst || S_frame_start)write_pending<=0;
         else if(S_fifo_rd_en)write_pending<=1;
         else if(O_ddr_user_wr_en)write_pending<=0;
@@ -187,8 +190,8 @@ module video_in (
 	/*
 		如果前一帧图像有误少行了，那么地址回退为之前的，覆盖有问题的那帧图像
 	*/
-    always @(posedge I_ddr_clk or negedge I_rst_n) begin
-        if(!I_rst_n)
+    always @(posedge I_ddr_clk or negedge ddr_reset_n) begin
+        if(!ddr_reset_n)
             O_ddr_user_addr <= 1'b0;
         else
             if(S_frame_start && (!I_mipi_rx_error))

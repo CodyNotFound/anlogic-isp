@@ -10,6 +10,8 @@ module video_out (
  input wire I_dsi_clk,I_video_vsync,I_video_rd_en,
  output reg [23:0] O_vdieo_data
 );
+ wire ddr_reset_n;
+ reset_sync u_reset_ddr(.clk(I_ddr_clk),.async_rst_n(I_rst_n),.rst_n(ddr_reset_n));
  localparam [1:0] RUN=0,DRAIN=1,RESET_FIFO=2,RELEASE_FIFO=3;
  reg [1:0] frame_state;
  reg S_fifo_rst;
@@ -22,7 +24,7 @@ module video_out (
  reg [10:0] read_words_in_flight;
  wire [8:0] S_fifo_wr_num;
  wire [11:0] reserved_read_words={3'd0,S_fifo_wr_num}+{1'b0,read_words_in_flight};
- wire S_ddr_rd_trig=(frame_state==RUN)&&!S_fifo_rst&&I_rst_n&&
+ wire S_ddr_rd_trig=(frame_state==RUN)&&!S_fifo_rst&&ddr_reset_n&&
      !S_video_frame_start&&!I_video_in_wr_busy&&!S_ddr_rd_valid&&
      (reserved_read_words<=12'd211);
  // Retain 300 free slots for a 240-word burst, now INCLUDING outstanding words.
@@ -34,8 +36,8 @@ module video_out (
   0:frame_base=25'd0;1:frame_base=25'd7000000;
   2:frame_base=25'd14000000;3:frame_base=25'd21000000;
  endcase end endfunction
- always @(posedge I_ddr_clk or negedge I_rst_n)begin
-  if(!I_rst_n)begin
+ always @(posedge I_ddr_clk or negedge ddr_reset_n)begin
+  if(!ddr_reset_n)begin
    S_video_vsync_1d<=0;S_video_vsync_2d<=0;S_video_vsync_3d<=0;
   end else begin
    S_video_vsync_1d<=I_video_vsync;
@@ -43,8 +45,8 @@ module video_out (
    S_video_vsync_3d<=S_video_vsync_2d;
   end
  end
- always @(posedge I_ddr_clk or negedge I_rst_n)begin
-  if(!I_rst_n)begin
+ always @(posedge I_ddr_clk or negedge ddr_reset_n)begin
+  if(!ddr_reset_n)begin
    read_words_in_flight<=0;
   end else begin
    case({O_ddr_user_rd_en,I_ddr_user_rd_valid})
@@ -54,8 +56,8 @@ module video_out (
    endcase
   end
  end
- always @(posedge I_ddr_clk or negedge I_rst_n)begin
-  if(!I_rst_n)begin
+ always @(posedge I_ddr_clk or negedge ddr_reset_n)begin
+  if(!ddr_reset_n)begin
    frame_state<=RESET_FIFO;S_fifo_rst<=1;reset_count<=0;
    next_frame_base<=0;O_ddr_user_addr<=0;
    S_ddr_rd_valid<=0;S_ddr_rd_cnt<=0;

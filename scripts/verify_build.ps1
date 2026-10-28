@@ -1,4 +1,4 @@
-param(
+﻿param(
  [Parameter(Mandatory=$true)][int]$TdProcessId,
  [string]$ProjectRoot='[LOCAL_PATH]',
  [string]$RunName=('anlogic-isp_runs_'+(Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -9,7 +9,7 @@ $installedRoot='[LOCAL_PATH]'
 if($ProjectRoot -ne $installedRoot -and -not($ProjectRoot.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $ProjectRoot '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $run=Join-Path $ProjectRoot "td_project/$RunName"
-$match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=if($match.Success){$match.Groups[1].Value}else{($RunName -split '_')[-1]}
+$match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
 $phy=Join-Path $run 'phy'
 $compile=Join-Path $ProjectRoot 'build/verification'
 New-Item -ItemType Directory -Force -Path $compile | Out-Null
@@ -23,12 +23,21 @@ $result=[ordered]@{
  process_id=$TdProcessId; setup_wns_ns=$null; setup_tns_ns=$null
  hold_wns_ns=$null; hold_tns_ns=$null; slices=$null; ram=$null; dsp=$null; memory_slices=$null
  source_files_checked=0; bit_path=(Join-Path $phy 'anlogic-isp.bit')
- bit_bytes=0; bit_sha256=$null; errors=@()
+ bit_bytes=0; bit_sha256=$null; sta_coverage_percent=$null; errors=@()
 }
 try{
  foreach($marker in @('.opt_place.end.f','.opt_route.end.f','.bitgen.end.f')){
   if(-not(Test-Path -LiteralPath (Join-Path $phy $marker))){$errors.Add("Missing success marker: $marker")}
  }
+ $routedReport=Join-Path $phy 'anlogic-isp_pr.timing'
+ if(Test-Path -LiteralPath $routedReport){
+  $routedText=[IO.File]::ReadAllText($routedReport)
+  $coverage=[regex]::Match($routedText,'STA coverage\s*:\s*([0-9.]+)%')
+  if($coverage.Success){$result.sta_coverage_percent=[double]::Parse($coverage.Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)}else{$errors.Add('STA coverage missing')}
+  if(-not(Test-Path -LiteralPath (Join-Path $phy 'anlogic-isp_exception.timing'))){$errors.Add('Routed exception report missing')}
+  if($routedText -notmatch 'Confidence\s*:\s*Routed'){$errors.Add('Detailed timing report is not routed')}
+  else{Copy-Item -LiteralPath $routedReport -Destination (Join-Path $phy 'final_timing.rpt') -Force}
+ }else{$errors.Add('Detailed routed timing report missing')}
  $timingFile=Join-Path $phy 'anlogic-isp_phy.ts'
  if(Test-Path -LiteralPath $timingFile){
   $timing=[IO.File]::ReadAllText($timingFile)

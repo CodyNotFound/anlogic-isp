@@ -1,4 +1,4 @@
-param([string]$Test='all')
+﻿param([string]$Test='all')
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $bin='[LOCAL_PATH]'

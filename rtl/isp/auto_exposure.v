@@ -26,6 +26,7 @@ module auto_exposure #(
     reg [39:0] luma_sum;
     reg [21:0] pixel_count;
     reg [8:0]  gain_q8;
+    reg frame_stat_pending;
 
     // BT.601 full-range Y=(77R+150G+29B)>>8, using shift/add terms.
     function [7:0] rgb_to_y;
@@ -79,7 +80,10 @@ module auto_exposure #(
             gain_q8  <= 9'd256;
             frame_stat_y <= 8'd0;
             frame_stat_toggle <= 1'b0;
+            frame_stat_pending <= 1'b0;
         end else begin
+            frame_stat_pending <= 1'b0;
+            if(frame_stat_pending) frame_stat_toggle <= ~frame_stat_toggle;
             // Register the pixel result to isolate the frame-control gain
             // and channel multipliers from the next ISP stage.
             if (!de) pixel_out <= 24'd0;
@@ -94,7 +98,7 @@ module auto_exposure #(
                     // stable until the next frame, making the CDC safe.
                     frame_stat_y <= (frame_avg_calc > 9'd255) ?
                                     8'hff : frame_avg_calc[7:0];
-                    frame_stat_toggle <= ~frame_stat_toggle;
+                    frame_stat_pending <= 1'b1;
                 end
                 if (enable && (pixel_count != 0)) begin
                     if (luma_sum < (pixel_count * TARGET_LOW)) begin

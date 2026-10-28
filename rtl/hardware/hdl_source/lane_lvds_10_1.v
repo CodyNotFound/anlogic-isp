@@ -13,6 +13,8 @@ module lane_lvds_10_1 #(
     output wire     O_serial_out
 );
 
+    wire serial_reset_n;
+    reset_sync u_reset_serial(.clk(I_serial_clk),.async_rst_n(!I_rst),.rst_n(serial_reset_n));
     reg      S_odd_even;     
     reg      S_odd_even_1d;  
     reg      S_odd_even_2d;  
@@ -41,8 +43,8 @@ module lane_lvds_10_1 #(
         S_load_en_2d <= S_load_en_1d;
     end
 
-    always @(posedge I_serial_clk or posedge I_rst) begin
-        if(I_rst)
+    always @(posedge I_serial_clk or negedge serial_reset_n) begin
+        if(!serial_reset_n)
             S_shift_data <= 'd0;
         else
             if(S_load_en_2d)
@@ -60,7 +62,7 @@ module lane_lvds_10_1 #(
             begin
                 EF2_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -72,7 +74,7 @@ module lane_lvds_10_1 #(
             begin
                 EF3_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -84,7 +86,7 @@ module lane_lvds_10_1 #(
             begin
                 EF4_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -96,7 +98,7 @@ module lane_lvds_10_1 #(
             begin
                 SF1_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -108,7 +110,7 @@ module lane_lvds_10_1 #(
             begin
                 EG_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -120,7 +122,7 @@ module lane_lvds_10_1 #(
             begin
                 PH1_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -132,7 +134,7 @@ module lane_lvds_10_1 #(
             begin
                 PH1P_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),
@@ -144,7 +146,7 @@ module lane_lvds_10_1 #(
             begin
                 DR1_LOGIC_ODDR U_EG4_ODDR(
                     .clk   ( I_serial_clk   ),
-                    .rst   ( I_rst          ),
+                    .rst   ( !serial_reset_n ),
 
                     .d1    ( S_oddr_data[0] ),
                     .d0    ( S_oddr_data[1] ),

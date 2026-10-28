@@ -14,6 +14,15 @@
     </MiscSettings>
     <Source_Files>
         <Verilog>
+            <File Path="../rtl/common/reset_sync.v"><FileInfo>
+                <Attr Name="UsedInSyn" Val="true"/><Attr Name="UsedInP&R" Val="true"/>
+                <Attr Name="BelongTo" Val="design_1"/><Attr Name="CompileOrder" Val="123"/>
+            </FileInfo></File>
+            <File Path="../rtl/common/frame_stat_cdc.v"><FileInfo>
+                <Attr Name="UsedInSyn" Val="true"/><Attr Name="UsedInP&R" Val="true"/>
+                <Attr Name="BelongTo" Val="design_1"/><Attr Name="CompileOrder" Val="124"/>
+            </FileInfo></File>
+
             <File Path="../rtl/control/vision_uart_8n1.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

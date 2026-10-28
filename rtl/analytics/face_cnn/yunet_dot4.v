@@ -32,13 +32,14 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0)(
   requant=(r&&wide<0)?8'sd0:wide>127?8'sd127:wide< -128?-8'sd128:wide[7:0];
  end
  endfunction
- // The exported graph uses positive right shifts only. 33 bits retain
+ // The exported graph supports right shifts 0..31; zero is explicit. 33 bits retain
  // exact rounding for every signed-int32 accumulator without a 64-bit shifter.
  function signed [7:0] requant_model;
  input signed [31:0] a;input signed [6:0] s;input r;
  reg signed [32:0] q;
  begin
-  q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
+  if(s==0) q=$signed({a[31],a});
+  else q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
   requant_model=(r&&q<0)?8'sd0:q>127?8'sd127:q< -128?-8'sd128:q[7:0];
  end endfunction
  always @(posedge clk or negedge rst_n)begin
