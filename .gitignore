@@ -20,7 +20,7 @@ Thumbs.db
 !reports/**/.gitkeep
 
 # Isolated Tang Dynasty build runs; bitstreams and reports are archived outside git.
-td_project/colorshading_runs_*/
+td_project/anlogic-isp_runs_*/
 # Standalone face detector probes; small verified evidence is in reports/face_lbp.
 td_project/face_lbp_probe_*/
 td_project/object_classifier_probe_*/
@@ -38,3 +38,12 @@ sim/work*/
 
 # Generated final-build verification output
 /build/
+
+# Historic generated runs remain local only.
+td_project/colorshading_runs_*/
+
+# Current simulation work products
+/sim/**/*.log
+/sim/**/*.wlf
+/sim/**/work/
+/sim/**/work_*/

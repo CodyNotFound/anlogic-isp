@@ -1,8 +1,0 @@
-lena
-figurine
-fruits
-weak_step
-isoluma
-dark_noise
-uniform
-black

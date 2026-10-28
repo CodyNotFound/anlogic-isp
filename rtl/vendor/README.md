@@ -1,0 +1,10 @@
+# 官方参考位置
+
+本工程第一阶段基于以下官方资料，源文件已复制到本仓库的 `rtl/hardware/`，但不复制官方资料库的全部文件：
+
+- Lab1：`[LOCAL_PATH]`
+- Lab2：`[LOCAL_PATH]`
+- Lab3：`[LOCAL_PATH]`
+
+Lab1 提供 MIPI→HDMI 基线；Lab2 提供 `edge_detect_96.v`；Lab3 提供 `osd_char_lib.v` 和 OSD 合成思路。三个工程统一为 SC500CS 1280x720@60fps；Lab1 另保留 1080p30 寄存器表。
+

@@ -1,46 +1,54 @@
-# 安芯智视视觉跟踪云台系统
+# anlogic-isp
 
-基于HX1P35A / PH1P35MDG324的FPGA视觉工程。SC500CS双通道MIPI CSI-2输入RAW10，经ISP与DDR2后输出1280×720@60 Hz视频，并驱动两轴云台。
+基于安路 HX1P35A / PH1P35MDG324 的端侧视觉云台。SC500CS 经 MIPI CSI-2 输入 RAW10，FPGA 完成 ISP、DDR 缓存、视觉定位与两轴 PWM 控制，HDMI 输出 1280×720@60 Hz。在线推理不依赖电脑或 MCU。
 
-## 功能与操作
+## 目录
 
-ISP支持黑电平、17×13网格LSC、BGGR去马赛克、白平衡、色调和自动曝光。00～10依次为色彩还原、灰度、反色、二值、增亮、锐化、模糊、边缘、浮雕、卡通、换色；11人脸CNN、12模板、13色区、14固定机位运动。分析任务互斥共享片上存储。
-
-| 控件 | 功能 |
+| 目录 | 内容 |
 | --- | --- |
-| SW1 / SW2 | 白平衡、曝光自动更新或保持当前参数 |
-| SW3 | 自动云台跟随使能 |
-| SW4 | 四键用途切换，开启后K4/K3/K2/K1为左/下/上/右 |
-| K1 / K2 | 非方向用途时下一/上一模式 |
-| K4 | 模板/色区取样，运动模式重建参考 |
-
-方向键临时接管，松开等待新的定位恢复自动；目标丢失保持指令位置。可选串口屏支持模式、功能与方向控制，本地仍可接管。公开模型与许可证保留在models/yunet。
+| `rtl/app`、`rtl/control` | 系统集成、按键、串口屏与云台 |
+| `rtl/isp`、`rtl/overlay` | 色彩校正、图像效果、OSD |
+| `rtl/analytics` | 人脸网络、模板、颜色区域与运动检测 |
+| `rtl/hardware` | 摄像头 ISP、DDR、HDMI、厂商 IP 和引脚约束 |
+| `rtl/vendor` | 工程使用的官方平台核心及来源说明 |
+| `td_project` | `anlogic-isp.al` 与 `anlogic-isp.sdc` |
+| `scripts` | 当前构建、校准、字库与回归入口；校准数据位于 `scripts/calibration` |
+| `sim`、`models` | 当前回归及参考数据、模型与许可证 |
 
 ## 构建与验证
 
-TD入口为td_project/camera_to_dsi_display.al，顶层design_top_wrapper。保持rtl、user_source、td_project和vendor_reference相对目录。
+使用 TD 6.2.168116；将 TD 的 bin 目录加入 PATH。仿真使用 ModelSim Altera 10.3c，ISP/DDR 回归还需将其 bin 目录加入 PATH。Python 工具按需使用 numpy、Pillow；校准和字库工具不会在正常综合时运行。
 
 ```powershell
-./scripts/run_td_verified.ps1 -RunName colorshading_runs_20261027_verify -DisableFsmInference -AllowSlicePackingProbe
-./scripts/run_hmi_v72.ps1
+./scripts/check_project.ps1
+./scripts/build.ps1 -Stage Check
+./scripts/build_verified.ps1 -DisableFsmInference -AllowSlicePackingProbe
+./scripts/run_tests.ps1 -Tests controls,tracking,tone,osd,network,isp,ddr
 ```
 
-每次使用新的RunName，源码快照、资源与最终建立/保持时序必须通过检查。主线迁入时128个构建输入与原通过归档逐字节一致：Slice20855/21216、RAM108/108、DSP39/40，setup+0.005ns、hold+0.020ns，TNS均0。原构建证据、目标目录重新构建与实物验证分别记录。
+完整构建自动依次运行 Check、Synthesis、Implementation 和最终时序/资源校验。默认使用时间戳生成独立运行目录；若分阶段执行，必须传入同一个 `-RunName anlogic-isp_runs_...`。顶层模块仍为 `design_top_wrapper`，项目及输出文件名为 `anlogic-isp`。
 
-bit、数据库、仿真工作库和报告外部归档，不入源码历史。后续优化候选在独立分支验证。
+构建输出位于 `td_project/anlogic-isp_runs_*/`，状态位于 `build/verification/`，仿真输出位于 `reports/`，均被 Git 忽略。`scripts/archive_build.py <RunName>` 只归档通过最终时序的构建。`scripts/build_font.py` 使用保留的像素字模；`scripts/export_calibration.py` 重新导出当前校准表。运行这两个生成工具会修改综合输入，需要重新构建。
 
-## 工程目录
+## 功能与操作
 
-`rtl/` 为应用、控制和图像算法；`user_source/` 为摄像头、原始数据 ISP、DDR、HDMI 和厂商 IP。两者共同构成当前工程，不能互相替代。`vendor_reference/rtl/vendor_lab1_core.v` 是仍参与综合的平台核心。模型、ROM 初始化与许可证保留在原路径。
+00～14：色彩还原、灰度、反色、二值、增亮、锐化、模糊、边缘、浮雕、卡通、换色、人脸、模板、色区、固定机位运动检测。人脸采用定点 YuNet，其他分析任务互斥共享片上存储。
 
-## 接线
+| 控件 | 功能 |
+| --- | --- |
+| SW1 / SW2 | 白平衡、曝光自动更新或锁定 |
+| SW3 | 自动云台跟随 |
+| SW4 | 四键切换为方向控制 |
+| K4 / K3 / K2 / K1（方向） | 左 / 下 / 上 / 右 |
+| K1 / K2（普通） | 下一 / 上一模式 |
+| K4（普通） | 模板/颜色取样；运动模式重建参考 |
 
-水平 PWM：J1-1（C18）；俯仰 PWM：J1-2（D15）。两只舵机使用独立 6 V 电源，与 J1-12 共地。串口屏 TX 接 J1-3（E12，FPGA RX），RX 接 J1-4（E16，FPGA TX）；串口信号须兼容 FPGA 的 3.3 V 电平，屏幕按其规格独立供电。
+方向键临时接管，松开等待新定位恢复自动；目标丢失保持位置。串口屏可切模式、设置开关和方向，本地实体操作可接回控制权。
 
-## 历史与交付边界
+水平 PWM：J1-1（C18）；俯仰 PWM：J1-2（D15）；公共地 J1-12。舵机独立 6 V 供电。串口屏 TX 接 J1-3（E12，FPGA RX），RX 接 J1-4（E16，FPGA TX）；采用兼容 3.3 V 的信号电平、115200 8N1，屏幕按规格独立供电。
 
-过程文档、旧发布包和报告已从当前树移除。清理前完整资料见 Git 标签 `archive/pre-final-cleanup-20261028`；例如可用 `git restore --source=archive/pre-final-cleanup-20261028 -- doc docs reports releases` 恢复。
+## 历史与验证边界
 
-构建状态和时序结果新写入 `build/verification/`，不再混入文档目录；仿真脚本按需生成 `reports/`。清理没有更改 RTL、约束、模型或 ROM 数据，不代表新的综合或板上验收。
+开发文档及通过版基线包见标签 `archive/pre-final-cleanup-20261028`。目录整理前源码和全部旧工具见 `archive/pre-layout-cleanup-20261028`，可用 `git restore --source=<标签> -- <路径>` 恢复指定文件。
 
-当前优化候选 v74_widget_r1 的最终时序未通过（setup WNS -0.122 ns、TNS -0.200 ns），不得当作通过版交付。通过版 `stable_controls_baseline` 的源码、bit 与证据保存在上述历史标签的 `releases/` 中。
+原优化候选 v74_widget_r1 的最终时序未通过（setup WNS -0.122 ns、TNS -0.200 ns），不能作为通过版；通过版 `stable_controls_baseline` 的 bit、源码和证据在前述清理前历史的 `releases/` 中。目录检查、功能仿真、最终路由时序和实物显示是独立验证步骤。

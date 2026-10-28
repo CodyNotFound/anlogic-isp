@@ -37,7 +37,7 @@ def ratios(planes):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('raw',type=Path,nargs='+');ap.add_argument('--out',type=Path,required=True)
-    args=ap.parse_args();grid=np.load(ROOT/'calibration/colorshading/base_grid_q10.npy').astype('int64')
+    args=ap.parse_args();grid=np.load(ROOT/'scripts/calibration/base_grid_q10.npy').astype('int64')
     phase_coords=[(0,1),(1,1),(0,0),(1,0)];reports=[]
     for path in args.raw:
         raw=np.load(path);assert raw.shape==(720,1280) and raw.dtype==np.uint16 and raw.max()<=1023

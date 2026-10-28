@@ -1,2 +1,0 @@
-production_seed 1 1 80 45 0 0 255
-production_move 0 1 85 42 1142 5634 255

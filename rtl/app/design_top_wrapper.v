@@ -1,7 +1,7 @@
 // Final application top-level.
 //
 // Board pins stay stable while the implementation is split into:
-//   vendor_reference : factory MIPI/ISP/DDR/HDMI implementation
+//   rtl/vendor : factory MIPI/ISP/DDR/HDMI implementation
 //   rtl              : project-owned extension points and application logic
 // This wrapper contains board wiring plus the explicit platform/application
 // video boundary. Platform IP remains isolated in vendor_lab1_core; project
