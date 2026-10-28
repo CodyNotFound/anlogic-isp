@@ -75,12 +75,22 @@ module servo_gimbal_ctrl #(
  input[11:0] goal,current;reg signed[13:0] d;
  begin d=$signed({2'b0,goal})-$signed({2'b0,current});bounded_delta=d>128?128:d< -128?-128:d;end
  endfunction
- reg[11:0] target_h,target_v;reg signed[8:0] delta_h,delta_v;
- always @*begin
- target_h=goal_clamp($signed({2'b0,(slow?capture_h:pulse_h_us)})+correction(cx,IMG_W/2,slow?4:8,H_INVERT,slow),H_MIN_US,H_MAX_US);
- target_v=goal_clamp($signed({2'b0,(slow?capture_v:pulse_v_us)})+correction(cy,IMG_H/2,slow?3:6,V_INVERT,slow),V_MIN_US,V_MAX_US);
- delta_h=bounded_delta(target_h,pulse_h_us);delta_v=bounded_delta(target_v,pulse_v_us);
- end
+ // Compute slow and fast plans independently. Mode selection no longer
+ // traverses correction, clamp, subtraction and short-plan classification.
+ wire[11:0] slow_target_h=goal_clamp($signed({2'b0,capture_h})+correction(cx,IMG_W/2,4,H_INVERT,1'b1),H_MIN_US,H_MAX_US);
+ wire[11:0] slow_target_v=goal_clamp($signed({2'b0,capture_v})+correction(cy,IMG_H/2,3,V_INVERT,1'b1),V_MIN_US,V_MAX_US);
+ wire[11:0] fast_target_h=goal_clamp($signed({2'b0,pulse_h_us})+correction(cx,IMG_W/2,8,H_INVERT,1'b0),H_MIN_US,H_MAX_US);
+ wire[11:0] fast_target_v=goal_clamp($signed({2'b0,pulse_v_us})+correction(cy,IMG_H/2,6,V_INVERT,1'b0),V_MIN_US,V_MAX_US);
+ wire[11:0] target_h=slow?slow_target_h:fast_target_h;
+ wire[11:0] target_v=slow?slow_target_v:fast_target_v;
+ // Deltas are consumed only for a slow-source result.
+ wire signed[8:0] delta_h=bounded_delta(slow_target_h,pulse_h_us);
+ wire signed[8:0] delta_v=bounded_delta(slow_target_v,pulse_v_us);
+ function within_short_plan;
+ input signed[8:0] value;
+ begin within_short_plan=(value[8:6]==3'b000)||(value[8:6]==3'b111)||(value==9'sd64);end
+ endfunction
+ wire short_plan=within_short_plan(delta_h)&&within_short_plan(delta_v);
  integer dh,dv;
  wire [6:0] manual_step=(keys_pressed==held_keys && held_frames>=MANUAL_ACCEL_FRAMES)?MANUAL_FAST_STEP_US:MANUAL_STEP_US;
  always @* begin
@@ -136,8 +146,8 @@ module servo_gimbal_ctrl #(
    else if(fresh && found && (!slow||capture_good) && cx<IMG_W && cy<IMG_H)begin
     seen<=1;age_us<=0;pending<=!slow;
     if(slow)begin
-     slow_short<=delta_h>=-64&&delta_h<=64&&delta_v>=-64&&delta_v<=64;
-     slow_left<=(delta_h>=-64&&delta_h<=64&&delta_v>=-64&&delta_v<=64)?8:16;fraction_h<=0;fraction_v<=0;
+     slow_short<=short_plan;
+     slow_left<=(short_plan)?8:16;fraction_h<=0;fraction_v<=0;
      slow_mag_h<=delta_h<0?-delta_h:delta_h;slow_neg_h<=delta_h<0;
      slow_mag_v<=delta_v<0?-delta_v:delta_v;slow_neg_v<=delta_v<0;
     end else slow_left<=0;
