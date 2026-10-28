@@ -39,6 +39,15 @@ try{
  if($report.status -ne 'passed'){$job.error=$report.errors -join '; '}
 }catch{
  $job.status='failed';$job.error=$_.Exception.Message
+ if([string]::IsNullOrWhiteSpace($job.error)){
+  $phaseDir=if($job.stage -eq 'Implementation'){'phy'}else{'syn'}
+  $phaseLog=Join-Path $root ("td_project/$RunName/$phaseDir/"+$job.stage.ToLower()+'.log')
+  if(Test-Path -LiteralPath $phaseLog){
+   $tdErrors=[regex]::Matches([IO.File]::ReadAllText($phaseLog),'(?im)^[^\r\n]*\bERROR:[^\r\n]*')
+   if($tdErrors.Count){$job.error=$tdErrors[$tdErrors.Count-1].Value.Trim()}
+  }
+  if([string]::IsNullOrWhiteSpace($job.error)){$job.error="$($job.stage) failed; inspect $phaseLog"}
+ }
 }finally{
  $job.completed_utc=[DateTime]::UtcNow.ToString('o');Save-Job
  # Keep v*_job.json in colorshading; obsolete stage sync disabled.

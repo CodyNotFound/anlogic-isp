@@ -47,3 +47,4 @@ td_project/colorshading_runs_*/
 /sim/**/*.wlf
 /sim/**/work/
 /sim/**/work_*/
+/worktrees/
