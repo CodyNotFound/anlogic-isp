@@ -47,6 +47,7 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
   wire signed [17:0] pair23=$signed({p2[16],p2})+$signed({p3[16],p3});
   wire signed [18:0] products=$signed({pair01[17],pair01})+$signed({pair23[17],pair23});
   reg signed [18:0] beat;reg beat_valid,beat_last;
+  reg [35:0] input_a;reg [31:0] input_w;reg input_valid,input_last;
   reg round_valid,shift_valid,clip_valid;
   reg signed [32:0] rounding,rounded,shifted;
   wire signed [31:0] accumulated=sum+{{13{beat[18]}},beat};
@@ -55,19 +56,23 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
     busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;
     sum<=0;p0<=0;p1<=0;p2<=0;p3<=0;out_valid<=0;accumulator<=0;value<=0;
     beat<=0;beat_valid<=0;beat_last<=0;round_valid<=0;shift_valid<=0;clip_valid<=0;
-    rounding<=0;rounded<=0;shifted<=0;
+    rounding<=0;rounded<=0;shifted<=0;input_a<=0;input_w<=0;input_valid<=0;input_last<=0;
    end else begin
-    p_valid<=0;beat_valid<=p_valid;round_valid<=0;shift_valid<=round_valid;clip_valid<=shift_valid;
+    input_valid<=0;p_valid<=input_valid;beat_valid<=p_valid;round_valid<=0;shift_valid<=round_valid;clip_valid<=shift_valid;
     if(start&&ready)begin
      busy<=1;closing<=0;sum<=bias;shift_q<=shift;relu_q<=relu;
      rounding<=shift==0?33'sd0:33'sd1<<(shift[4:0]-1'b1);
     end
     if(in_valid&&in_ready)begin
-     p0<=$signed(activations[8:0])*$signed(weights[7:0]);
-     p1<=$signed(activations[17:9])*$signed(weights[15:8]);
-     p2<=$signed(activations[26:18])*$signed(weights[23:16]);
-     p3<=$signed(activations[35:27])*$signed(weights[31:24]);
-     p_valid<=1;p_last<=in_last;if(in_last)closing<=1;
+     input_a<=activations;input_w<=weights;input_valid<=1;input_last<=in_last;
+     if(in_last)closing<=1;
+    end
+    if(input_valid)begin
+     p0<=$signed(input_a[8:0])*$signed(input_w[7:0]);
+     p1<=$signed(input_a[17:9])*$signed(input_w[15:8]);
+     p2<=$signed(input_a[26:18])*$signed(input_w[23:16]);
+     p3<=$signed(input_a[35:27])*$signed(input_w[31:24]);
+     p_last<=input_last;
     end
     if(p_valid)begin beat<=products;beat_last<=p_last;end
     if(beat_valid)begin

@@ -1,9 +1,9 @@
-﻿param([string]$PythonExe="$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe")
+﻿param([string]$OutputName='fast_network', [string]$PythonExe="$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe")
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'));Push-Location $root
 try{
  & $PythonExe scripts/pack_yunet_rom.py --check;if($LASTEXITCODE){throw 'model contract failed'}
- $out=Join-Path $root 'build/fast_network';New-Item -ItemType Directory -Force $out|Out-Null
+ $out=Join-Path $root ('build/'+$OutputName);New-Item -ItemType Directory -Force $out|Out-Null
  $bin='[LOCAL_PATH]';$work=Join-Path $out 'work'
  if(!(Test-Path $work)){& "$bin/vlib.exe" $work}
  & "$bin/vlog.exe" -sv +incdir+rtl/analytics/face_cnn -work $work rtl/analytics/face_cnn/yunet_dot4.v rtl/analytics/face_cnn/yunet_network.v sim/face_cnn/tb_yunet_network_fast.sv *> (Join-Path $out 'compile.log')

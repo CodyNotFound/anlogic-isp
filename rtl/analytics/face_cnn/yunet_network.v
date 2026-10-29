@@ -42,7 +42,8 @@ module yunet_network #(
  reg [1:0] prep_row,fill_slot;reg [7:0] fill_y;reg [11:0] fill_offset;reg [6:0] pixel_offset;
  reg [15:0] weight_base;reg [10:0] bias_base;reg signed [6:0] shift1,shift2;
  reg [7:0] ox,oy;reg [6:0] oc,ic;reg [1:0] kx,ky,misc_step;
- reg [2:0] cshift;reg [16:0] operand_address,weight_address;
+ reg [2:0] cshift;reg [16:0] operand_address;
+ (* syn_preserve=1 *) reg [16:0] weight_address;
  reg pad_q;reg [1:0] a_bank_q,w_bank_q;
  reg [7:0] aq0,aq1,aq2,aq3;reg signed [7:0] wq0,wq1,wq2,wq3;
  reg signed [31:0] bias_q;reg signed [6:0] shift_q;
