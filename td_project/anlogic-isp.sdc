@@ -51,3 +51,15 @@ set_false_path -to [get_regs -nowarn {*u_video_out/pixel_reset_sync*}]
 # MIPI-to-sys50 event bridge. Do not mask Gray pointer datapath constraints.
 set_false_path -to [get_regs -nowarn {*asy_w_rst* *asy_r_rst*}]
 set_false_path -to [get_regs -nowarn {*u_reset_*/release_ff*}]
+
+# AWB is a debounced single-bit level crossing into a preserved two-FF
+# synchronizer (switchable_awb4.v). Bound only its first-stage datapath and
+# remove the unrelated launch/capture hold requirement. The second stage,
+# frame latch, data buses and FIFO Gray pointers retain ordinary timing.
+set_max_delay 13.333 -datapath_only -to [get_regs {*u_isp_top/u_frame_awb4/enable_sync1*}]
+set_false_path -hold -to [get_regs {*u_isp_top/u_frame_awb4/enable_sync1*}]
+
+# Tighten, rather than relax, intra-domain setup targets to leave route margin.
+# These replace smaller automatically derived uncertainty values in TD.
+set_clock_uncertainty -setup 0.250 [get_clocks {CNN_CORE_CLK}]
+set_clock_uncertainty -setup 0.200 [get_clocks {u_vendor_pipeline/u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]

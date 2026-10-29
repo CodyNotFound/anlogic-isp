@@ -141,6 +141,10 @@ Push-Location $dir
 try {
     & $tdTool 'run_checked.tcl' 2>&1 | Tee-Object -FilePath ($Stage.ToLower()+'.log') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "TD $Stage failed with exit $LASTEXITCODE" }
+    # TD can report a command/constraint error and still exit zero.
+    $phaseLog=[IO.File]::ReadAllText((Join-Path $dir ($Stage.ToLower()+'.log')))
+    $toolError=[regex]::Match($phaseLog,'(?im)^.*\b(?:ERROR|FATAL)\s*:.*$')
+    if($toolError.Success){throw "TD $Stage reported: $($toolError.Value.Trim())"}
     if($Stage -eq 'Check'){
         $checkText=[IO.File]::ReadAllText((Join-Path $dir 'check.log'))
         if($checkText -match 'HDL-5105[^\r\n]*\.hex'){

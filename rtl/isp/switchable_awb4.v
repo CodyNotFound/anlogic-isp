@@ -8,7 +8,7 @@ module switchable_awb4 #(
  input wire O_tready,output wire O_tvalid,O_tuser,O_tlast,
  output wire [95:0] O_tdata
 );
- (* async_reg="true" *) reg enable_sync1,enable_sync2;
+ (* async_reg="true", syn_preserve=1 *) reg enable_sync1,enable_sync2;
  reg frame_auto_enable;
  wire accepted_sof=I_tvalid&&O_tready&&I_tuser;
  wire auto_enable=(I_tvalid&&I_tuser)?enable_sync2:frame_auto_enable;
