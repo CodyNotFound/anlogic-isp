@@ -171,6 +171,22 @@
     wire[191:0]compact_status=F_status(mode_f,task_f,panel_f,state_f,manual_f);
     wire[2:0]status_count=compact_status[175:168]==8'h20 ? 2 : compact_status[167:160]==8'h20 ? 3 : 4;
 
+    // Mode/state snapshots change at frame start; the first header pixel is
+    // on line 24. Predecode its text and bounds before the pixel-rate selector.
+    reg [127:0] header_text_r;
+    reg [9:0] header_right_r;
+    always @(posedge I_clk or negedge I_rst_n)begin
+        if(!I_rst_n)begin header_text_r<=128'd0;header_right_r<=10'd180;end
+        else begin
+            header_right_r<=10'd196+((mode_f<11?(mode_f==0?10'd7:10'd5):{6'd0,status_first}+{7'd0,status_count})<<4);
+            header_text_r<="                ";
+            header_text_r[127:120]<=mode_f>=10?"1":"0";
+            header_text_r[119:112]<="0"+(mode_f>=10?mode_f-10:mode_f);
+            header_text_r[103:96]<=F_mode_name_char(mode_f,0);header_text_r[95:88]<=F_mode_name_char(mode_f,1);
+            header_text_r[87:80]<=F_mode_name_char(mode_f,2);header_text_r[79:72]<=F_mode_name_char(mode_f,3);
+            if(mode_f>=11)header_text_r[79:0]<=compact_status[191:112];
+        end
+    end
     reg [95:0] c_label;
     reg [127:0] c_text;
     always @(posedge I_clk or negedge I_rst_n)begin
@@ -426,13 +442,9 @@ function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step
             if(S_x_1d>=24 && S_x_1d<170 && S_y_1d>=24 && S_y_1d<118)begin
                 v_region=1;v_addr=((S_y_1d-24)<<7)+((S_y_1d-24)<<4)+((S_y_1d-24)<<1)+(S_x_1d-24);
             end else if(info_f && IMG_WIDTH>=800 && IMG_HEIGHT>=400)begin
-                if(S_x_1d>=180 && S_x_1d<180+((mode_f<11?(mode_f==0?7:5):status_first+status_count)<<4)+16 && S_y_1d>=24 && S_y_1d<52)begin
+                if(S_x_1d>=180 && S_x_1d<header_right_r && S_y_1d>=24 && S_y_1d<52)begin
                     v_blend=1;
-                    v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-30;c_text="                ";
-                    c_text[127:120]=mode_f>=10?"1":"0";c_text[119:112]="0"+(mode_f>=10?mode_f-10:mode_f);
-                    c_text[103:96]=F_mode_name_char(mode_f,0);c_text[95:88]=F_mode_name_char(mode_f,1);
-                    c_text[87:80]=F_mode_name_char(mode_f,2);c_text[79:72]=F_mode_name_char(mode_f,3);
-                    if(mode_f>=11)c_text[79:0]=compact_status[191:112];
+                    v_region=6;c_header=1;c_x=S_x_1d-188;c_y=S_y_1d-30;c_text=header_text_r;
                 end else if(TARGET_TELEMETRY && (mode_f==11||mode_f==12||mode_f==13||mode_f==14) && S_x_1d>=180 && S_x_1d<404 && S_y_1d>=56 && S_y_1d<84)begin
                     v_blend=1;v_region=6;c_x=S_x_1d-188;c_y=S_y_1d-62;c_text="X:---- Y:----   ";
                     if(target_found_f)begin
