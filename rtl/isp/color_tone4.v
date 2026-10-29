@@ -21,18 +21,20 @@ module color_tone4 #(
  assign tone_out=s3_data_reg;assign O_tvalid=s3_valid_reg;
  assign O_tuser=s3_user_reg;assign O_tlast=s3_last_reg;
 
+ // Exact identity: (77R+150G+29B)>>8 = G+floor((77(R-G)+29(B-G))/256).
  function [7:0] pixel_luma;
- input [23:0] pixel;reg [7:0] r,g,b;reg [15:0] r_ext,g_ext,b_ext,sum;
+ input [23:0] pixel;
+ reg signed [8:0] dr,db;
+ reg signed [15:0] rr,bb,delta;
+ reg signed [16:0] result;
  begin
-  r=pixel[23:16];g=pixel[15:8];b=pixel[7:0];
-  r_ext={8'd0,r};g_ext={8'd0,g};b_ext={8'd0,b};
-  // Exact shift-add form; preserves the original truncation without rounding bias.
-  sum=(r_ext<<6)+(r_ext<<3)+(r_ext<<2)+r_ext
-     +(g_ext<<7)+(g_ext<<4)+(g_ext<<2)+(g_ext<<1)
-     +(b_ext<<4)+(b_ext<<3)+(b_ext<<2)+b_ext;
-  pixel_luma=sum[15:8];
+  dr=$signed({1'b0,pixel[23:16]})-$signed({1'b0,pixel[15:8]});
+  db=$signed({1'b0,pixel[7:0]})-$signed({1'b0,pixel[15:8]});
+  rr={{7{dr[8]}},dr};bb={{7{db[8]}},db};
+  delta=(rr<<<6)+(rr<<<4)-(rr<<<2)+rr+(bb<<<5)-(bb<<<1)-bb;
+  result=$signed({1'b0,pixel[15:8]})+(delta>>>8);
+  pixel_luma=result[7:0];
  end endfunction
-
  function [23:0] defringe_pixel;
  input [23:0] pixel,left_pixel;input left_valid;
  reg [7:0] r,g,b,left_y,this_y,min_rb,purple,y_diff;reg [8:0] g_raised;

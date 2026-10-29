@@ -103,6 +103,8 @@ module yunet_network #(
  // Pointwise pairs: a second MAC consumes the same activations against the
  // adjacent output channel's weights, read through the weight banks' second
  // port (address = primary + ci, no relayout of the weight ROM).
+ reg misc_vector;reg signed [7:0] misc_temp1,misc_temp2,misc_temp3;
+ reg signed [9:0] misc_sum1,misc_sum2,misc_sum3;
  reg pw8_active;reg signed [31:0] pw_bias_q;reg signed [6:0] pw_shift_q;reg [10:0] dw_bias_addr,bias_addr_q;
  // All convolution variants use one metadata read address. The normal MAC
  // reloads its primary bias in META before DOT_START; DW/PW setup owns this
@@ -132,7 +134,7 @@ module yunet_network #(
  wire signed [18:0] dw_shifted=dw_rounded>>>dw_quant_shift_q;
  wire signed [7:0] dw_quant_value=(dw_relu_q&&dw_shifted<0)?8'sd0:dw_shifted>127?8'sd127:dw_shifted< -128?-8'sd128:dw_shifted[7:0];
  wire last_ic=single_lane||dw_active||ic==last_channel;
- wire dw8_done=dw_active?oc+7'd4>=co:pw8_active?oc+7'd2>=co:oc==co-1;
+ wire dw8_done=(dw_active||misc_vector)?oc+7'd4>=co:pw8_active?oc+7'd2>=co:oc==co-1;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
  // Calculate the next kernel position during WAIT/FEED when the current
  // tap is already in RAM output registers. This hides address stages on
@@ -303,6 +305,19 @@ module yunet_network #(
  // The fixed exported graph has zero shifts for pool/resize and shifts 0/1
  // for Add. The exporter checks this contract; no 64-bit variable barrel
  // shifter is needed on a BRAM-read -> output-write timing path.
+ // Every arena read already returns four adjacent channels. Pool/Resize/Add
+ // can consume the full word without additional RAM ports or DSPs.
+ function signed [9:0] vector_add;
+ input signed [7:0] first,second;input half,first_shift,second_shift;
+ reg signed [9:0] aa,bb;
+ begin aa={{2{first[7]}},first};bb={{2{second[7]}},second};
+ if(half&&!first_shift)aa=aa<<<1;
+ if(half&&!second_shift)bb=bb<<<1;
+ vector_add=aa+bb;end endfunction
+ wire signed [7:0] pool_vec0=(misc_step==0||$signed(aq0)>misc_temp)?$signed(aq0):misc_temp;
+ wire signed [7:0] pool_vec1=(misc_step==0||$signed(aq1)>misc_temp1)?$signed(aq1):misc_temp1;
+ wire signed [7:0] pool_vec2=(misc_step==0||$signed(aq2)>misc_temp2)?$signed(aq2):misc_temp2;
+ wire signed [7:0] pool_vec3=(misc_step==0||$signed(aq3)>misc_temp3)?$signed(aq3):misc_temp3;
  wire align_half=shift1[0]||shift2[0];
  wire signed [9:0] extended_a={{2{misc_temp[7]}},misc_temp},extended_b={{2{misc_a[7]}},misc_a};
  wire signed [9:0] aligned_a=align_half&&!shift1[0]?extended_a<<<1:extended_a;
@@ -319,6 +334,7 @@ module yunet_network #(
    misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_we<=0;
    write_data0<=0;write_data1<=0;write_data2<=0;write_data3<=0;
    dw_active<=0;dw_relu_q<=0;dw_stop_q<=0;co_shift_q<=0;dw_load_step<=0;dw_drain<=0;dw_rounded<=0;dw_quant_shift_q<=0;
+   misc_vector<=0;misc_temp1<=0;misc_temp2<=0;misc_temp3<=0;misc_sum1<=0;misc_sum2<=0;misc_sum3<=0;
    pw8_active<=0;pw_bias_q<=0;pw_shift_q<=0;dw_bias_addr<=0;
    dw_bias0<=0;dw_bias1<=0;dw_bias2<=0;dw_bias3<=0;dw_sum0<=0;dw_sum1<=0;dw_sum2<=0;dw_sum3<=0;
    dw_shift0<=0;dw_shift1<=0;dw_shift2<=0;dw_shift3<=0;dw_val0<=0;dw_val1<=0;dw_val2<=0;dw_val3<=0;
@@ -337,6 +353,9 @@ module yunet_network #(
      single_lane<=instruction[93:87]==1;
      one_beat<=instruction[104]||instruction[93:87]<=4;last_channel<=instruction[93:87]-7'd4;
      dw_active<=instruction[104];dw_relu_q<=instruction[105];
+     misc_vector<=instruction[3:0]>=2&&instruction[3:0]<=4&&instruction[100:94]>=4&&
+      instruction[95:94]==0&&instruction[93:87]==instruction[100:94]&&
+      instruction[5:4]==0&&instruction[39:38]==0&&(instruction[3:0]!=4||instruction[22:21]==0);
      pw8_active<=instruction[3:0]==1&&!instruction[101]&&!instruction[104]&&instruction[93:87]>=7'd16&&instruction[100:94]>=7'd2;
      case(instruction[100:94])7'd4:co_shift_q<=3'd2;7'd16:co_shift_q<=3'd4;7'd32:co_shift_q<=3'd5;7'd64:co_shift_q<=3'd6;default:co_shift_q<=3'd0;endcase
      opcode<=instruction[3:0];src_base<=instruction[20:4];src2_base<=instruction[37:21];dst_base<=instruction[54:38];
@@ -450,6 +469,27 @@ module yunet_network #(
     MISC_READ:if(address_wait==3)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
     MISC_WAIT:state<=MISC_EVAL;
     MISC_EVAL:begin
+     if(misc_vector)begin
+      if(opcode==2&&misc_step!=3)begin
+       misc_temp<=pool_vec0;
+       misc_temp1<=pool_vec1;
+       misc_temp2<=pool_vec2;
+       misc_temp3<=pool_vec3;
+       misc_step<=misc_step+1'b1;state<=MISC_READ;
+      end else if(opcode==4&&misc_step==0)begin
+       misc_temp<=aq0;
+       misc_temp1<=aq1;
+       misc_temp2<=aq2;
+       misc_temp3<=aq3;
+       misc_step<=1;state<=MISC_READ;
+      end else begin
+       misc_sum_q<=opcode==2?{{2{pool_vec0[7]}},pool_vec0}:opcode==4?vector_add(misc_temp,$signed(aq0),align_half,shift1[0],shift2[0]):{{2{aq0[7]}},aq0};
+       misc_sum1<=opcode==2?{{2{pool_vec1[7]}},pool_vec1}:opcode==4?vector_add(misc_temp1,$signed(aq1),align_half,shift1[0],shift2[0]):{{2{aq1[7]}},aq1};
+       misc_sum2<=opcode==2?{{2{pool_vec2[7]}},pool_vec2}:opcode==4?vector_add(misc_temp2,$signed(aq2),align_half,shift1[0],shift2[0]):{{2{aq2[7]}},aq2};
+       misc_sum3<=opcode==2?{{2{pool_vec3[7]}},pool_vec3}:opcode==4?vector_add(misc_temp3,$signed(aq3),align_half,shift1[0],shift2[0]):{{2{aq3[7]}},aq3};
+       misc_half_q<=opcode==4&&align_half;state<=MISC_QUANT;
+      end
+     end else begin
      if(opcode==2&&misc_step!=3)begin misc_temp<=pool_max;misc_step<=misc_step+1'b1;state<=MISC_READ;end
      else if(opcode==4&&misc_step==0)begin misc_temp<=misc_a;misc_step<=1;state<=MISC_READ;end
      else begin
@@ -457,11 +497,12 @@ module yunet_network #(
       misc_half_q<=opcode==4&&align_half;
       state<=MISC_QUANT;
      end
+     end
     end
     MISC_QUANT:begin
-     write_pending<=1;write_we<=4'b0001<<output_address[1:0];
-     write_data0<=quantize_misc(misc_sum_q,misc_half_q);write_data1<=quantize_misc(misc_sum_q,misc_half_q);
-     write_data2<=quantize_misc(misc_sum_q,misc_half_q);write_data3<=quantize_misc(misc_sum_q,misc_half_q);
+     write_pending<=1;write_we<=misc_vector?4'b1111:4'b0001<<output_address[1:0];
+     write_data0<=quantize_misc(misc_sum_q,misc_half_q);write_data1<=misc_vector?quantize_misc(misc_sum1,misc_half_q):quantize_misc(misc_sum_q,misc_half_q);
+     write_data2<=misc_vector?quantize_misc(misc_sum2,misc_half_q):quantize_misc(misc_sum_q,misc_half_q);write_data3<=misc_vector?quantize_misc(misc_sum3,misc_half_q):quantize_misc(misc_sum_q,misc_half_q);
      write_address<=output_address;state<=NEXT_OUTPUT;
     end
     NEXT_OUTPUT:begin
@@ -475,7 +516,7 @@ module yunet_network #(
         else begin operation_index<=operation_index+1'b1;state<=CONFIG_WAIT;end
        end else begin oy<=reverse_order?oy-1'b1:oy+1'b1;state<=INIT;end
       end else begin ox<=reverse_order?ox-1'b1:ox+1'b1;state<=INIT;end
-     end else begin oc<=dw_active?oc+7'd4:pw8_active?oc+7'd2:oc+1'b1;state<=INIT;end
+     end else begin oc<=(dw_active||misc_vector)?oc+7'd4:pw8_active?oc+7'd2:oc+1'b1;state<=INIT;end
     end
     default:state<=IDLE;
    endcase
