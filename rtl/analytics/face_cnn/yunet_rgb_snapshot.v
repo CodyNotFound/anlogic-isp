@@ -12,7 +12,7 @@ module yunet_rgb_snapshot #(
  reg [2:0] state;assign capturing=state!=IDLE;
  reg [10:0] x,y;wire [10:0] px=sof?11'd0:x,py=sof?11'd0:y;
  wire [7:0] column_index=px<WIDTH?px>>XS:8'd0;
- (* ram_style="bram" *) reg [41:0] columns[0:159];
+ (* ram_style="dram" *) reg [41:0] columns[0:159];
  reg [41:0] column_q;reg [10:0] hr,hg,hb;
  wire [10:0] rr=((px&(SX-1))==0?11'd0:hr)+{3'd0,rgb[23:16]};
  wire [10:0] rg=((px&(SX-1))==0?11'd0:hg)+{3'd0,rgb[15:8]};
