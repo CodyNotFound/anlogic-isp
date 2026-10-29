@@ -14,7 +14,7 @@ module tb_yunet_dual_motion;
   .SIGMOID_FILE("rtl/analytics/face_cnn/sigmoid.hex"),.OFFSET_FILE("rtl/analytics/face_cnn/offset.hex"),.SIZE_FILE("rtl/analytics/face_cnn/size.hex")) storage(
   .core_clk(core_clk),.clk(clk),.rst_n(rst),.enable(1'b0),.sof(1'b0),.eol(1'b0),.de(1'b0),.rgb(24'd0),
   .position_valid(),.found(),.box_x(),.box_y(),.box_size(),.center_x(),.center_y(),.busy(),.stream_error(),.completed_frames(),
-  .shared_enable(enable),.shared_write_en(we),.shared_write_address(wa),.shared_read_address(ra),.shared_write_data(wd),.shared_read_data(rd),.shared_read_word(),.inference_cycles());
+  .shared_enable(enable),.shared_write_en(we),.shared_write_address(wa),.shared_read_address(ra),.shared_write_data(wd),.shared_read_data(rd),.shared_read_word(),.inference_cycles(),.capture_started());
 
  integer x,y,kind,results=0,prior,max_address=0;
  always @(posedge clk)begin #1;if(rv)results=results+1;if(we&&wa>max_address)max_address=wa;end
