@@ -49,7 +49,7 @@ module tb_yunet_dual_motion;
  frame(5);if(found||status!=0)$fatal(1,"reference after abort");
  enable=0;ticks(5);if(initialized||found||we)$fatal(1,"mode ownership not released");enable=1;ticks(5);frame(5);
  if(max_address!=W*H-1)$fatal(1,"frame RAM range %d",max_address);
- $display("PASS tb_motion_v62 W%0d H%0d actual CNN RAM, warmup, confirmed slow motion, still, illumination rejection, isolated noise, camera suppression, abort, mode reset, exact box and bounded work",W,H);$finish;
+ $display("PASS tb_yunet_dual_motion W%0d H%0d actual CNN RAM, warmup, confirmed slow motion, still, illumination rejection, isolated noise, camera suppression, abort, mode reset, exact box and bounded work",W,H);$finish;
  end
  initial begin #20000000;$fatal(1,"watchdog");end
 endmodule

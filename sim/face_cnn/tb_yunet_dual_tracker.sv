@@ -44,7 +44,7 @@ module tb_yunet_dual_tracker;
  frame(80,45,0);if(!f||x!=80||y!=45)$fatal(1,"new K4 seed failed");
  owner=0;repeat(4)@(negedge clk);if(f||we)$fatal(1,"mode exit not reset");owner=1;repeat(4)@(negedge clk);
  frame(80,45,0);if(!f)$fatal(1,"mode reentry failed");
- $display("PASS tb_reacquire_production_v65 actual CNN shared frame/template/scores; blank sweep rejection; out-of-window reentry found after %0d frames; two-frame confirmation; K4/mode reset; max cycles%0d address%0d totalframes%0d",i,maxcycles,maxaddr,frames);$finish;
+ $display("PASS tb_yunet_dual_tracker actual CNN shared frame/template/scores; blank sweep rejection; out-of-window reentry found after %0d frames; two-frame confirmation; K4/mode reset; max cycles%0d address%0d totalframes%0d",i,maxcycles,maxaddr,frames);$finish;
  end
  initial begin #250000000;$fatal(1,"watchdog");end
 endmodule
