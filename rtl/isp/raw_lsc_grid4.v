@@ -18,6 +18,22 @@ module raw_lsc_grid4 #(parameter integer ENABLE=1, BLACK_LEVEL=67)(
  begin delta=$signed({1'b0,b})-$signed({1'b0,a});weight=$signed({1'b0,fraction});
  product=delta*weight;accumulator=$signed({3'b000,a,8'b0})+$signed({product[21],product})+23'sd128;
  result=accumulator>>>8;interp_gain=result[11:0];end endfunction
+ // Consecutive same-Bayer-color pixels are two sensor columns apart.
+ // For 80-pixel cells, their Q8 fractions differ by exactly 6 or 7.
+ // Retain the UNROUNDED base interpolation and add this small increment;
+ // interpolating from an already-rounded gain would change image values.
+ function [23:0] interp_pair;
+ input [11:0] a,b;input [7:0] fraction0,fraction2;
+ reg signed [12:0] delta;reg signed [21:0] wide_delta,product,increment;
+ reg signed [22:0] base,second;reg [7:0] gap;
+ begin
+ delta=$signed({1'b0,b})-$signed({1'b0,a});wide_delta={{9{delta[12]}},delta};
+ product=delta*$signed({1'b0,fraction0});gap=fraction2-fraction0;
+ increment=(wide_delta<<<2)+(wide_delta<<<1)+(gap[0]?wide_delta:22'sd0);
+ base=$signed({3'b000,a,8'b0})+$signed({product[21],product})+23'sd128;
+ second=base+$signed({increment[21],increment});
+ interp_pair={second[19:8],base[19:8]};
+ end endfunction
  function [9:0] subtract_black;input [9:0] sample;
  begin if(sample>BLACK_LEVEL)subtract_black=sample-BLACK_LEVEL;else subtract_black=0;end endfunction
  function [9:0] apply_gain;input [9:0] sample;input [11:0] gain;
@@ -32,9 +48,9 @@ module raw_lsc_grid4 #(parameter integer ENABLE=1, BLACK_LEVEL=67)(
  wire [10:0] effective_x=I_tuser?11'd0:x_count;
  wire [9:0] effective_y=I_tuser?10'd0:y_count;
  wire [3:0] grid_x=effective_x/11'd80,grid_y=effective_y/10'd60;
- wire [10:0] cell_origin_x=grid_x*11'd80;wire [9:0] cell_origin_y=grid_y*10'd60;
+ wire [10:0] cell_origin_x=({7'd0,grid_x}<<6)+({7'd0,grid_x}<<4);wire [9:0] cell_origin_y=({6'd0,grid_y}<<6)-({6'd0,grid_y}<<2);
  wire [6:0] offset_x=effective_x-cell_origin_x;wire [5:0] offset_y=effective_y-cell_origin_y;
- wire [7:0] address_tl=({4'd0,grid_y}*8'd17)+{4'd0,grid_x};
+ wire [7:0] address_tl=(({4'd0,grid_y}<<4)+{4'd0,grid_y})+{4'd0,grid_x};
  wire [7:0] address_tr=address_tl+8'd1,address_bl=address_tl+8'd17,address_br=address_tl+8'd18;
  reg s1_valid,s1_user,s1_last,s1_odd_row;
  reg [9:0] s1_dest;reg [39:0] s1_pixels;reg [47:0] s1_tl,s1_tr,s1_bl,s1_br;
@@ -85,10 +101,8 @@ module raw_lsc_grid4 #(parameter integer ENABLE=1, BLACK_LEVEL=67)(
  s2_left_odd<=interp_gain(s1_tl[47:36],s1_bl[47:36],s1_y_fraction);
  s2_right_odd<=interp_gain(s1_tr[47:36],s1_br[47:36],s1_y_fraction);end
  s3_valid<=s2_valid;s3_user<=s2_user;s3_last<=s2_last;s3_dest<=s2_dest;s3_pixels<=s2_pixels;
- s3_gain0<=interp_gain(s2_left_even,s2_right_even,s2_x_fraction0);
- s3_gain1<=interp_gain(s2_left_odd,s2_right_odd,s2_x_fraction1);
- s3_gain2<=interp_gain(s2_left_even,s2_right_even,s2_x_fraction2);
- s3_gain3<=interp_gain(s2_left_odd,s2_right_odd,s2_x_fraction3);
+ {s3_gain2,s3_gain0}<=interp_pair(s2_left_even,s2_right_even,s2_x_fraction0,s2_x_fraction2);
+ {s3_gain3,s3_gain1}<=interp_pair(s2_left_odd,s2_right_odd,s2_x_fraction1,s2_x_fraction3);
  O_tvalid<=s3_valid;O_tuser<=s3_user;O_tlast<=s3_last;O_tdest<=s3_dest;
  if(ENABLE!=0&&lsc_on_f)begin
  O_tdata[9:0]<=apply_gain(s3_pixels[9:0],s3_gain0);O_tdata[19:10]<=apply_gain(s3_pixels[19:10],s3_gain1);

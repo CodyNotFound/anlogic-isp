@@ -92,14 +92,14 @@ module yunet_network #(
  reg [16:0] weight_row_r,weight_scale_r,weight_base_r,tap_scale_r,tap_base_r;
  wire [6:0] prefetched_ic=ic+7'd4;
 
- wire single_lane=depthwise||ci==1;
- wire last_ic=depthwise||ci==1||ic+7'd4>=ci;
+ reg single_lane,one_beat;reg [6:0] last_channel;
+ wire last_ic=single_lane||ic==last_channel;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
  // Calculate the next kernel position during WAIT/FEED when the current
  // tap is already in RAM output registers. This hides address stages on
  // depthwise and other non-prefetched final channel beats.
  reg tap_early,tap_prefetched;
- wire look_ahead=last_ic&&!last_tap&&(state==CONV_WAIT||(state==CONV_FEED&&tap_early));
+ wire look_ahead=one_beat&&kernel3&&!(kx==2&&ky==2)&&(state==CONV_WAIT||(state==CONV_FEED&&tap_early));
  wire [1:0] address_kx=look_ahead?(kx==2?2'd0:kx+1'b1):kx;
  wire [1:0] address_ky=look_ahead?(kx==2?ky+1'b1:ky):ky;
  wire signed [9:0] pipeline_x=$signed({2'b0,ox}<<stride2)+$signed({8'b0,address_kx})-$signed({9'b0,pad1});
@@ -179,9 +179,9 @@ module yunet_network #(
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin address_wait<=0;tap_early<=0;tap_prefetched<=0;end
   else begin
-   if(state==CONV_WAIT)tap_early<=last_ic&&!last_tap;
+   if(state==CONV_WAIT)tap_early<=one_beat&&kernel3&&!(kx==2&&ky==2);
    else if(state==CONV_READ)tap_early<=0;
-   if(state==CONV_FEED&&dot_in_ready)tap_prefetched<=last_ic&&!last_tap&&tap_early;
+   if(state==CONV_FEED&&dot_in_ready)tap_prefetched<=tap_early&&kernel3&&!(kx==2&&ky==2);
    else if(state==CONV_READ)tap_prefetched<=0;
   if((state==ROW_READ&&fill_offset==0)||(state==PIXEL_READ&&pixel_offset==0)||state==MISC_READ||(state==CONV_READ&&!beat_prefetched))begin
    if(address_wait!=(state==MISC_READ?2'd3:2'd2))address_wait<=address_wait+1'b1;
@@ -254,7 +254,7 @@ module yunet_network #(
  wire [16:0] output_address=out_base_r|{10'd0,oc};
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
-   prep_y_q<=0;prep_slot_q<=0;
+   prep_y_q<=0;prep_slot_q<=0;single_lane<=0;one_beat<=0;last_channel<=0;
    beat_prefetched<=0;state<=IDLE;done<=0;operation_done<=0;operation_index<=0;cycles<=0;
    opcode<=0;src_base<=0;src2_base<=0;dst_base<=0;iw<=0;ih<=0;ow<=0;oh<=0;ci<=0;co<=0;
    kernel3<=0;stride2<=0;pad1<=0;depthwise<=0;relu<=0;input_unsigned<=0;weight_base<=0;bias_base<=0;shift1<=0;shift2<=0;
@@ -269,6 +269,8 @@ module yunet_network #(
     IDLE:if(start)begin operation_index<=0;cycles<=0;state<=CONFIG_WAIT;end
     CONFIG_WAIT:state<=CONFIG;
     CONFIG:begin
+     single_lane<=instruction[104]||instruction[93:87]==1;
+     one_beat<=instruction[104]||instruction[93:87]<=4;last_channel<=instruction[93:87]-7'd4;
      opcode<=instruction[3:0];src_base<=instruction[20:4];src2_base<=instruction[37:21];dst_base<=instruction[54:38];
      iw<=instruction[62:55];ih<=instruction[70:63];ow<=instruction[78:71];oh<=instruction[86:79];ci<=instruction[93:87];co<=instruction[100:94];
      kernel3<=instruction[101];stride2<=instruction[102];pad1<=instruction[103];depthwise<=instruction[104];relu<=instruction[105];

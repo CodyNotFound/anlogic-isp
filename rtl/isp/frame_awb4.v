@@ -33,21 +33,24 @@ module frame_awb4 #(parameter ENABLE=1,INIT_R_Q8=522,INIT_B_Q8=421,MIN_SAMPLES=4
  filtered_gain=result[9:0];end endfunction
  reg [11:0] beat_sum_r,beat_sum_g,beat_sum_b;reg [2:0] beat_count;
  integer pixel_index;reg [7:0] candidate_r,candidate_g,candidate_b;
- reg [17:0] corrected_r_q8[0:3],corrected_b_q8[0:3];reg [17:0] lower_bound_q8,upper_bound_q8;
+ wire [17:0] corrected_r_q8[0:3],corrected_b_q8[0:3];reg [17:0] lower_bound_q8,upper_bound_q8;
+ genvar g;generate for(g=0;g<4;g=g+1)begin:g_shared_gain
+  assign corrected_r_q8[g]=I_tdata[g*24+16+:8]*effective_r;
+  assign corrected_b_q8[g]=I_tdata[g*24+:8]*effective_b;
+ end endgenerate
  function [7:0] clip_gain;input [17:0] product;
  begin clip_gain=(product[17:8]>255)?8'd255:product[15:8];end endfunction
  wire [95:0] effective_data={
-  clip_gain(I_tdata[95:88]*effective_r),I_tdata[87:80],clip_gain(I_tdata[79:72]*effective_b),
-  clip_gain(I_tdata[71:64]*effective_r),I_tdata[63:56],clip_gain(I_tdata[55:48]*effective_b),
-  clip_gain(I_tdata[47:40]*effective_r),I_tdata[39:32],clip_gain(I_tdata[31:24]*effective_b),
-  clip_gain(I_tdata[23:16]*effective_r),I_tdata[15:8],clip_gain(I_tdata[7:0]*effective_b)};
+  clip_gain(corrected_r_q8[3]),I_tdata[87:80],clip_gain(corrected_b_q8[3]),
+  clip_gain(corrected_r_q8[2]),I_tdata[63:56],clip_gain(corrected_b_q8[2]),
+  clip_gain(corrected_r_q8[1]),I_tdata[39:32],clip_gain(corrected_b_q8[1]),
+  clip_gain(corrected_r_q8[0]),I_tdata[15:8],clip_gain(corrected_b_q8[0])};
  always @* begin
  beat_sum_r=0;beat_sum_g=0;beat_sum_b=0;beat_count=0;
- for(pixel_index=0;pixel_index<4;pixel_index=pixel_index+1)begin corrected_r_q8[pixel_index]=0;corrected_b_q8[pixel_index]=0;end candidate_r=0;candidate_g=0;candidate_b=0;lower_bound_q8=0;upper_bound_q8=0;
+ candidate_r=0;candidate_g=0;candidate_b=0;lower_bound_q8=0;upper_bound_q8=0;
  for(pixel_index=0;pixel_index<4;pixel_index=pixel_index+1)begin
  candidate_r=I_tdata[pixel_index*24+16+:8];candidate_g=I_tdata[pixel_index*24+8+:8];candidate_b=I_tdata[pixel_index*24+:8];
- corrected_r_q8[pixel_index]=candidate_r*effective_r;corrected_b_q8[pixel_index]=candidate_b*effective_b;
- lower_bound_q8={10'd0,candidate_g}*18'd192;upper_bound_q8={10'd0,candidate_g}*18'd320;
+ lower_bound_q8=({10'd0,candidate_g}<<7)+({10'd0,candidate_g}<<6);upper_bound_q8=({10'd0,candidate_g}<<8)+({10'd0,candidate_g}<<6);
  if(ENABLE!=0&&candidate_g>=12&&candidate_r<240&&candidate_g<240&&candidate_b<240&&
  corrected_r_q8[pixel_index]<61440&&corrected_b_q8[pixel_index]<61440&&corrected_r_q8[pixel_index]>=lower_bound_q8&&corrected_r_q8[pixel_index]<=upper_bound_q8&&
  corrected_b_q8[pixel_index]>=lower_bound_q8&&corrected_b_q8[pixel_index]<=upper_bound_q8)begin

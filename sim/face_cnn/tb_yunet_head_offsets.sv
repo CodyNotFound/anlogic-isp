@@ -2,7 +2,7 @@
 module tb_yunet_head_offsets;
  reg clk=0;always #5 clk=~clk;
  reg rst=0;wire result,found;wire [11:0] x,y,sz,cx,cy;wire [13:0] score;
- yunet_position_snapshot dut(.clk(clk),.rst_n(rst),.start(1'b0),.load_valid(1'b0),.load_address(17'd0),.load_data(8'd0),.ready(),.busy(),.result_valid(result),.found(found),.box_x(x),.box_y(y),.box_size(sz),.center_x(cx),.center_y(cy),.score_product(score),.cycles(),.external_read_enable(1'b0),.external_read_address(17'd0),.external_read_data(),.external_read_word());
+ yunet_position_snapshot dut(.clk(clk),.core_clk(clk),.rst_n(rst),.start(1'b0),.load_valid(1'b0),.load_address(17'd0),.load_data(8'd0),.ready(),.busy(),.result_valid(result),.found(found),.box_x(x),.box_y(y),.box_size(sz),.center_x(cx),.center_y(cy),.score_product(score),.cycles(),.external_read_enable(1'b0),.external_read_address(17'd0),.external_read_data(),.external_read_word());
  reg [7:0] mem[0:65535];integer i,fd,n,ef,es,ex,ey,ez,ecx,ecy;
  initial begin
   $readmemh("build/head_offsets/memory.hex",mem);
