@@ -3,7 +3,7 @@
 // The scheduler supplies flattened OHWI products, padding and unused lanes = 0.
 // Accept one four-product beat per clock; the last beat drains before publication.
 // No floating point, vendor simulator primitive, or CPU classifier is required.
-module yunet_dot4 #(parameter MODEL_SHIFT=0)(
+module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
  input wire clk,rst_n,
  input wire start,input wire signed [31:0] bias,
  input wire signed [6:0] shift,input wire relu,
@@ -42,6 +42,45 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0)(
   else q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
   requant_model=(r&&q<0)?8'sd0:q>127?8'sd127:q< -128?-8'sd128:q[7:0];
  end endfunction
+ generate if(FAST_PIPELINE&&MODEL_SHIFT)begin: g_fast
+  wire signed [17:0] pair01=$signed({p0[16],p0})+$signed({p1[16],p1});
+  wire signed [17:0] pair23=$signed({p2[16],p2})+$signed({p3[16],p3});
+  wire signed [18:0] products=$signed({pair01[17],pair01})+$signed({pair23[17],pair23});
+  reg signed [18:0] beat;reg beat_valid,beat_last;
+  reg round_valid,shift_valid,clip_valid;
+  reg signed [32:0] rounding,rounded,shifted;
+  wire signed [31:0] accumulated=sum+{{13{beat[18]}},beat};
+  always @(posedge clk or negedge rst_n)begin
+   if(!rst_n)begin
+    busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;
+    sum<=0;p0<=0;p1<=0;p2<=0;p3<=0;out_valid<=0;accumulator<=0;value<=0;
+    beat<=0;beat_valid<=0;beat_last<=0;round_valid<=0;shift_valid<=0;clip_valid<=0;
+    rounding<=0;rounded<=0;shifted<=0;
+   end else begin
+    p_valid<=0;beat_valid<=p_valid;round_valid<=0;shift_valid<=round_valid;clip_valid<=shift_valid;
+    if(start&&ready)begin
+     busy<=1;closing<=0;sum<=bias;shift_q<=shift;relu_q<=relu;
+     rounding<=shift==0?33'sd0:33'sd1<<(shift[4:0]-1'b1);
+    end
+    if(in_valid&&in_ready)begin
+     p0<=$signed(activations[8:0])*$signed(weights[7:0]);
+     p1<=$signed(activations[17:9])*$signed(weights[15:8]);
+     p2<=$signed(activations[26:18])*$signed(weights[23:16]);
+     p3<=$signed(activations[35:27])*$signed(weights[31:24]);
+     p_valid<=1;p_last<=in_last;if(in_last)closing<=1;
+    end
+    if(p_valid)begin beat<=products;beat_last<=p_last;end
+    if(beat_valid)begin
+     sum<=accumulated;
+     if(beat_last)begin accumulator<=accumulated;round_valid<=1;end
+    end
+    if(round_valid)rounded<=$signed({sum[31],sum})+rounding;
+    if(shift_valid)shifted<=rounded>>>shift_q[4:0];
+    if(clip_valid)begin value<=(relu_q&&shifted<0)?8'sd0:shifted>127?8'sd127:shifted< -128?-8'sd128:shifted[7:0];out_valid<=1;end
+    if(out_valid&&out_ready)begin out_valid<=0;busy<=0;closing<=0;end
+   end
+  end
+ end else begin: g_original
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;
@@ -63,4 +102,5 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0)(
    if(out_valid&&out_ready)begin out_valid<=0;busy<=0;closing<=0;end
   end
  end
+ end endgenerate
 endmodule

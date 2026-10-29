@@ -11,7 +11,7 @@ def generate(root):
     for i,line in enumerate((folder/'program.hex').read_text(encoding='ascii').split()):
         word=int(line,16);ci=(word>>87)&127;co=(word>>94)&127
         src=(word>>4)&131071;src2=(word>>21)&131071;dst=(word>>38)&131071
-        if ci not in (1,4,16,32,64) or co not in (1,4,16,32,64) or src%ci or src2%ci or dst%co:
+        if ci not in (1,4,16,32,64) or co not in (1,4,16,32,64) or src%ci or src2%ci or dst%co or ((word&15)!=1 and ci!=co):
             raise ValueError(f'Operation {i}: aligned power-of-two channel address contract violated')
     bias=[int(x,16) for x in (folder/'bias.hex').read_text(encoding='ascii').split()]
     shift=[int(x,16) for x in (folder/'shift.hex').read_text(encoding='ascii').split()]

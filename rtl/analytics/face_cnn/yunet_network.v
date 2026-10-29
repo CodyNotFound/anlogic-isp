@@ -67,24 +67,21 @@ module yunet_network #(
  function [16:0] feature_index;
  input [16:0] base;input [7:0] yy,xx,width;input [6:0] channel;input [2:0] cs;
  reg [16:0] pixel;
- // Export contract: every tensor base is aligned to its power-of-two channel
- // count and channel is in range. Concatenation replaces a barrel shifter and
- // two dependent full-width additions without changing any address or cycle.
- begin pixel={1'b0,multiply8(yy,width)}+xx;
- case(cs)
-  3'd0:feature_index=base+pixel;
-  3'd2:feature_index={base[16:2]+pixel[14:0],channel[1:0]};
-  3'd4:feature_index={base[16:4]+pixel[12:0],channel[3:0]};
-  3'd5:feature_index={base[16:5]+pixel[11:0],channel[4:0]};
-  3'd6:feature_index={base[16:6]+pixel[10:0],channel[5:0]};
-  default:feature_index=base+(pixel<<cs)+channel;
- endcase end
+ begin pixel={1'b0,multiply8(yy,width)}+xx;feature_index=base+(pixel<<cs)+channel;end
  endfunction
  wire signed [9:0] sample_x=$signed({2'b0,ox}<<stride2)+$signed({8'b0,kx})-$signed({9'b0,pad1});
  wire signed [9:0] sample_y=$signed({2'b0,oy}<<stride2)+$signed({8'b0,ky})-$signed({9'b0,pad1});
  wire padding=sample_x<0||sample_y<0||sample_x>=$signed({2'b0,iw})||sample_y>=$signed({2'b0,ih});
  wire [6:0] channel=depthwise?oc:ic;
  wire [16:0] conv_addr=feature_index(src_base,sample_y[7:0],sample_x[7:0],iw,channel,cshift);
+ reg [16:0] conv_pixel_r,misc_pixel_r,fill_pixel_r,pixel_pixel_r,out_pixel_r;
+ reg [16:0] conv_base_r,misc_base_r,fill_base_r,pixel_base_r,out_base_r;
+ reg [1:0] cache_slot_r;reg [7:0] cache_x_r;reg [2:0] cache_cs_r;reg [12:0] cache_base_r;
+ reg [1:0] address_wait;
+ wire [16:0] conv_fast=conv_base_r|{10'd0,channel};
+ wire [6:0] next_channel=channel+7'd4;
+ wire [16:0] conv_prefetch=conv_base_r|{10'd0,next_channel};
+
  wire [3:0] tap=kernel3?({2'b0,ky}<<1)+ky+kx:4'd0;
  wire [16:0] w_offset=depthwise ? (({10'b0,oc}<<3)+oc+tap) :
     (((kernel3?(({10'b0,oc}<<3)+oc):{10'b0,oc})+tap)<<cshift)+ic;
@@ -106,13 +103,13 @@ module yunet_network #(
  wire [12:0] row_bytes={5'd0,iw}<<cshift;
  wire [12:0] fill_cache_addr=({11'd0,fill_slot}<<11)+({11'd0,fill_slot}<<9)+fill_offset;
  wire [1:0] sample_slot=modulo3(sample_y[7:0]);
- wire [12:0] cache_addr=padding?13'd0:({11'd0,sample_slot}<<11)+({11'd0,sample_slot}<<9)+({5'd0,sample_x[7:0]}<<cshift)+channel;
+ wire [12:0] cache_addr=padding?13'd0:cache_base_r|{6'd0,channel};
  wire row_filling=state==ROW_READ||state==ROW_WAIT||state==ROW_WRITE;
  wire pixel_filling=state==PIXEL_READ||state==PIXEL_WAIT||state==PIXEL_WRITE;
  wire [16:0] fill_address=feature_index(src_base,fill_y,8'd0,iw,7'd0,cshift)+fill_offset;
  wire [16:0] pixel_address=feature_index(src_base,oy,ox,iw,7'd0,cshift)+pixel_offset;
- wire [16:0] calculated_address=row_filling?fill_address:pixel_filling?pixel_address:
-  opcode==1?(in_place?17'd0:conv_addr):misc_addr;
+ wire [16:0] calculated_address=row_filling?fill_base_r+fill_offset:pixel_filling?pixel_base_r|{10'd0,pixel_offset}:
+  opcode==1?(in_place?17'd0:conv_fast):misc_base_r|{10'd0,oc};
  wire [16:0] memory_address=busy?operand_address:read_address;
  wire use_row=opcode==1&&in_place&&kernel3;
  wire use_pixel=opcode==1&&in_place&&!kernel3;
@@ -126,7 +123,7 @@ module yunet_network #(
   {input_unsigned?{1'b0,a3}:{a3[7],a3},input_unsigned?{1'b0,a2}:{a2[7],a2},input_unsigned?{1'b0,a1}:{a1[7],a1},input_unsigned?{1'b0,a0}:{a0[7],a0}};
  wire [31:0] dot_w=single_lane?{24'd0,selected_w}:{wq3,wq2,wq1,wq0};
  wire dot_ready,dot_in_ready,dot_valid;wire signed [31:0] dot_acc;wire signed [7:0] dot_value;
- yunet_dot4 #(.MODEL_SHIFT(1)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
+ yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
   .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap),.activations(dot_a),.weights(dot_w),
   .out_valid(dot_valid),.out_ready(state==CONV_RESULT),.accumulator(dot_acc),.value(dot_value));
  reg [1:0] debug_bank;
@@ -134,8 +131,31 @@ module yunet_network #(
  assign read_data=debug_bank==0?aq0:debug_bank==1?aq1:debug_bank==2?aq2:aq3;
  wire prefetch_beat=state==CONV_FEED&&dot_in_ready&&
   ((PIXEL_PREFETCH&&use_pixel&&!last_tap)||(CHANNEL_PREFETCH&&!last_ic));
+ // Spatial address arithmetic is pipelined; channel prefetch cadence is retained.
+ // Read states wait only when geometry or the source tensor changes.
+ // All stages use ordinary single-cycle timing constraints.
  always @(posedge clk)begin
-  operand_address<=CHANNEL_PREFETCH&&prefetch_beat&&!in_place?conv_addr+17'd4:calculated_address;
+  conv_pixel_r<={1'b0,multiply8(sample_y[7:0],iw)}+sample_x[7:0];
+  misc_pixel_r<={1'b0,multiply8(misc_y,iw)}+misc_x;
+  fill_pixel_r<={1'b0,multiply8(fill_y,iw)};
+  pixel_pixel_r<={1'b0,multiply8(oy,iw)}+ox;
+  out_pixel_r<={1'b0,multiply8(oy,ow)}+ox;
+  conv_base_r<=src_base+(conv_pixel_r<<cshift);
+  misc_base_r<=misc_base+(misc_pixel_r<<cshift);
+  fill_base_r<=src_base+(fill_pixel_r<<cshift);
+  pixel_base_r<=src_base+(pixel_pixel_r<<cshift);
+  out_base_r<=dst_base+(out_pixel_r<<channel_shift(co));
+  cache_slot_r<=sample_slot;cache_x_r<=sample_x[7:0];cache_cs_r<=cshift;
+  cache_base_r<=({11'd0,cache_slot_r}<<11)+({11'd0,cache_slot_r}<<9)+({5'd0,cache_x_r}<<cache_cs_r);
+ end
+ always @(posedge clk or negedge rst_n)begin
+  if(!rst_n)address_wait<=0;
+  else if((state==ROW_READ&&fill_offset==0)||(state==PIXEL_READ&&pixel_offset==0)||state==MISC_READ||(state==CONV_READ&&!beat_prefetched&&!use_pixel))begin
+   if(address_wait!=2)address_wait<=address_wait+1'b1;
+  end else address_wait<=0;
+ end
+ always @(posedge clk)begin
+  operand_address<=CHANNEL_PREFETCH&&prefetch_beat&&!in_place?conv_prefetch:calculated_address;
   // 1x1 in-place pixels already have a one-cycle cache read. Prefetch the
   // next four weights when a beat is accepted, avoiding a redundant WAIT.
   weight_address<=prefetch_beat?conv_weight+17'd4:conv_weight;
@@ -168,7 +188,7 @@ module yunet_network #(
  wire signed [9:0] extended_a={{2{misc_temp[7]}},misc_temp},extended_b={{2{misc_a[7]}},misc_a};
  wire signed [9:0] aligned_a=align_half&&!shift1[0]?extended_a<<<1:extended_a;
  wire signed [9:0] aligned_b=align_half&&!shift2[0]?extended_b<<<1:extended_b;
- wire [16:0] output_address=feature_index(dst_base,oy,ox,ow,oc,channel_shift(co));
+ wire [16:0] output_address=out_base_r|{10'd0,oc};
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    beat_prefetched<=0;state<=IDLE;done<=0;operation_done<=0;operation_index<=0;cycles<=0;
@@ -203,13 +223,13 @@ module yunet_network #(
      else if(prep_y<0||prep_y>=$signed({2'b0,ih})||(row_valid[prep_slot]&&row_tag[prep_slot]==prep_y[7:0]))prep_row<=prep_row+1'b1;
      else begin fill_slot<=prep_slot;fill_y<=prep_y[7:0];fill_offset<=0;state<=ROW_READ;end
     end
-    ROW_READ:state<=ROW_WAIT;
+    ROW_READ:if(fill_offset!=0||address_wait==2)state<=ROW_WAIT;
     ROW_WAIT:state<=ROW_WRITE;
     ROW_WRITE:begin
      if({1'b0,fill_offset}+13'd4>=row_bytes)begin row_valid[fill_slot]<=1;row_tag[fill_slot]<=fill_y;prep_row<=prep_row+1'b1;state<=ROW_PREP;end
      else begin fill_offset<=fill_offset+12'd4;state<=ROW_READ;end
     end
-    PIXEL_READ:state<=PIXEL_WAIT;
+    PIXEL_READ:if(pixel_offset!=0||address_wait==2)state<=PIXEL_WAIT;
     PIXEL_WAIT:state<=PIXEL_WRITE;
     PIXEL_WRITE:begin
      if(pixel_offset+7'd4>=ci)begin pixel_ready<=1;state<=INIT;end
@@ -217,7 +237,7 @@ module yunet_network #(
     end
     META:state<=DOT_START;
     DOT_START:if(dot_ready)state<=CONV_READ;
-    CONV_READ:begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=((PIXEL_PREFETCH&&use_pixel)||(CHANNEL_PREFETCH&&beat_prefetched))?CONV_FEED:CONV_WAIT;end
+    CONV_READ:if(beat_prefetched||use_pixel||address_wait==2)begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=((PIXEL_PREFETCH&&use_pixel)||(CHANNEL_PREFETCH&&beat_prefetched))?CONV_FEED:CONV_WAIT;end
     CONV_WAIT:state<=CONV_FEED;
     CONV_FEED:if(dot_in_ready)begin
      if(last_tap)state<=CONV_RESULT;
@@ -228,7 +248,7 @@ module yunet_network #(
      end
     end
     CONV_RESULT:if(dot_valid)begin write_pending<=1;write_address<=output_address;write_data<=dot_value;state<=NEXT_OUTPUT;end
-    MISC_READ:begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
+    MISC_READ:if(address_wait==2)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
     MISC_WAIT:state<=MISC_EVAL;
     MISC_EVAL:begin
      if(opcode==2&&misc_step!=3)begin misc_temp<=pool_max;misc_step<=misc_step+1'b1;state<=MISC_READ;end
