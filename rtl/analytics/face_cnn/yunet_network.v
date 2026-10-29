@@ -62,6 +62,11 @@ module yunet_network #(
   default:multiply8=0;
  endcase end
  endfunction
+ // Full 8x8 products map to spare DSPs; all exported dimensions fit 8 bits.
+ function [15:0] geometry_product;
+ input [7:0] a,b;
+ begin geometry_product=a*b;end
+ endfunction
  function [2:0] channel_shift;
  input [6:0] c;
  begin case(c)7'd4:channel_shift=2;7'd16:channel_shift=4;7'd32:channel_shift=5;7'd64:channel_shift=6;default:channel_shift=0;endcase end
@@ -89,7 +94,7 @@ module yunet_network #(
  // Depthwise lanes: four adjacent output channels share one beat. The lane
  // products drain into four network-side accumulators, so the four physical
  // multipliers stay fully occupied without extra DSPs or bank replication.
- reg dw_active,dw_relu_q,dw_stop_q;reg [2:0] co_shift_q;reg [1:0] dw_load_step,dw_drain;
+ reg dw_active,dw_relu_q,dw_stop_q;reg [2:0] co_shift_q;reg [1:0] dw_load_step;reg [2:0] dw_drain;
  reg signed [31:0] dw_bias0,dw_bias1,dw_bias2,dw_bias3,dw_sum0,dw_sum1,dw_sum2,dw_sum3;
  reg signed [6:0] dw_shift0,dw_shift1,dw_shift2,dw_shift3;
  reg signed [7:0] dw_val0,dw_val1,dw_val2,dw_val3;
@@ -117,6 +122,12 @@ module yunet_network #(
   else q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
   requant_model_dw=(r&&q<0)?8'sd0:q>127?8'sd127:q<-128?-8'sd128:q[7:0];
  end endfunction
+ // A single requantizer drains four completed sums in consecutive clocks.
+ // Products still use all four DSP lanes in parallel; only the infrequent
+ // rounding/shift/clip stage is shared to reduce LUT and routing pressure.
+ wire signed [31:0] dw_quant_sum=dw_drain==2?dw_sum0:dw_drain==3?dw_sum1:dw_drain==4?dw_sum2:dw_sum3;
+ wire signed [6:0] dw_quant_shift=dw_drain==2?dw_shift0:dw_drain==3?dw_shift1:dw_drain==4?dw_shift2:dw_shift3;
+ wire signed [7:0] dw_quant_value=requant_model_dw(dw_quant_sum,dw_quant_shift,dw_relu_q);
  wire last_ic=single_lane||dw_active||ic==last_channel;
  wire dw8_done=dw_active?oc+7'd4>=co:pw8_active?oc+7'd2>=co:oc==co-1;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
@@ -191,12 +202,12 @@ module yunet_network #(
  // Read states wait only when geometry or the source tensor changes.
  // All stages use ordinary single-cycle timing constraints.
  always @(posedge clk)begin
-  conv_pixel_r<={1'b0,multiply8(pipeline_y[7:0],iw)}+pipeline_x[7:0];
+  conv_pixel_r<={1'b0,geometry_product(pipeline_y[7:0],iw)}+pipeline_x[7:0];
   misc_y_r<=misc_y;misc_x_r<=misc_x;
-  misc_pixel_r<={1'b0,multiply8(misc_y_r,iw)}+misc_x_r;
-  fill_pixel_r<={1'b0,multiply8(fill_y,iw)};
-  pixel_pixel_r<={1'b0,multiply8(oy,iw)}+ox;
-  out_pixel_r<={1'b0,multiply8(oy,ow)}+ox;
+  misc_pixel_r<={1'b0,geometry_product(misc_y_r,iw)}+misc_x_r;
+  fill_pixel_r<={1'b0,geometry_product(fill_y,iw)};
+  pixel_pixel_r<={1'b0,geometry_product(oy,iw)}+ox;
+  out_pixel_r<={1'b0,geometry_product(oy,ow)}+ox;
   weight_row_r<=depthwise?{10'd0,oc}:(kernel3?({10'd0,oc}<<3)+oc:{10'd0,oc});
   weight_scale_r<=depthwise?weight_row_r:weight_row_r<<cshift;
   weight_base_r<=weight_base+weight_scale_r;
@@ -406,17 +417,18 @@ module yunet_network #(
      end
      state<=NEXT_OUTPUT;end
     DW_DRAIN:begin
-     // Two lanes of multiplier latency, then requantize and arm the four-byte
-     // write here so it lands on the NEXT_OUTPUT beat like every other op.
-     if(dw_drain!=2)dw_drain<=dw_drain+1'b1;
-     else begin
-      write_pending<=1;write_we<=4'b1111;write_address<=output_address;
-      write_data0<=requant_model_dw(dw_sum0,dw_shift0,dw_relu_q);
-      write_data1<=requant_model_dw(dw_sum1,dw_shift1,dw_relu_q);
-      write_data2<=requant_model_dw(dw_sum2,dw_shift2,dw_relu_q);
-      write_data3<=requant_model_dw(dw_sum3,dw_shift3,dw_relu_q);
-      dw_stop_q<=1;state<=NEXT_OUTPUT;
-     end
+     if(dw_drain<5)dw_drain<=dw_drain+1'b1;
+     case(dw_drain)
+      2:dw_val0<=dw_quant_value;
+      3:dw_val1<=dw_quant_value;
+      4:dw_val2<=dw_quant_value;
+      5:begin
+       write_pending<=1;write_we<=4'b1111;write_address<=output_address;
+       write_data0<=dw_val0;write_data1<=dw_val1;
+       write_data2<=dw_val2;write_data3<=dw_quant_value;
+       dw_stop_q<=1;state<=NEXT_OUTPUT;
+      end
+     endcase
     end
     PW_BIAS:begin
      pw_bias_q<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);

@@ -90,7 +90,7 @@ module vision_pipeline #(
     wire [23:0] overlay_pixel;
     wire [23:0] status_pixel;
     wire [23:0] mixed_pixel;
-    wire [23:0] brightness_pixel;
+    wire [23:0] camera_algorithm_pixel;
     wire [7:0]  auto_exposure_stat_y;
     wire        auto_exposure_stat_toggle;
     reg         osd_frame_toggle;
@@ -122,8 +122,8 @@ module vision_pipeline #(
     reg       status_vsync_1d;
     reg       status_hsync_1d;
     // Registered normal-camera input to AB, ahead of all spatial effects.
-    reg [23:0] ab_pixel_reg;
-    reg ab_de_reg,ab_sof_reg,ab_eol_reg,ab_vsync_reg,ab_hsync_reg;
+    reg [23:0] camera_pixel_reg;
+    reg camera_de_reg,camera_sof_reg,camera_eol_reg,camera_vsync_reg,camera_hsync_reg;
     wire face_enable=ENABLE_PIPELINE && !demo_active && mode==4'd11;
     wire face_found,face_position_valid,face_capture_started;
     wire shared_track_write;
@@ -206,11 +206,11 @@ module vision_pipeline #(
             alg_eol_extra<={alg_eol_extra[1:0],alg_eol_1d};
             alg_vsync_extra<={alg_vsync_extra[1:0],alg_vsync_1d};
             alg_hsync_extra<={alg_hsync_extra[1:0],alg_hsync_1d};
-            alg_de_1d    <= ab_de_reg;
-            alg_sof_1d   <= ab_sof_reg;
-            alg_eol_1d   <= ab_eol_reg;
-            alg_vsync_1d <= ab_vsync_reg;
-            alg_hsync_1d <= ab_hsync_reg;
+            alg_de_1d    <= camera_de_reg;
+            alg_sof_1d   <= camera_sof_reg;
+            alg_eol_1d   <= camera_eol_reg;
+            alg_vsync_1d <= camera_vsync_reg;
+            alg_hsync_1d <= camera_hsync_reg;
             status_de_1d    <= post_alg_de;
             status_sof_1d   <= post_alg_sof;
             status_eol_1d   <= post_alg_eol;
@@ -301,38 +301,29 @@ module vision_pipeline #(
         .clk         (clk),
         .rst_n       (rst_n),
         .mode        (effective_mode),
-        .frame_start (ab_sof_reg),
-        .line_end    (ab_eol_reg),
-        .de          (ab_de_reg),
-        .pixel_in    (brightness_pixel),
+        .frame_start (camera_sof_reg),
+        .line_end    (camera_eol_reg),
+        .de          (camera_de_reg),
+        .pixel_in    (camera_algorithm_pixel),
         .pixel_out   (algorithm_pixel)
     );
 
-    // AB always observes normal camera pixels, before artistic transforms.
-    // Its gain/statistics therefore do not change when entering inverse/edge.
+    // Register camera pixels and sync together before artistic transforms.
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
-            ab_pixel_reg<=0;ab_de_reg<=0;ab_sof_reg<=0;ab_eol_reg<=0;
-            ab_vsync_reg<=0;ab_hsync_reg<=0;
+            camera_pixel_reg<=0;camera_de_reg<=0;camera_sof_reg<=0;camera_eol_reg<=0;
+            camera_vsync_reg<=0;camera_hsync_reg<=0;
         end else begin
-            ab_pixel_reg<=equalized_pixel;
-            ab_de_reg<=pipeline_de;ab_sof_reg<=pipeline_sof;ab_eol_reg<=pipeline_eol;
-            ab_vsync_reg<=pipeline_vsync;ab_hsync_reg<=pipeline_hsync;
+            camera_pixel_reg<=equalized_pixel;
+            camera_de_reg<=pipeline_de;camera_sof_reg<=pipeline_sof;camera_eol_reg<=pipeline_eol;
+            camera_vsync_reg<=pipeline_vsync;camera_hsync_reg<=pipeline_hsync;
         end
     end
 
-    // Adjust only the camera/algorithm pixels, before OSD composition.
-    adaptive_brightness u_adaptive_brightness (
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .enable     (feature_enable[3]),
-        .frame_start(ab_sof_reg),
-        .de         (ab_de_reg),
-        .pixel_in   (ab_pixel_reg),
-        .pixel_out  (brightness_pixel)
-    );
+    // AB removed: retain the registered RGB stream and blanking behavior.
+    assign camera_algorithm_pixel = camera_de_reg ? camera_pixel_reg : 24'd0;
 
-    // Detect on the clean platform RGB, before effects, adaptive brightness,
+    // Detect on the clean platform RGB, before effects,
     // labels and logo. Mode 11 falls through pixel_algorithm unchanged.
     wire lbp_found,lbp_valid;
     wire [11:0] lbp_x,lbp_y,lbp_size,lbp_cx,lbp_cy;

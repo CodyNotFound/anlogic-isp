@@ -354,14 +354,6 @@
                     <Attr Name="CompileOrder" Val="62"/>
                 </FileInfo>
             </File>
-            <File Path="../rtl/overlay/adaptive_brightness.v">
-                <FileInfo>
-                    <Attr Name="UsedInSyn" Val="true"/>
-                    <Attr Name="UsedInP&R" Val="true"/>
-                    <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="61"/>
-                </FileInfo>
-            </File>
             <File Path="../rtl/overlay/anlogic_logo_rom.v">
                 <FileInfo>
                     <Attr Name="AutoExcluded" Val="true"/>
