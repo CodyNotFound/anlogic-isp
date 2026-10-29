@@ -2,7 +2,7 @@
 // Low-chroma picks retain a luminance gate. Majority + exact 4-connected fill.
 // Loss retains the color, expands the local search, then requires two unique
 // consistent global candidates before reacquisition. Ambiguity never steers.
-(* dsp_style="no" *) module vision_color_region #(
+module vision_color_region #(
     parameter WIDTH=160,HEIGHT=90,MIN_AREA=12,MAX_AREA=WIDTH*HEIGHT/2,
     parameter QUEUE_CAPACITY=WIDTH*HEIGHT,
     parameter ASSOCIATION=1,MAX_STEP=16,EXTERNAL_QUEUE=0
@@ -81,7 +81,13 @@
     reg signed [9:0] clean_x,clean_y,nx,ny;
     wire clean_valid=clean_x>=0 && clean_x<WIDTH && clean_y>=0 && clean_y<HEIGHT;
     wire neighbor_valid=nx>=0 && nx<WIDTH && ny>=0 && ny<HEIGHT;
-    wire [13:0] neighbor_addr=ny*WIDTH+nx;
+    function [13:0] row_address;
+    input signed [9:0] row;reg signed [13:0] wide;
+    begin wide={{4{row[9]}},row};
+     if(WIDTH==160)row_address=(wide<<<7)+(wide<<<5);
+     else row_address=row*WIDTH;
+    end endfunction
+    wire [13:0] neighbor_addr=row_address(ny)+{{4{nx[9]}},nx};
     wire queue_seed=state==SCAN_CHECK && work_q;
     wire queue_push=state==NEIGH_CHECK && neighbor_valid && work_q && tail<QUEUE_CAPACITY;
     wire [13:0] queue_write_addr=queue_seed?14'd0:tail[13:0];
@@ -247,7 +253,7 @@
                     result_valid<=1;state<=IDLE;
                 end
                 DRAIN:state<=CLEAN_REQ; // finish the last two mask writes first
-                CLEAN_REQ:begin raw_addr<=clean_valid?clean_y*WIDTH+clean_x:0;state<=CLEAN_WAIT;end
+                CLEAN_REQ:begin raw_addr<=clean_valid?row_address(clean_y)+{{4{clean_x[9]}},clean_x}:0;state<=CLEAN_WAIT;end
                 CLEAN_WAIT:state<=CLEAN_READ;
                 CLEAN_READ:begin
                     count9<=count9+(clean_valid && raw_q?1'b1:1'b0);

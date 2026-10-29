@@ -181,12 +181,12 @@ module yunet_network #(
  wire dot_ready,dot_in_ready,dot_valid;wire signed [31:0] dot_acc;wire signed [7:0] dot_value;
  wire dw_p_valid;wire signed [16:0] dw_p0,dw_p1,dw_p2,dw_p3;
  wire dot_ready2,dot_in_ready2,dot_valid2;wire signed [31:0] dot_acc2;wire signed [7:0] dot_value2;
- yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) mac2(.clk(clk),.rst_n(rst_n),.start(state==DOT_START&&pw8_active),.bias(pw_bias_q),.shift(pw_shift_q),.relu(relu),.ready(dot_ready2),
+ yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1),.ACC_BITS(20)) mac2(.clk(clk),.rst_n(rst_n),.start(state==DOT_START&&pw8_active),.bias(pw_bias_q),.shift(pw_shift_q),.relu(relu),.ready(dot_ready2),
   .in_valid(state==CONV_FEED&&pw8_active),.in_ready(dot_in_ready2),.in_last(last_tap),
   .activations(dot_a),.weights({wq3b,wq2b,wq1b,wq0b}),.dw_mode(1'b0),.dw_stop(1'b0),
   .dw_p_valid(),.dw_p0(),.dw_p1(),.dw_p2(),.dw_p3(),
   .out_valid(dot_valid2),.out_ready(state==CONV_RESULT),.accumulator(dot_acc2),.value(dot_value2));
- yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
+ yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1),.ACC_BITS(20)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START||(state==DW_BIAS&&dw_load_step==3&&dot_ready)),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
   .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap&&!dw_active),
   .activations(dot_a),.weights(dot_w),.dw_mode(dw_active),.dw_stop(dw_stop_q),
   .dw_p_valid(dw_p_valid),.dw_p0(dw_p0),.dw_p1(dw_p1),.dw_p2(dw_p2),.dw_p3(dw_p3),
@@ -385,7 +385,12 @@ module yunet_network #(
       3:begin dw_bias3<=metadata_bias;dw_shift3<=metadata_shift;end
      endcase
      dw_bias_addr<=dw_bias_addr+1'b1;
-     if(dw_load_step==3)state<=META;else dw_load_step<=dw_load_step+1'b1;
+     if(dw_load_step==3)begin
+      if(dot_ready)begin
+       dw_sum0<=dw_bias0;dw_sum1<=dw_bias1;dw_sum2<=dw_bias2;dw_sum3<=metadata_bias;
+       state<=CONV_READ;
+      end else dw_bias_addr<=dw_bias_addr;
+     end else dw_load_step<=dw_load_step+1'b1;
     end
     META:begin
      if(dw_active)begin

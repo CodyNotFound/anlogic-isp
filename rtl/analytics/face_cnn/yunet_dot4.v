@@ -3,7 +3,7 @@
 // The scheduler supplies flattened OHWI products, padding and unused lanes = 0.
 // Accept one four-product beat per clock; the last beat drains before publication.
 // No floating point, vendor simulator primitive, or CPU classifier is required.
-module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
+module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0,ACC_BITS=32)(
  input wire clk,rst_n,
  input wire start,input wire signed [31:0] bias,
  input wire signed [6:0] shift,input wire relu,
@@ -18,10 +18,10 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
 );
  reg busy,closing,p_valid,p_last;
  reg signed [6:0] shift_q;reg relu_q;
- reg signed [31:0] sum;
+ reg signed [ACC_BITS-1:0] sum;
  reg signed [16:0] p0,p1,p2,p3;
  wire signed [18:0] pair_sum={{2{p0[16]}},p0}+{{2{p1[16]}},p1}+{{2{p2[16]}},p2}+{{2{p3[16]}},p3};
- wire signed [31:0] next_sum=sum+{{13{pair_sum[18]}},pair_sum};
+ wire signed [31:0] next_sum=$signed(sum)+$signed(pair_sum);
  assign ready=!busy;
  assign in_ready=busy&&!closing&&!out_valid;
  function signed [7:0] requant;
@@ -51,9 +51,11 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
  reg signed [18:0] beat;reg beat_valid,beat_last;
  reg [35:0] input_a;reg [31:0] input_w;reg input_valid,input_last;
  reg round_valid,shift_valid,clip_valid;
- reg signed [32:0] rounding,rounded,shifted;
+ reg signed [ACC_BITS:0] rounding,rounded,shifted;
+ localparam [ACC_BITS:0] ROUND_ONE=1;
+ reg shift_large_q;
  reg dw_mode_q;
- wire signed [31:0] accumulated=sum+{{13{beat[18]}},beat};
+ wire signed [ACC_BITS-1:0] accumulated=sum+$signed(beat);
  // Depthwise groups pass raw lane products straight to the network's four
  // accumulators; the single-sum pipeline below stays idle and is bypassed.
  assign dw_p_valid=p_valid&&dw_mode_q;
@@ -63,12 +65,13 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
     busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;dw_mode_q<=0;
     sum<=0;p0<=0;p1<=0;p2<=0;p3<=0;out_valid<=0;accumulator<=0;value<=0;
     beat<=0;beat_valid<=0;beat_last<=0;round_valid<=0;shift_valid<=0;clip_valid<=0;
-    rounding<=0;rounded<=0;shifted<=0;input_a<=0;input_w<=0;input_valid<=0;input_last<=0;
+    rounding<=0;rounded<=0;shifted<=0;shift_large_q<=0;input_a<=0;input_w<=0;input_valid<=0;input_last<=0;
    end else begin
     input_valid<=0;p_valid<=input_valid;beat_valid<=p_valid;round_valid<=0;shift_valid<=round_valid;clip_valid<=shift_valid;
     if(start&&ready)begin
      busy<=1;closing<=0;sum<=bias;shift_q<=shift;relu_q<=relu;dw_mode_q<=dw_mode;
-     rounding<=shift==0?33'sd0:33'sd1<<(shift[4:0]-1'b1);
+     shift_large_q<=shift>=ACC_BITS;
+     rounding<=(shift==0||shift>=ACC_BITS)?0:ROUND_ONE<<(shift[4:0]-1'b1);
     end
     if(dw_stop&&dw_mode_q)busy<=0;
     if(in_valid&&in_ready)begin
@@ -87,7 +90,7 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
      sum<=accumulated;
      if(beat_last)begin accumulator<=accumulated;round_valid<=1;end
     end
-    if(round_valid)rounded<=$signed({sum[31],sum})+rounding;
+    if(round_valid)rounded<=shift_large_q?0:$signed({sum[ACC_BITS-1],sum})+rounding;
     if(shift_valid)shifted<=rounded>>>shift_q[4:0];
     if(clip_valid)begin value<=(relu_q&&shifted<0)?8'sd0:shifted>127?8'sd127:shifted< -128?-8'sd128:shifted[7:0];out_valid<=1;end
     if(out_valid&&out_ready)begin out_valid<=0;busy<=0;closing<=0;end
