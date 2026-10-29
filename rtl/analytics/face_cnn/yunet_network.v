@@ -21,7 +21,7 @@ module yunet_network #(
  reg beat_prefetched;reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="dram" *) reg [7:0] cache0[0:1919];
- (* ram_style="bram" *) reg [7:0] cache1[0:1919],cache2[0:1919],cache3[0:1919];
+ (* ram_style="dram" *) reg [7:0] cache1[0:1919],cache2[0:1919],cache3[0:1919];
  reg [12:0] cache_read_address;reg prefetch_sel_q;
  (* ram_style="dram" *) reg [7:0] pixel0[0:15],pixel1[0:15],pixel2[0:15],pixel3[0:15];
  reg [7:0] cq0,cq1,cq2,cq3,pq0,pq1,pq2,pq3;
