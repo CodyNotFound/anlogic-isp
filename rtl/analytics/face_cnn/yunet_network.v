@@ -17,7 +17,7 @@ module yunet_network #(
   CONV_READ=6,CONV_WAIT=7,CONV_FEED=8,CONV_RESULT=9,NEXT_OUTPUT=10,
   MISC_READ=11,MISC_WAIT=12,MISC_EVAL=13,ROW_PREP=14,ROW_READ=15,ROW_WAIT=16,ROW_WRITE=17,
   PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21,ROW_SLOT=22,ROW_DECIDE=23,
-  DW_BIAS=24,DW_DRAIN=25;
+  DW_BIAS=24,DW_DRAIN=25,PW_BIAS=26;
  reg beat_prefetched;reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="dram" *) reg [7:0] cache0[0:1919];
@@ -94,6 +94,11 @@ module yunet_network #(
  reg signed [6:0] dw_shift0,dw_shift1,dw_shift2,dw_shift3;
  reg signed [7:0] dw_val0,dw_val1,dw_val2,dw_val3;
  reg [3:0] write_we;reg [7:0] write_data0,write_data1,write_data2,write_data3;
+ // Pointwise pairs: a second MAC consumes the same activations against the
+ // adjacent output channel's weights, read through the weight banks' second
+ // port (address = primary + ci, no relayout of the weight ROM).
+ reg pw8_active;reg signed [31:0] pw_bias_q;reg signed [6:0] pw_shift_q;
+ reg [16:0] weight_address2;reg signed [7:0] wq0b,wq1b,wq2b,wq3b;
  wire [3:0] tap=kernel3?({2'b0,ky}<<1)+ky+kx:4'd0;
  // Depthwise ROM words hold [tap][oc]: four adjacent channels of one tap
  // occupy the four weight banks of a single word, matching the arena banks.
@@ -113,6 +118,7 @@ module yunet_network #(
   requant_model_dw=(r&&q<0)?8'sd0:q>127?8'sd127:q<-128?-8'sd128:q[7:0];
  end endfunction
  wire last_ic=single_lane||dw_active||ic==last_channel;
+ wire dw8_done=dw_active?oc+7'd4>=co:pw8_active?oc+7'd2>=co:oc==co-1;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
  // Calculate the next kernel position during WAIT/FEED when the current
  // tap is already in RAM output registers. This hides address stages on
@@ -160,6 +166,12 @@ module yunet_network #(
  wire [31:0] dot_w=solo?{24'd0,selected_w}:{wq3,wq2,wq1,wq0};
  wire dot_ready,dot_in_ready,dot_valid;wire signed [31:0] dot_acc;wire signed [7:0] dot_value;
  wire dw_p_valid;wire signed [16:0] dw_p0,dw_p1,dw_p2,dw_p3;
+ wire dot_ready2,dot_in_ready2,dot_valid2;wire signed [31:0] dot_acc2;wire signed [7:0] dot_value2;
+ yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) mac2(.clk(clk),.rst_n(rst_n),.start(state==DOT_START&&pw8_active),.bias(pw_bias_q),.shift(pw_shift_q),.relu(relu),.ready(dot_ready2),
+  .in_valid(state==CONV_FEED&&pw8_active),.in_ready(dot_in_ready2),.in_last(last_tap),
+  .activations(dot_a),.weights({wq3b,wq2b,wq1b,wq0b}),.dw_mode(1'b0),.dw_stop(1'b0),
+  .dw_p_valid(),.dw_p0(),.dw_p1(),.dw_p2(),.dw_p3(),
+  .out_valid(dot_valid2),.out_ready(state==CONV_RESULT),.accumulator(dot_acc2),.value(dot_value2));
  yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
   .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap&&!dw_active),
   .activations(dot_a),.weights(dot_w),.dw_mode(dw_active),.dw_stop(dw_stop_q),
@@ -216,8 +228,10 @@ module yunet_network #(
   // 1x1 in-place pixels already have a one-cycle cache read. Prefetch the
   // next four weights when a beat is accepted, avoiding a redundant WAIT.
   weight_address<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic});
+ weight_address2<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic})+{10'd0,ci};
   instruction<=program_rom[operation_index];bias_q<=unpack_model_bias(bias_base+oc,biases[bias_base+oc]);shift_q<=unpack_model_shift(bias_base+oc,shifts[bias_base+oc]);
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
+ wq0b<=wm0[weight_address2[15:2]];wq1b<=wm1[weight_address2[15:2]];wq2b<=wm2[weight_address2[15:2]];wq3b<=wm3[weight_address2[15:2]];
   // READ captures the address; WAIT reads RAM; FEED consumes its registered data.
   cache_read_address<=padding?13'd0:cache_base_r|{6'd0,((CHANNEL_PREFETCH&&prefetch_beat&&use_row)?next_channel:channel)};
   cq0<=cache0[cache_read_address[12:2]];cq1<=cache1[cache_read_address[12:2]];cq2<=cache2[cache_read_address[12:2]];cq3<=cache3[cache_read_address[12:2]];
@@ -289,6 +303,7 @@ module yunet_network #(
    misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_we<=0;
    write_data0<=0;write_data1<=0;write_data2<=0;write_data3<=0;
    dw_active<=0;dw_relu_q<=0;dw_stop_q<=0;co_shift_q<=0;dw_load_step<=0;dw_drain<=0;
+   pw8_active<=0;pw_bias_q<=0;pw_shift_q<=0;weight_address2<=0;wq0b<=0;wq1b<=0;wq2b<=0;wq3b<=0;
    dw_bias0<=0;dw_bias1<=0;dw_bias2<=0;dw_bias3<=0;dw_sum0<=0;dw_sum1<=0;dw_sum2<=0;dw_sum3<=0;
    dw_shift0<=0;dw_shift1<=0;dw_shift2<=0;dw_shift3<=0;dw_val0<=0;dw_val1<=0;dw_val2<=0;dw_val3<=0;
   end else begin
@@ -306,6 +321,7 @@ module yunet_network #(
      single_lane<=instruction[93:87]==1;
      one_beat<=instruction[104]||instruction[93:87]<=4;last_channel<=instruction[93:87]-7'd4;
      dw_active<=instruction[104];dw_relu_q<=instruction[105];
+     pw8_active<=instruction[3:0]==1&&!instruction[101]&&!instruction[104]&&instruction[93:87]>=7'd16&&instruction[100:94]>=7'd2;
      case(instruction[100:94])7'd4:co_shift_q<=3'd2;7'd16:co_shift_q<=3'd4;7'd32:co_shift_q<=3'd5;7'd64:co_shift_q<=3'd6;default:co_shift_q<=3'd0;endcase
      opcode<=instruction[3:0];src_base<=instruction[20:4];src2_base<=instruction[37:21];dst_base<=instruction[54:38];
      iw<=instruction[62:55];ih<=instruction[70:63];ow<=instruction[78:71];oh<=instruction[86:79];ci<=instruction[93:87];co<=instruction[100:94];
@@ -319,6 +335,7 @@ module yunet_network #(
      if(opcode==1&&in_place&&kernel3&&!row_ready)begin prep_row<=0;state<=ROW_PREP;end
      else if(opcode==1&&in_place&&!kernel3&&!pixel_ready)begin pixel_offset<=0;state<=PIXEL_READ;end
      else if(opcode==1&&dw_active)begin dw_load_step<=0;state<=DW_BIAS;end
+     else if(opcode==1&&pw8_active)state<=PW_BIAS;
      else state<=opcode==1?META:MISC_READ;
     end
     ROW_PREP:begin
@@ -369,9 +386,21 @@ module yunet_network #(
       state<=CONV_READ;
      end
     end
-    CONV_RESULT:if(dot_valid)begin write_pending<=1;write_we<=4'b0001<<output_address[1:0];
-     write_data0<=dot_value;write_data1<=dot_value;write_data2<=dot_value;write_data3<=dot_value;
-     write_address<=output_address;state<=NEXT_OUTPUT;end
+    CONV_RESULT:if(dot_valid&&(!pw8_active||dot_valid2))begin
+     write_pending<=1;write_address<=output_address;
+     if(pw8_active)begin
+      write_we<=(4'b0001<<output_address[1:0])|(4'b0001<<((output_address[1:0]==2'd3)?2'd0:output_address[1:0]+1'b1));
+      case(output_address[1:0])
+       0:begin write_data0<=dot_value;write_data1<=dot_value2;write_data2<=dot_value;write_data3<=dot_value2;end
+       1:begin write_data0<=dot_value;write_data1<=dot_value;write_data2<=dot_value2;write_data3<=dot_value2;end
+       2:begin write_data0<=dot_value2;write_data1<=dot_value;write_data2<=dot_value;write_data3<=dot_value2;end
+       3:begin write_data0<=dot_value2;write_data1<=dot_value2;write_data2<=dot_value;write_data3<=dot_value;end
+      endcase
+     end else begin
+      write_we<=4'b0001<<output_address[1:0];
+      write_data0<=dot_value;write_data1<=dot_value;write_data2<=dot_value;write_data3<=dot_value;
+     end
+     state<=NEXT_OUTPUT;end
     DW_DRAIN:begin
      // Two lanes of multiplier latency, then requantize and arm the four-byte
      // write here so it lands on the NEXT_OUTPUT beat like every other op.
@@ -384,6 +413,11 @@ module yunet_network #(
       write_data3<=requant_model_dw(dw_sum3,dw_shift3,dw_relu_q);
       dw_stop_q<=1;state<=NEXT_OUTPUT;
      end
+    end
+    PW_BIAS:begin
+     pw_bias_q<=unpack_model_bias(bias_base+oc+7'd1,biases[bias_base+oc+7'd1]);
+     pw_shift_q<=unpack_model_shift(bias_base+oc+7'd1,shifts[bias_base+oc+7'd1]);
+     state<=META;
     end
     MISC_READ:if(address_wait==3)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
     MISC_WAIT:state<=MISC_EVAL;
@@ -403,7 +437,7 @@ module yunet_network #(
      write_address<=output_address;state<=NEXT_OUTPUT;
     end
     NEXT_OUTPUT:begin
-     if(dw_active?oc+7'd4>=co:oc==co-1)begin
+     if(dw8_done)begin
       oc<=0;pixel_ready<=0;
       if(reverse_order?ox==0:ox==ow-1)begin
        ox<=reverse_order?ow-1'b1:8'd0;row_ready<=0;
@@ -413,7 +447,7 @@ module yunet_network #(
         else begin operation_index<=operation_index+1'b1;state<=CONFIG_WAIT;end
        end else begin oy<=reverse_order?oy-1'b1:oy+1'b1;state<=INIT;end
       end else begin ox<=reverse_order?ox-1'b1:ox+1'b1;state<=INIT;end
-     end else begin oc<=dw_active?oc+7'd4:oc+1'b1;state<=INIT;end
+     end else begin oc<=dw_active?oc+7'd4:pw8_active?oc+7'd2:oc+1'b1;state<=INIT;end
     end
     default:state<=IDLE;
    endcase
