@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 module tb_yunet_address_exact;
  reg clk=0;always #5 clk=~clk;
- yunet_network dut(.clk(clk),.rst_n(1'b0),.start(1'b0),.load_valid(1'b0),.load_address(17'd0),.load_data(8'd0),.read_address(17'd0),.read_data(),.busy(),.done(),.operation_done(),.operation_index(),.cycles(),.read_word());
+ yunet_network dut(.clk(clk),.io_clk(clk),.rst_n(1'b0),.start(1'b0),.load_valid(1'b0),.load_address(17'd0),.load_data(8'd0),.read_address(17'd0),.read_data(),.busy(),.done(),.operation_done(),.operation_index(),.cycles(),.read_word());
  integer i,c,n,w,seed=20261029;reg [7:0] y,x;reg [16:0] base,expected,actual;reg [6:0] ch;reg [2:0] cs;
  initial begin
   #1;

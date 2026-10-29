@@ -2,7 +2,7 @@
 module tb_yunet_vector_misc;
  reg clk=0;always #3.333 clk=~clk;
  reg rst=0,start=0,load=0;reg[16:0]la=0;reg[7:0]ld=0;wire busy,done;
- yunet_network #(.PROGRAM_DEPTH(1),.PROGRAM_FILE("build/vector_misc/program.hex")) dut(.clk(clk),.io_clk(clk),.rst_n(rst),.start(start),.load_valid(load),.load_address(la),.load_data(ld),.read_address(17'd0),.read_data(),.busy(busy),.done(done),.operation_done(),.operation_index(),.cycles(),.read_word());
+ yunet_network #(.PROGRAM_DEPTH(1),.PROGRAM_FILE("sim/face_cnn/data/misc_program.hex")) dut(.clk(clk),.io_clk(clk),.rst_n(rst),.start(start),.load_valid(load),.load_address(la),.load_data(ld),.read_address(17'd0),.read_data(),.busy(busy),.done(done),.operation_done(),.operation_index(),.cycles(),.read_word());
  reg[7:0]a[0:511],b[0:511],expected[0:511],actual;
  reg[159:0]ins;integer seed=291004,t,kind,src,dst,iw,ih,ow,oh,s1,s2,half,i,x,y,c,j,xx,yy,v,m,n,steps,channels,total=0;
  function integer signed8;input[7:0]v;begin signed8=v[7]?v-256:v;end endfunction

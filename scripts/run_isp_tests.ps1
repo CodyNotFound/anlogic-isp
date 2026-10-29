@@ -1,11 +1,10 @@
 ﻿param([string]$PlatformRoot='', [switch]$FullFrame)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'sim_common.ps1')
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if(-not $PlatformRoot){$PlatformRoot=$root}
 $PlatformRoot=[IO.Path]::GetFullPath($PlatformRoot)
 $sim=Join-Path $root 'sim'
-$work=Join-Path $sim 'work'
-$modelSimBin=Split-Path (Get-Command vlog.exe -ErrorAction Stop).Source
 $tdRoot=Split-Path (Split-Path (Get-Command td_commands_prompt.exe -ErrorAction Stop).Source)
 $d=Join-Path $PlatformRoot 'rtl/hardware/hdl_source/isp/demosaic_4x_2_0'
 $sources=@(
@@ -29,24 +28,7 @@ $sources=@(
  "$sim/tb_video_in_frame_preamble.v", "$sim/tb_isp_frame_preamble.v"
 )
 foreach($source in $sources){if(-not(Test-Path -LiteralPath $source)){throw "Missing source: $source"}}
-if(-not(Test-Path -LiteralPath $work)){
- & (Join-Path $modelSimBin 'vlib.exe') $work
- if($LASTEXITCODE -ne 0){throw 'vlib failed'}
-}
-& (Join-Path $modelSimBin 'vlog.exe') -sv -work $work "+incdir+$root/rtl/isp" @sources 2>&1 |
- Tee-Object -FilePath (Join-Path $sim 'frame_preamble_compile.log')
-if($LASTEXITCODE -ne 0){throw 'vlog failed'}
-foreach($test in @('tb_video_in_frame_preamble','tb_isp_frame_preamble')){
- $simArgs=@('-c','-lib',$work)
- $logName=if($test -eq 'tb_video_in_frame_preamble'){'video_in_frame_preamble_actual_clocks.log'}else{'isp_frame_preamble.log'}
- if($FullFrame -and $test -eq 'tb_isp_frame_preamble'){
-  $simArgs+='-gLINES_PER_FRAME=720'; $logName='isp_frame_preamble_720p.log'
- }
- $log=Join-Path $sim $logName
- $simArgs+=@($test,'PH1P_PHY_GSR','-l',$log,'-do','run -all; quit -code 0')
- & (Join-Path $modelSimBin 'vsim.exe') @simArgs
- $result=[IO.File]::ReadAllText($log)
- if($LASTEXITCODE -ne 0 -or $result -notmatch "PASS $test" -or $result -match 'FAIL|\*\* Error|\*\* Fatal'){
-  throw "Simulation failed: $test, see $log"
- }
+foreach($top in @('tb_video_in_frame_preamble','tb_isp_frame_preamble')){
+ $parameters=if($FullFrame -and $top -eq 'tb_isp_frame_preamble'){@('-gLINES_PER_FRAME=720')}else{@()}
+ Invoke-RtlTest -Name $top -Top $top -Files $sources -Includes @('rtl/isp') -ExtraTops @('PH1P_PHY_GSR') -Parameters $parameters -AllowVendorModelWarnings
 }

@@ -1,0 +1,36 @@
+{
+  "reason": "Known generated SDP wrapper: unused A output/B input and implicit expression truncation. Preserve production vendor RTL; do not suppress warnings globally.",
+  "files": [
+    {
+      "path": "rtl/hardware/ip_source/w128_d512_fifo/soft_fifo_al_4057d6b76aa6.v",
+      "sha256": "b22e673d85bbbf560614d725aa53e3df6cfbc78c45f65fffa2abe98c7e695997",
+      "one_bit_width_ports": [
+        "ceb"
+      ],
+      "address_width_ports": [
+        "addrb"
+      ],
+      "unconnected_ports": [
+        "doa",
+        "dib"
+      ]
+    },
+    {
+      "path": "rtl/hardware/ip_source/w155_d512_fifo/soft_fifo_al_f58e8b3e1f3d.v",
+      "sha256": "641e3e423ddbd8a9a2ccce2721f27e703a7ac2b9ea7b5312337a0925c3db527e",
+      "one_bit_width_ports": [
+        "cea",
+        "ocea",
+        "ceb",
+        "web"
+      ],
+      "address_width_ports": [
+        "addrb"
+      ],
+      "unconnected_ports": [
+        "doa",
+        "dib"
+      ]
+    }
+  ]
+}

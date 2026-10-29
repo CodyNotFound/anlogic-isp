@@ -1,18 +1,19 @@
 `timescale 1ns/1ps
-module tb_motion_v62;
+module tb_motion;
  parameter W=16,H=12;
+ reg core_clk=0;always #3.333 core_clk=~core_clk;
  reg clk=0,rst=0,enable=1,reseed=0,suppress=0,fs=0,sv=0,fe=0,error=0;
- reg[7:0] sx,sy,gray;always #5 clk=~clk;
+ reg[7:0] sx,sy,gray;always #6.667 clk=~clk;
  wire rv,found,initialized;wire[2:0] status;wire[7:0] bx,by,bw,bh,cx,cy;
  wire[14:0] area;wire[31:0] cycles;wire we;wire[14:0] wa,ra;wire[7:0] wd,rd;
  vision_motion_diff #(.WIDTH(W),.HEIGHT(H)) dut(clk,rst,enable,reseed,suppress,fs,sv,fe,error,sx,sy,gray,rv,found,initialized,status,bx,by,bw,bh,cx,cy,area,cycles,we,wa,ra,wd,rd);
- face_video_cnn #(.SHARED_TRACK_FRAME(1),.PROGRAM_FILE("rtl/analytics/face_cnn/program.hex"),
+ face_video_cnn #(.CORE_CLK_X2(1),.SHARED_TRACK_FRAME(1),.PROGRAM_FILE("rtl/analytics/face_cnn/program.hex"),
   .W0_FILE("rtl/analytics/face_cnn/weights0.hex"),.W1_FILE("rtl/analytics/face_cnn/weights1.hex"),.W2_FILE("rtl/analytics/face_cnn/weights2.hex"),.W3_FILE("rtl/analytics/face_cnn/weights3.hex"),
   .BIAS_FILE("rtl/analytics/face_cnn/bias.hex"),.SHIFT_FILE("rtl/analytics/face_cnn/shift.hex"),
   .SIGMOID_FILE("rtl/analytics/face_cnn/sigmoid.hex"),.OFFSET_FILE("rtl/analytics/face_cnn/offset.hex"),.SIZE_FILE("rtl/analytics/face_cnn/size.hex")) storage(
   .clk(clk),.rst_n(rst),.enable(1'b0),.sof(1'b0),.eol(1'b0),.de(1'b0),.rgb(24'd0),
   .position_valid(),.found(),.box_x(),.box_y(),.box_size(),.center_x(),.center_y(),.busy(),.stream_error(),.completed_frames(),
-  .shared_enable(enable),.shared_write_en(we),.shared_write_address(wa),.shared_read_address(ra),.shared_write_data(wd),.shared_read_data(rd),.shared_read_word(),.inference_cycles());
+  .shared_enable(enable),.shared_write_en(we),.shared_write_address(wa),.shared_read_address(ra),.shared_write_data(wd),.shared_read_data(rd),.shared_read_word(),.inference_cycles(),.core_clk(core_clk),.capture_started());
 
  integer x,y,kind,results=0,prior,max_address=0;
  always @(posedge clk)begin #1;if(rv)results=results+1;if(we&&wa>max_address)max_address=wa;end
@@ -47,7 +48,7 @@ module tb_motion_v62;
  frame(5);if(found||status!=0)$fatal(1,"reference after abort");
  enable=0;ticks(5);if(initialized||found||we)$fatal(1,"mode ownership not released");enable=1;ticks(5);frame(5);
  if(max_address!=W*H-1)$fatal(1,"frame RAM range %d",max_address);
- $display("PASS tb_motion_v62 W%0d H%0d actual CNN RAM, warmup, confirmed slow motion, still, illumination rejection, isolated noise, camera suppression, abort, mode reset, exact box and bounded work",W,H);$finish;
+ $display("PASS tb_motion W%0d H%0d actual CNN RAM, warmup, confirmed slow motion, still, illumination rejection, isolated noise, camera suppression, abort, mode reset, exact box and bounded work",W,H);$finish;
  end
  initial begin #20000000;$fatal(1,"watchdog");end
 endmodule

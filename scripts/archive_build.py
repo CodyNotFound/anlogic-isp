@@ -4,6 +4,7 @@ import argparse,hashlib,json,re,shutil
 
 parser=argparse.ArgumentParser()
 parser.add_argument('run',help='isolated anlogic-isp_runs_* directory name')
+parser.add_argument('--check-only',action='store_true',help='Validate the retained build without creating an archive')
 args=parser.parse_args()
 assert re.fullmatch(r'anlogic-isp_runs_[A-Za-z0-9_]+',args.run)
 root=Path(__file__).resolve().parents[1]
@@ -16,7 +17,6 @@ assert record['status']=='passed',record
 for key in ('setup_wns_ns','hold_wns_ns'):assert record[key]>=0
 for key in ('setup_tns_ns','hold_tns_ns'):assert record[key]==0
 target=root/'releases'/version
-assert not target.exists(),'Preserve existing archive; use a fresh run name'
 entries=[]
 for line in (run/'source_sha256.txt').read_text(encoding='utf-8-sig').splitlines():
     sha,path=line.split('  ',1)
@@ -26,6 +26,10 @@ for line in (run/'source_sha256.txt').read_text(encoding='utf-8-sig').splitlines
     entries.append((sha,source,source.relative_to(root)))
 bit=run/'phy/anlogic-isp.bit'
 assert hashlib.sha256(bit.read_bytes()).hexdigest().upper()==record['bit_sha256']
+if args.check_only:
+    print(f'PASS archive inputs: {len(entries)} unchanged sources; bit SHA256 {record["bit_sha256"]}; setup {record["setup_wns_ns"]}ns hold {record["hold_wns_ns"]}ns')
+    raise SystemExit(0)
+assert not target.exists(),'Preserve existing archive; use a fresh run name'
 target.mkdir(parents=True)
 for _,source,rel in entries:
     out=target/'source'/rel
@@ -33,16 +37,23 @@ for _,source,rel in entries:
     shutil.copyfile(source,out)
 for source in (bit,run/'source_sha256.txt',completion,run/'phy/anlogic-isp_phy.ts',run/'phy/anlogic-isp_phy.area',run/'phy/final_timing.rpt',run/'phy/anlogic-isp_exception.timing',run/'phy/settings.cfg'):
     shutil.copyfile(source,target/source.name)
-if (root/'reports/optimized_validation.json').exists():
-    shutil.copyfile(root/'reports/optimized_validation.json',target/'functional_validation.json')
-    data=json.loads((root/'reports/optimized_validation.json').read_text(encoding='utf-8'))
-    for value in data.values():
-        if isinstance(value,dict) and 'path' in value:
-            source=root/value['path']
-            assert hashlib.sha256(source.read_bytes()).hexdigest()==value['sha256']
-            out=target/'functional_logs'/source.name
-            out.parent.mkdir(parents=True,exist_ok=True)
-            shutil.copyfile(source,out)
+# Current regression proofs are optional and must match their actual inputs.
+# Stale/failed results never become functional acceptance for a newer build.
+functional=[]
+for proof_path in sorted((root/'build/sim').glob('*/completion.json')):
+    proof=json.loads(proof_path.read_text(encoding='utf-8-sig'))
+    inputs=proof.get('source_sha256',[])
+    if proof.get('status')!='passed' or not inputs:
+        continue
+    if any(not Path(v['path']).is_file() or hashlib.sha256(Path(v['path']).read_bytes()).hexdigest().lower()!=v['sha256'].lower() for v in inputs):
+        continue
+    out=target/'functional_logs'/proof_path.parent.name
+    out.mkdir(parents=True)
+    for name in ('completion.json','compile.log','test.log','equivalence.json'):
+        source=proof_path.parent/name
+        if source.is_file():shutil.copyfile(source,out/name)
+    functional.append(proof_path.parent.name)
+(target/'functional_tests.json').write_text(json.dumps({'scope':'Available passing regressions with matching inputs; not a claim that all tests were run','tests':functional},indent=2),encoding='utf-8')
 audit=run/'phy/sta_audit'
 assert (audit/'check_timing.rpt').exists(),'Clock audit evidence missing'
 for source in audit.rglob('*'):

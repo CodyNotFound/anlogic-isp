@@ -8,7 +8,7 @@ module tb_vision_region_identity;
  .clk(clk),.rst_n(rst_n),.reseed(reseed),.frame_start(fs),.sample_valid(sv),.frame_end(fe),
  .sample_x(sx),.sample_y(sy),.rgb(rgb),.result_valid(rv),.calibrated(cal),.found(found),
  .overflow(overflow),.box_x(),.box_y(),.box_w(),.box_h(),.center_x(cx),.center_y(cy),
- .area(area),.busy(busy),.compute_cycles(),.pick_pending(),.frame_abort(1'b0));
+ .area(area),.busy(busy),.compute_cycles(),.pick_pending(),.frame_abort(1'b0),.shared_write_en(),.shared_write_addr(),.shared_read_addr(),.shared_write_data(),.shared_read_data(8'd0));
  integer x,y,n;
  task frame;input integer kind;
  begin

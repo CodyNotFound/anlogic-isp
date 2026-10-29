@@ -57,7 +57,7 @@ module tb_model_shift;
  wire ready,inready,ov;wire signed[31:0]acc;wire signed[7:0]value;
  always #5 clk=~clk;
  yunet_dot4 #(.MODEL_SHIFT(1)) dut(.clk(clk),.rst_n(rst),.start(start),.bias(bias),.shift(shift),.relu(1'b0),.ready(ready),
- .in_valid(inv),.in_ready(inready),.in_last(1'b1),.activations(36'd0),.weights(32'd0),.out_valid(ov),.out_ready(1'b1),.accumulator(acc),.value(value));
+ .in_valid(inv),.in_ready(inready),.in_last(1'b1),.activations(36'd0),.weights(32'd0),.out_valid(ov),.out_ready(1'b1),.accumulator(acc),.value(value),.dw_mode(1'b0),.dw_stop(1'b0),.dw_p_valid(),.dw_p0(),.dw_p1(),.dw_p2(),.dw_p3());
  integer s,i,r,checks=0;reg signed[31:0]v;reg signed[7:0]want;
  initial begin
   for(s=0;s<32;s=s+1)for(r=0;r<2;r=r+1)for(i=0;i<1030;i=i+1)begin

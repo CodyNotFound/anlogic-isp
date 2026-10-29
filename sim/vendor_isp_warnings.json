@@ -1,0 +1,37 @@
+{
+  "reason": "ECC error injection is tied to unsized zero in generated RAM wrappers; unused read-port dib is tied to zero with web=0 in line_buffer_demosaic. No production RTL edits.",
+  "files": [
+    {
+      "path": "rtl/hardware/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_zhenghe/RTL/ram_d32970204f32.v",
+      "sha256": "6a06de1aead75b6f73be11b14c1a55df360ab62e90a025eccfb27c964d5129d7",
+      "one_bit_width_ports": [
+        "ecc_sbiterrinj",
+        "ecc_dbiterrinj"
+      ],
+      "wide_data_ports": [],
+      "unconnected_ports": [],
+      "address_width_ports": []
+    },
+    {
+      "path": "rtl/hardware/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_demosaic/RTL/ram_c36c2ca3b3a7.v",
+      "sha256": "5ad4cdc18e946c5e491619405ed9dbcef2fd86df8aeacb0f45ad58e33569bae7",
+      "one_bit_width_ports": [
+        "ecc_sbiterrinj",
+        "ecc_dbiterrinj"
+      ],
+      "wide_data_ports": [],
+      "unconnected_ports": [],
+      "address_width_ports": []
+    },
+    {
+      "path": "rtl/hardware/hdl_source/isp/demosaic_4x_2_0/line_buffer_demosaic.v",
+      "sha256": "8cd115c1b641002656df7f92be0ea650438afb2f31439537b77c9026d98ce808",
+      "one_bit_width_ports": [],
+      "wide_data_ports": [
+        "dib"
+      ],
+      "unconnected_ports": [],
+      "address_width_ports": []
+    }
+  ]
+}

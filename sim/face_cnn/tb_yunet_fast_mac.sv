@@ -3,7 +3,7 @@ module tb_yunet_fast_mac;
  reg clk=0;always #3.333 clk=~clk;
  reg rst=0,start=0,iv=0,last=0,relu=0;reg signed [31:0] bias;reg signed [6:0] shift;
  reg [35:0] act=0;reg [31:0] wt=0;wire ready,ir,ov;wire signed [31:0] acc;wire signed [7:0] value;
- yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) dut(.clk(clk),.rst_n(rst),.start(start),.bias(bias),.shift(shift),.relu(relu),.ready(ready),.in_valid(iv),.in_ready(ir),.in_last(last),.activations(act),.weights(wt),.out_valid(ov),.out_ready(1'b1),.accumulator(acc),.value(value));
+ yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) dut(.clk(clk),.rst_n(rst),.start(start),.bias(bias),.shift(shift),.relu(relu),.ready(ready),.in_valid(iv),.in_ready(ir),.in_last(last),.activations(act),.weights(wt),.out_valid(ov),.out_ready(1'b1),.accumulator(acc),.value(value),.dw_mode(1'b0),.dw_stop(1'b0),.dw_p_valid(),.dw_p0(),.dw_p1(),.dw_p2(),.dw_p3());
  integer seed=20261029,t,n,j,k,stall;reg signed [31:0] expected;reg signed [63:0] wide;reg signed [7:0] expected_value;reg signed [8:0] a;reg signed [7:0] w;
  initial begin
   repeat(5)@(negedge clk);rst=1;

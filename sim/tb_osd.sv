@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-module tb_osd_v73;
+module tb_osd;
  reg connected=1;
  reg clk=0,rst=0,de=0,sof=0,eol=0;always #5 clk=~clk;
  reg[3:0] mode=11,panel=7;reg[1:0] state=1;reg[15:0]ms=16'h0267;
@@ -20,7 +20,7 @@ module tb_osd_v73;
  repeat(5)@(negedge clk);rst=1;force dut.S_fps_d1=6;force dut.S_fps_d0=0;
  for(f=0;f<5;f=f+1)begin
   connected=f!=2;mode=f==0?11:f==1?12:f==2?0:f==3?13:14;panel=f==1?15:7;ms=f==0?16'h0267:f==2?16'h0003:16'h0015;
-  $sformat(name,"../reports/osd_v73/frame%0d.ppm",f);fd=$fopen(name,"wb");$fwrite(fd,"P6\n1280 720\n255\n");n=0;checking=1;
+  $sformat(name,"../build/sim/osd/frame%0d.ppm",f);fd=$fopen(name,"wb");$fwrite(fd,"P6\n1280 720\n255\n");n=0;checking=1;
   for(y=0;y<720;y=y+1)begin
    for(x=0;x<1280;x=x+1)begin de=1;sof=x==0&&y==0;eol=x==1279;@(negedge clk);end
    de=0;sof=0;eol=0;repeat(4)@(negedge clk);
@@ -44,7 +44,7 @@ module tb_osd_v73;
  panel=7;state=1;sof=1;@(negedge clk);sof=0;state=2;
  repeat(10)begin repeat(2)@(negedge clk);sof=1;@(negedge clk);sof=0;if(dut.state_f!=1)$fatal(1,"status flicker");end
  state=1;sof=1;@(negedge clk);sof=0;
- $display("PASS tb_osd_v73 4608000 valid RGB pixels, three native unscaled pixel font layouts, short HOLD rejection");$finish;
+ $display("PASS tb_osd 4608000 valid RGB pixels, three native unscaled pixel font layouts, short HOLD rejection");$finish;
  end
  initial begin #60000000;$fatal(1,"watchdog");end
 endmodule

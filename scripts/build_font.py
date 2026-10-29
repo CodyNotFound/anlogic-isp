@@ -36,12 +36,12 @@ for i,c in enumerate(ASCII+CJK):
 rows+= [0]*(2048-len(rows))
 p=ROOT/'sim/osd_font_rom.hex';p.write_text(''.join(f'{v:04x}\n' for v in rows),encoding='ascii')
 (ROOT/'rtl/hardware/hdl_source/osd_font_rom.mif').write_text('WIDTH=16;\nDEPTH=2048;\nADDRESS_RADIX=HEX;\nDATA_RADIX=HEX;\nCONTENT BEGIN\n'+''.join(f'{i:03X} : {v:04X};\n' for i,v in enumerate(rows))+'END;\n',encoding='ascii')
-report=ROOT/'reports/osd_v71';report.mkdir(parents=True,exist_ok=True);sheet.resize((512,sheet.height*2),Image.Resampling.NEAREST).save(report/'font_atlas.png')
+report=ROOT/'build/font';report.mkdir(parents=True,exist_ok=True);sheet.resize((512,sheet.height*2),Image.Resampling.NEAREST).save(report/'font_atlas.png')
 (report/'font_map.json').write_text(json.dumps(dict(ascii=ASCII,cjk=CJK,codes=CODES,glyphs=len(ASCII)+len(CJK)),ensure_ascii=False,indent=2),encoding='utf-8')
 # Shared production ROM and test ROM use the exact same mapping.
 branches="case(I_char)\n"+''.join(f"   8'h{ord(c):02X}:char_idx=7'd{i};\n" for i,c in enumerate(ASCII))+f"   default:if(I_char>=8'h80&&I_char<=8'h{0x80+len(CJK)-1:02X})char_idx={{1'b0,I_char[6:0]}}+7'd{len(ASCII)};else char_idx=7'd{ASCII.index(' ')};\n  endcase"
 
-for rel in ['rtl/hardware/hdl_source/osd_font_bram.v','sim/osd_rom_sim_models.v','sim/osd_rom_real_models.v']:
+for rel in ['rtl/hardware/hdl_source/osd_font_bram.v','sim/osd_rom_sim_models.v','sim/osd_rom_full_models.v']:
  p=ROOT/rel;s=p.read_text(encoding='utf-8');start=s.index('always @* begin')
  if rel.startswith('rtl/hardware'):
   end=s.index('    // ROM 读地址',start);s=s[:start]+'always @* begin\n  '+branches+'\n end\n\n'+s[end:]
