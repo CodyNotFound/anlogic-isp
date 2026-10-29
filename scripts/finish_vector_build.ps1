@@ -5,6 +5,19 @@ $jobPath=Join-Path $root "build/verification/${RunName}_job.json"
 $deadline=[DateTime]::UtcNow.AddMinutes(90)
 $job=$null
 function Save-Job{[IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))}
+function Read-LiveText([string]$Path){
+ $stream=$null;$reader=$null
+ try{
+  $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+  $reader=[IO.StreamReader]::new($stream)
+  return $reader.ReadToEnd()
+ }catch{
+  if($_.Exception -is [IO.IOException] -or $_.Exception.InnerException -is [IO.IOException]){return $null}
+  throw
+ }finally{
+  if($null -ne $reader){$reader.Dispose()}elseif($null -ne $stream){$stream.Dispose()}
+ }
+}
 try{
  while($true){
   if([DateTime]::UtcNow -gt $deadline){throw 'Timed out waiting for synthesis'}
@@ -27,7 +40,7 @@ try{
   $dualPath=Join-Path $root 'build/dual_clock/completion.json'
   $exact=$false;$dual=$false
   if(Test-Path $fastPath){
-   $log=[IO.File]::ReadAllText($fastPath)
+   $log=(Read-LiveText $fastPath)
    if($log -match '\*\* Fatal:|Errors: [1-9]'){throw 'Full network regression failed'}
    $exact=$log -match 'all 55 operations, 659460 exact activation bytes' -and $log -match 'Errors: 0, Warnings: 0'
   }
@@ -49,12 +62,12 @@ try{
    foreach($entry in @(@('decode_timing','tb_yunet_decode_timing'),@('cartoon_timing','tb_pixel_cartoon_timing'))){
     $testLog=Join-Path $root "build/$($entry[0])/test.log"
     if(!(Test-Path $testLog)){$timingTests=$false;continue}
-    $content=[IO.File]::ReadAllText($testLog)
+    $content=(Read-LiveText $testLog)
     if($content -notmatch ("PASS "+$entry[1]) -or $content -notmatch 'Errors: 0, Warnings: 0'){$timingTests=$false}
    }
   }
   foreach($testLog in @(Get-ChildItem (Join-Path $root 'build/dual_clock') -Filter '*.log' -ErrorAction SilentlyContinue)){
-   if([IO.File]::ReadAllText($testLog.FullName) -match '\*\* Fatal:|Errors: [1-9]'){throw 'Dual clock regression failed'}
+   if((Read-LiveText $testLog.FullName) -match '\*\* Fatal:|Errors: [1-9]'){throw 'Dual clock regression failed'}
   }
   if($exact -and $dual -and $timingTests){break}
   Start-Sleep -Seconds 10
