@@ -8,7 +8,7 @@ $ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot)
 $installedRoot='[LOCAL_PATH]'
 if($ProjectRoot -ne $installedRoot -and -not($ProjectRoot.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $ProjectRoot '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
-$run=Join-Path $ProjectRoot "td_project/$RunName"
+$run=Join-Path $ProjectRoot "build/td/$RunName"
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
 $phy=Join-Path $run 'phy'
 $compile=Join-Path $ProjectRoot 'build/verification'

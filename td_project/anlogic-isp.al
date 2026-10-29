@@ -232,7 +232,7 @@
                     <Attr Name="CompileOrder" Val="67"/>
                 </FileInfo>
             </File>
-            <File Path="../rtl/hardware/hdl_source/osd_font_bram.v">
+            <File Path="../assets/rom/osd_font_bram.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -240,7 +240,7 @@
                     <Attr Name="CompileOrder" Val="68"/>
                 </FileInfo>
             </File>
-            <File Path="../rtl/hardware/hdl_source/logo_rom_bram.v">
+            <File Path="../assets/rom/logo_rom_bram.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>

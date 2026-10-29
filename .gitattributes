@@ -7,7 +7,7 @@
 *.md text eol=lf
 
 # Preserve exact explicit FPGA build inputs, including ROM bytes.
-sim/face_cnn/data/network_reference/*.hex -text -diff
+sim/cnn/data/network_reference/*.hex -text -diff
 rtl/analytics/face_cnn/bias.hex -text
 rtl/analytics/face_cnn/face_video_cnn.v -text
 rtl/analytics/face_cnn/offset.hex -text
@@ -146,3 +146,5 @@ td_project/anlogic-isp.al -text
 
 # Match preserved synthesis inputs exactly after a fresh checkout.
 /rtl/** -text
+
+/assets/** -text

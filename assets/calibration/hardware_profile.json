@@ -1,0 +1,47 @@
+{
+  "bayer": "BGGR",
+  "phase_order": [
+    "G0",
+    "R",
+    "B",
+    "G1"
+  ],
+  "phase_coordinates": {
+    "G0": [
+      0,
+      1
+    ],
+    "R": [
+      1,
+      1
+    ],
+    "B": [
+      0,
+      0
+    ],
+    "G1": [
+      1,
+      0
+    ]
+  },
+  "black_level": 67,
+  "cell_size": [
+    80,
+    60
+  ],
+  "grid_shape": [
+    13,
+    17,
+    4
+  ],
+  "q10_min_max": [
+    761,
+    1063
+  ],
+  "spatial_policy": "geometric mean of two normalized calibration maps, no scene fitting",
+  "tone": "fixed unity-exposure sRGB OETF; unlike Python percentile rendering",
+  "sources": {
+    "daylight_assisted_spatial_grid_float.npy": "79f88593179fbaa594e409aadd7a84a9faa47c6e84bde7873f3bdf28782d3a5f",
+    "indoor_spatial_grid_float.npy": "1f33c593def19e8c1455a77ea2ed43dfa1f82a7ff18c5c44afad0746af3e75c3"
+  }
+}

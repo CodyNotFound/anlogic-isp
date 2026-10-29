@@ -22,7 +22,7 @@ try{
   if($MinRippleLength -ge 0){$buildArguments.MinRippleLength=$MinRippleLength}
   & (Join-Path $root 'scripts/build.ps1') @buildArguments
   if($stage -eq 'Synthesis'){
-   $area=[IO.File]::ReadAllText((Join-Path $root "td_project/$RunName/syn/anlogic-isp_gate.area"))
+   $area=[IO.File]::ReadAllText((Join-Path $root "build/td/$RunName/syn/anlogic-isp_gate.area"))
    foreach($limit in @(@('slice\*?',21216),@('eram',108),@('dsp',40),@('used ram',8112))){
     $m=[regex]::Match($area,('(?m)^\s*#'+$limit[0]+'\s+(\d+)'))
     if(-not $m.Success){throw "Missing resource metric: $($limit[0])"}
@@ -43,7 +43,7 @@ try{
  $job.status='failed';$job.error=$_.Exception.Message
  if([string]::IsNullOrWhiteSpace($job.error)){
   $phaseDir=if($job.stage -eq 'Implementation'){'phy'}else{'syn'}
-  $phaseLog=Join-Path $root ("td_project/$RunName/$phaseDir/"+$job.stage.ToLower()+'.log')
+  $phaseLog=Join-Path $root ("build/td/$RunName/$phaseDir/"+$job.stage.ToLower()+'.log')
   if(Test-Path -LiteralPath $phaseLog){
    $tdErrors=[regex]::Matches([IO.File]::ReadAllText($phaseLog),'(?im)^[^\r\n]*\bERROR:[^\r\n]*')
    if($tdErrors.Count){$job.error=$tdErrors[$tdErrors.Count-1].Value.Trim()}

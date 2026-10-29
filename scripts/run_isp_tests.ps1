@@ -25,7 +25,7 @@ $sources=@(
  "$root/rtl/isp/raw_lsc_grid4.v", "$root/rtl/isp/frame_awb4.v", "$root/rtl/isp/switchable_awb4.v", "$root/rtl/isp/color_tone4.v",
  "$root/rtl/control/vision_demo_cdc.v",
  "$root/rtl/hardware/hdl_source/isp/isp_top.v",
- "$sim/tb_video_in_frame_preamble.v", "$sim/tb_isp_frame_preamble.v"
+ "$sim/video/tb_video_in_frame_preamble.v", "$sim/isp/tb_isp_frame_preamble.v"
 )
 foreach($source in $sources){if(-not(Test-Path -LiteralPath $source)){throw "Missing source: $source"}}
 foreach($top in @('tb_video_in_frame_preamble','tb_isp_frame_preamble')){

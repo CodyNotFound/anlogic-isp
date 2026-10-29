@@ -35,6 +35,7 @@ function Invoke-RtlTest {
  if($Includes -contains 'rtl/analytics/face_cnn'){
   $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'rtl/analytics/face_cnn') -File|Where-Object {$_.Extension -in '.hex','.vh','.lo16','.packed'}|ForEach-Object FullName)
  }
+ $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'assets') -Recurse -File |ForEach-Object FullName)
  $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'sim') -Recurse -File|Where-Object {$_.Extension -in '.hex','.txt','.json','.png' -and $_.Name -notlike 'vendor_*_warnings.json'}|ForEach-Object FullName)
  if($AllowVendorModelWarnings){$inputs+=@('sim/vendor_fifo_warnings.json','sim/vendor_isp_warnings.json')|ForEach-Object {Join-Path $script:SimRoot $_}}
  $snapshot=@($inputs|Sort-Object -Unique|ForEach-Object {[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})
@@ -55,5 +56,5 @@ function Invoke-RtlTest {
  Write-Output "PASS $Name ($Top)"
 }
 function Get-ApplicationSimSources {
- @(Get-ChildItem (Join-Path $script:SimRoot 'rtl') -Recurse -Filter '*.v'|Where-Object {$_.FullName -notmatch '[\\/]rtl[\\/](hardware|vendor)[\\/]'}|ForEach-Object FullName)+@('rtl/hardware/hdl_source/hdmi_mixer.v','sim/osd_rom_sim_models.v')
+ @(Get-ChildItem (Join-Path $script:SimRoot 'rtl') -Recurse -Filter '*.v'|Where-Object {$_.FullName -notmatch '[\\/]rtl[\\/](hardware|vendor)[\\/]'}|ForEach-Object FullName)+@('rtl/hardware/hdl_source/hdmi_mixer.v','sim/osd/osd_rom_sim_models.v')
 }
