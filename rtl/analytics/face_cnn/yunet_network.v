@@ -67,7 +67,18 @@ module yunet_network #(
  function [16:0] feature_index;
  input [16:0] base;input [7:0] yy,xx,width;input [6:0] channel;input [2:0] cs;
  reg [16:0] pixel;
- begin pixel={1'b0,multiply8(yy,width)}+xx;feature_index=base+(pixel<<cs)+channel;end
+ // Export contract: every tensor base is aligned to its power-of-two channel
+ // count and channel is in range. Concatenation replaces a barrel shifter and
+ // two dependent full-width additions without changing any address or cycle.
+ begin pixel={1'b0,multiply8(yy,width)}+xx;
+ case(cs)
+  3'd0:feature_index=base+pixel;
+  3'd2:feature_index={base[16:2]+pixel[14:0],channel[1:0]};
+  3'd4:feature_index={base[16:4]+pixel[12:0],channel[3:0]};
+  3'd5:feature_index={base[16:5]+pixel[11:0],channel[4:0]};
+  3'd6:feature_index={base[16:6]+pixel[10:0],channel[5:0]};
+  default:feature_index=base+(pixel<<cs)+channel;
+ endcase end
  endfunction
  wire signed [9:0] sample_x=$signed({2'b0,ox}<<stride2)+$signed({8'b0,kx})-$signed({9'b0,pad1});
  wire signed [9:0] sample_y=$signed({2'b0,oy}<<stride2)+$signed({8'b0,ky})-$signed({9'b0,pad1});
