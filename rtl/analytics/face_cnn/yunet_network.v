@@ -95,7 +95,8 @@ module yunet_network #(
  // products drain into four network-side accumulators, so the four physical
  // multipliers stay fully occupied without extra DSPs or bank replication.
  reg dw_active,dw_relu_q,dw_stop_q;reg [2:0] co_shift_q;reg [1:0] dw_load_step;reg [2:0] dw_drain;
- reg signed [31:0] dw_bias0,dw_bias1,dw_bias2,dw_bias3,dw_sum0,dw_sum1,dw_sum2,dw_sum3;
+ // check_yunet_dw_bounds.py proves every prefix for the installed ROM.
+ reg signed [17:0] dw_bias0,dw_bias1,dw_bias2,dw_bias3,dw_sum0,dw_sum1,dw_sum2,dw_sum3;
  reg signed [6:0] dw_shift0,dw_shift1,dw_shift2,dw_shift3;
  reg signed [7:0] dw_val0,dw_val1,dw_val2,dw_val3;
  reg [3:0] write_we;reg [7:0] write_data0,write_data1,write_data2,write_data3;
@@ -122,12 +123,13 @@ module yunet_network #(
  reg single_lane,one_beat;reg [6:0] last_channel;
  // Shared two-stage quantizer: select/round, then shift/clip.
  // This breaks the former channel-select -> add -> barrel -> clamp path.
- reg signed [32:0] dw_rounded;
+ reg signed [18:0] dw_rounded;
  reg [4:0] dw_quant_shift_q;
- wire signed [31:0] dw_quant_sum=dw_drain==2?dw_sum0:dw_drain==3?dw_sum1:dw_drain==4?dw_sum2:dw_sum3;
+ wire signed [17:0] dw_quant_sum=dw_drain==2?dw_sum0:dw_drain==3?dw_sum1:dw_drain==4?dw_sum2:dw_sum3;
  wire signed [6:0] dw_quant_shift=dw_drain==2?dw_shift0:dw_drain==3?dw_shift1:dw_drain==4?dw_shift2:dw_shift3;
- wire signed [32:0] dw_rounding=dw_quant_shift==0?33'sd0:(33'sd1<<(dw_quant_shift[4:0]-1'b1));
- wire signed [32:0] dw_shifted=dw_rounded>>>dw_quant_shift_q;
+ // For every signed 18-bit accumulator, a rounded right shift >=18 is zero.
+ wire signed [18:0] dw_rounding=(dw_quant_shift==0||dw_quant_shift>=18)?19'sd0:(19'sd1<<(dw_quant_shift[4:0]-1'b1));
+ wire signed [18:0] dw_shifted=dw_rounded>>>dw_quant_shift_q;
  wire signed [7:0] dw_quant_value=(dw_relu_q&&dw_shifted<0)?8'sd0:dw_shifted>127?8'sd127:dw_shifted< -128?-8'sd128:dw_shifted[7:0];
  wire last_ic=single_lane||dw_active||ic==last_channel;
  wire dw8_done=dw_active?oc+7'd4>=co:pw8_active?oc+7'd2>=co:oc==co-1;
@@ -323,8 +325,8 @@ module yunet_network #(
   end else begin
    done<=0;operation_done<=0;write_pending<=0;write_we<=0;dw_stop_q<=0;
    if(dw_p_valid)begin
-    dw_sum0<=dw_sum0+{{15{dw_p0[16]}},dw_p0};dw_sum1<=dw_sum1+{{15{dw_p1[16]}},dw_p1};
-    dw_sum2<=dw_sum2+{{15{dw_p2[16]}},dw_p2};dw_sum3<=dw_sum3+{{15{dw_p3[16]}},dw_p3};
+    dw_sum0<=dw_sum0+$signed({dw_p0[16],dw_p0});dw_sum1<=dw_sum1+$signed({dw_p1[16],dw_p1});
+    dw_sum2<=dw_sum2+$signed({dw_p2[16],dw_p2});dw_sum3<=dw_sum3+$signed({dw_p3[16],dw_p3});
    end
    if(busy)cycles<=cycles+1'b1;
    if(state==CONV_READ)beat_prefetched<=0;else if(state==CONV_FEED&&dot_in_ready)beat_prefetched<=!last_ic;
@@ -420,8 +422,8 @@ module yunet_network #(
     DW_DRAIN:begin
      if(dw_drain<6)dw_drain<=dw_drain+1'b1;
      if(dw_drain>=2&&dw_drain<=5)begin
-      dw_rounded<=$signed({dw_quant_sum[31],dw_quant_sum})+dw_rounding;
-      dw_quant_shift_q<=dw_quant_shift[4:0];
+      dw_rounded<=dw_quant_shift>=18?19'sd0:$signed({dw_quant_sum[17],dw_quant_sum})+dw_rounding;
+      dw_quant_shift_q<=dw_quant_shift>=18?5'd0:dw_quant_shift[4:0];
      end
      case(dw_drain)
       3:dw_val0<=dw_quant_value;

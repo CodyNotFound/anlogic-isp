@@ -2,6 +2,7 @@
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'));Push-Location $root
 try{
+ & $PythonExe scripts/check_yunet_dw_bounds.py --bits 18;if($LASTEXITCODE){throw 'Depthwise accumulator range proof failed'}
  & $PythonExe scripts/pack_yunet_rom.py --check;if($LASTEXITCODE){throw 'model contract failed'}
  $out=Join-Path $root ('build/'+$OutputName);New-Item -ItemType Directory -Force $out|Out-Null
  $bin='[LOCAL_PATH]';$work=Join-Path $out 'work'

@@ -39,6 +39,8 @@ foreach($line in [IO.File]::ReadAllLines($shiftFile)){
 }
 $packingPython=Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
 if(-not(Test-Path -LiteralPath $packingPython)){$packingPython=(Get-Command python.exe -ErrorAction Stop).Source}
+& $packingPython (Join-Path $projectRoot 'scripts/check_yunet_dw_bounds.py') --root $projectRoot --bits 18
+if($LASTEXITCODE){throw 'Depthwise accumulator range proof failed'}
 & $packingPython (Join-Path $projectRoot 'scripts/pack_yunet_rom.py') --root $projectRoot --check
 if($LASTEXITCODE){throw 'Packed CNN constants stale or incompatible; regenerate after model export.'}
 $sources += $alFile # The active source-set definition is a reproducibility input too.
