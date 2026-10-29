@@ -16,7 +16,7 @@ module yunet_network #(
  localparam IDLE=0,CONFIG_WAIT=1,CONFIG=2,INIT=3,META=4,DOT_START=5,
   CONV_READ=6,CONV_WAIT=7,CONV_FEED=8,CONV_RESULT=9,NEXT_OUTPUT=10,
   MISC_READ=11,MISC_WAIT=12,MISC_EVAL=13,ROW_PREP=14,ROW_READ=15,ROW_WAIT=16,ROW_WRITE=17,
-  PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21;
+  PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21,ROW_SLOT=22,ROW_DECIDE=23;
  reg beat_prefetched;reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="dram" *) reg [7:0] cache0[0:1919];
@@ -76,8 +76,10 @@ module yunet_network #(
  wire [16:0] conv_addr=feature_index(src_base,sample_y[7:0],sample_x[7:0],iw,channel,cshift);
  reg [16:0] conv_pixel_r,misc_pixel_r,fill_pixel_r,pixel_pixel_r,out_pixel_r;
  reg [16:0] conv_base_r,misc_base_r,fill_base_r,pixel_base_r,out_base_r;
+ reg [7:0] misc_y_r,misc_x_r;
  reg [1:0] cache_slot_r;reg [7:0] cache_x_r;reg [2:0] cache_cs_r;reg [12:0] cache_base_r;
  reg [1:0] address_wait;
+ reg signed [9:0] prep_y_q;reg [1:0] prep_slot_q;
  wire [16:0] conv_fast=conv_base_r|{10'd0,channel};
  wire [6:0] next_channel=channel+7'd4;
  wire [16:0] conv_prefetch=conv_base_r|{10'd0,next_channel};
@@ -86,6 +88,9 @@ module yunet_network #(
  wire [16:0] w_offset=depthwise ? (({10'b0,oc}<<3)+oc+tap) :
     (((kernel3?(({10'b0,oc}<<3)+oc):{10'b0,oc})+tap)<<cshift)+ic;
  wire [16:0] conv_weight=weight_base+w_offset;
+ reg [16:0] weight_row_r,weight_scale_r,weight_base_r,tap_scale_r,tap_base_r;
+ wire [6:0] prefetched_ic=ic+7'd4;
+
  wire single_lane=depthwise||ci==1;
  wire last_ic=depthwise||ci==1||ic+7'd4>=ci;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
@@ -136,10 +141,17 @@ module yunet_network #(
  // All stages use ordinary single-cycle timing constraints.
  always @(posedge clk)begin
   conv_pixel_r<={1'b0,multiply8(sample_y[7:0],iw)}+sample_x[7:0];
-  misc_pixel_r<={1'b0,multiply8(misc_y,iw)}+misc_x;
+  misc_y_r<=misc_y;misc_x_r<=misc_x;
+  misc_pixel_r<={1'b0,multiply8(misc_y_r,iw)}+misc_x_r;
   fill_pixel_r<={1'b0,multiply8(fill_y,iw)};
   pixel_pixel_r<={1'b0,multiply8(oy,iw)}+ox;
   out_pixel_r<={1'b0,multiply8(oy,ow)}+ox;
+  weight_row_r<=(depthwise||kernel3)?({10'd0,oc}<<3)+oc:{10'd0,oc};
+  weight_scale_r<=depthwise?weight_row_r:weight_row_r<<cshift;
+  weight_base_r<=weight_base+weight_scale_r;
+  tap_scale_r<=depthwise?{13'd0,tap}:({13'd0,tap}<<cshift);
+  tap_base_r<=weight_base_r+tap_scale_r;
+
   conv_base_r<=src_base+(conv_pixel_r<<cshift);
   misc_base_r<=misc_base+(misc_pixel_r<<cshift);
   fill_base_r<=src_base+(fill_pixel_r<<cshift);
@@ -150,20 +162,20 @@ module yunet_network #(
  end
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)address_wait<=0;
-  else if((state==ROW_READ&&fill_offset==0)||(state==PIXEL_READ&&pixel_offset==0)||state==MISC_READ||(state==CONV_READ&&!beat_prefetched&&!use_pixel))begin
-   if(address_wait!=2)address_wait<=address_wait+1'b1;
+  else if((state==ROW_READ&&fill_offset==0)||(state==PIXEL_READ&&pixel_offset==0)||state==MISC_READ||(state==CONV_READ&&!beat_prefetched))begin
+   if(address_wait!=(state==MISC_READ?2'd3:2'd2))address_wait<=address_wait+1'b1;
   end else address_wait<=0;
  end
  always @(posedge clk)begin
   operand_address<=CHANNEL_PREFETCH&&prefetch_beat&&!in_place?conv_prefetch:calculated_address;
   // 1x1 in-place pixels already have a one-cycle cache read. Prefetch the
   // next four weights when a beat is accepted, avoiding a redundant WAIT.
-  weight_address<=prefetch_beat?conv_weight+17'd4:conv_weight;
+  weight_address<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic});
   instruction<=program_rom[operation_index];bias_q<=unpack_model_bias(bias_base+oc,biases[bias_base+oc]);shift_q<=unpack_model_shift(bias_base+oc,shifts[bias_base+oc]);
   aq0<=fm0[memory_address[15:2]];aq1<=fm1[memory_address[15:2]];aq2<=fm2[memory_address[15:2]];aq3<=fm3[memory_address[15:2]];
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
   // READ captures the address; WAIT reads RAM; FEED consumes its registered data.
-  cache_read_address<=CHANNEL_PREFETCH&&prefetch_beat&&use_row?cache_addr+13'd4:cache_addr;
+  cache_read_address<=padding?13'd0:cache_base_r|{6'd0,((CHANNEL_PREFETCH&&prefetch_beat&&use_row)?next_channel:channel)};
   cq0<=cache0[cache_read_address[12:2]];cq1<=cache1[cache_read_address[12:2]];cq2<=cache2[cache_read_address[12:2]];cq3<=cache3[cache_read_address[12:2]];
   pq0<=pixel0[ic[5:2]];pq1<=pixel1[ic[5:2]];pq2<=pixel2[ic[5:2]];pq3<=pixel3[ic[5:2]];
   if(state==ROW_WRITE)begin cache0[fill_cache_addr[12:2]]<=aq0;cache1[fill_cache_addr[12:2]]<=aq1;cache2[fill_cache_addr[12:2]]<=aq2;cache3[fill_cache_addr[12:2]]<=aq3;end
@@ -191,6 +203,7 @@ module yunet_network #(
  wire [16:0] output_address=out_base_r|{10'd0,oc};
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
+   prep_y_q<=0;prep_slot_q<=0;
    beat_prefetched<=0;state<=IDLE;done<=0;operation_done<=0;operation_index<=0;cycles<=0;
    opcode<=0;src_base<=0;src2_base<=0;dst_base<=0;iw<=0;ih<=0;ow<=0;oh<=0;ci<=0;co<=0;
    kernel3<=0;stride2<=0;pad1<=0;depthwise<=0;relu<=0;input_unsigned<=0;weight_base<=0;bias_base<=0;shift1<=0;shift2<=0;
@@ -220,8 +233,12 @@ module yunet_network #(
     end
     ROW_PREP:begin
      if(prep_row==3)begin row_ready<=1;state<=INIT;end
-     else if(prep_y<0||prep_y>=$signed({2'b0,ih})||(row_valid[prep_slot]&&row_tag[prep_slot]==prep_y[7:0]))prep_row<=prep_row+1'b1;
-     else begin fill_slot<=prep_slot;fill_y<=prep_y[7:0];fill_offset<=0;state<=ROW_READ;end
+     else begin prep_y_q<=prep_y;state<=ROW_SLOT;end
+    end
+    ROW_SLOT:begin prep_slot_q<=modulo3(prep_y_q[7:0]);state<=ROW_DECIDE;end
+    ROW_DECIDE:begin
+     if(prep_y_q<0||prep_y_q>=$signed({2'b0,ih})||(row_valid[prep_slot_q]&&row_tag[prep_slot_q]==prep_y_q[7:0]))begin prep_row<=prep_row+1'b1;state<=ROW_PREP;end
+     else begin fill_slot<=prep_slot_q;fill_y<=prep_y_q[7:0];fill_offset<=0;state<=ROW_READ;end
     end
     ROW_READ:if(fill_offset!=0||address_wait==2)state<=ROW_WAIT;
     ROW_WAIT:state<=ROW_WRITE;
@@ -237,7 +254,7 @@ module yunet_network #(
     end
     META:state<=DOT_START;
     DOT_START:if(dot_ready)state<=CONV_READ;
-    CONV_READ:if(beat_prefetched||use_pixel||address_wait==2)begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=((PIXEL_PREFETCH&&use_pixel)||(CHANNEL_PREFETCH&&beat_prefetched))?CONV_FEED:CONV_WAIT;end
+    CONV_READ:if(beat_prefetched||address_wait==2)begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=((PIXEL_PREFETCH&&use_pixel)||(CHANNEL_PREFETCH&&beat_prefetched))?CONV_FEED:CONV_WAIT;end
     CONV_WAIT:state<=CONV_FEED;
     CONV_FEED:if(dot_in_ready)begin
      if(last_tap)state<=CONV_RESULT;
@@ -248,7 +265,7 @@ module yunet_network #(
      end
     end
     CONV_RESULT:if(dot_valid)begin write_pending<=1;write_address<=output_address;write_data<=dot_value;state<=NEXT_OUTPUT;end
-    MISC_READ:if(address_wait==2)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
+    MISC_READ:if(address_wait==3)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
     MISC_WAIT:state<=MISC_EVAL;
     MISC_EVAL:begin
      if(opcode==2&&misc_step!=3)begin misc_temp<=pool_max;misc_step<=misc_step+1'b1;state<=MISC_READ;end

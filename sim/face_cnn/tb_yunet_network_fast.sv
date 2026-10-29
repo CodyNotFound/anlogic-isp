@@ -26,6 +26,7 @@ module tb_yunet_network_fast;
  always @(posedge clk)begin
   aq_address_trace<=dut.memory_address;wq_address_trace<=dut.weight_address;cq_address_trace<=dut.cache_read_address;
   if(rst)begin
+   if(dut.state==8&&dut.dot_in_ready&&wq_address_trace[15:2]!==dut.conv_weight[15:2])$fatal(1,"weight address mismatch cycle%0d got%0d expected%0d",cycles,wq_address_trace,dut.conv_weight);
    if(dut.state==8 && dut.dot_in_ready && !dut.padding)begin
     if(!dut.use_row&&!dut.use_pixel && aq_address_trace[16:2]!==dut.conv_addr[16:2])$fatal(1,"conv read mismatch cycle%0d got%0d expected%0d",cycles,aq_address_trace,dut.conv_addr);
     if(dut.use_row && cq_address_trace[12:2]!==dut.cache_addr[12:2])$fatal(1,"cache read mismatch cycle%0d",cycles);
