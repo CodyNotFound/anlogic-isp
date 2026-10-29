@@ -20,7 +20,7 @@ module yunet_network #(
   DW_BIAS=24,DW_DRAIN=25,PW_BIAS=26;
  reg beat_prefetched;reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
- (* ram_style="dram" *) reg [7:0] cache0[0:1919];
+ (* ram_style="bram" *) reg [7:0] cache0[0:1919];
  (* ram_style="bram" *) reg [7:0] cache1[0:1919],cache2[0:1919],cache3[0:1919];
  reg [12:0] cache_read_address;reg prefetch_sel_q;
  (* ram_style="dram" *) reg [7:0] pixel0[0:15],pixel1[0:15],pixel2[0:15],pixel3[0:15];
@@ -103,6 +103,12 @@ module yunet_network #(
  // adjacent output channel's weights, read through the weight banks' second
  // port (address = primary + ci, no relayout of the weight ROM).
  reg pw8_active;reg signed [31:0] pw_bias_q;reg signed [6:0] pw_shift_q;reg [10:0] dw_bias_addr,bias_addr_q;
+ // All convolution variants use one metadata read address. The normal MAC
+ // reloads its primary bias in META before DOT_START; DW/PW setup owns this
+ // port only while explicitly loading its additional channels.
+ wire [10:0] metadata_address=(state==DW_BIAS||state==PW_BIAS)?dw_bias_addr:bias_addr_q;
+ wire signed [31:0] metadata_bias=unpack_model_bias(metadata_address,biases[metadata_address]);
+ wire signed [6:0] metadata_shift=unpack_model_shift(metadata_address,shifts[metadata_address]);
  reg [16:0] weight_address2;reg signed [7:0] wq0b,wq1b,wq2b,wq3b;
  wire [3:0] tap=kernel3?({2'b0,ky}<<1)+ky+kx:4'd0;
  // Depthwise ROM words hold [tap][oc]: four adjacent channels of one tap
@@ -114,20 +120,15 @@ module yunet_network #(
  wire [6:0] prefetched_ic=ic+7'd4;
 
  reg single_lane,one_beat;reg [6:0] last_channel;
- function signed [7:0] requant_model_dw;
- input signed [31:0] a;input signed [6:0] s;input r;
- reg signed [32:0] q;
- begin
-  if(s==0) q=$signed({a[31],a});
-  else q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
-  requant_model_dw=(r&&q<0)?8'sd0:q>127?8'sd127:q<-128?-8'sd128:q[7:0];
- end endfunction
- // A single requantizer drains four completed sums in consecutive clocks.
- // Products still use all four DSP lanes in parallel; only the infrequent
- // rounding/shift/clip stage is shared to reduce LUT and routing pressure.
+ // Shared two-stage quantizer: select/round, then shift/clip.
+ // This breaks the former channel-select -> add -> barrel -> clamp path.
+ reg signed [32:0] dw_rounded;
+ reg [4:0] dw_quant_shift_q;
  wire signed [31:0] dw_quant_sum=dw_drain==2?dw_sum0:dw_drain==3?dw_sum1:dw_drain==4?dw_sum2:dw_sum3;
  wire signed [6:0] dw_quant_shift=dw_drain==2?dw_shift0:dw_drain==3?dw_shift1:dw_drain==4?dw_shift2:dw_shift3;
- wire signed [7:0] dw_quant_value=requant_model_dw(dw_quant_sum,dw_quant_shift,dw_relu_q);
+ wire signed [32:0] dw_rounding=dw_quant_shift==0?33'sd0:(33'sd1<<(dw_quant_shift[4:0]-1'b1));
+ wire signed [32:0] dw_shifted=dw_rounded>>>dw_quant_shift_q;
+ wire signed [7:0] dw_quant_value=(dw_relu_q&&dw_shifted<0)?8'sd0:dw_shifted>127?8'sd127:dw_shifted< -128?-8'sd128:dw_shifted[7:0];
  wire last_ic=single_lane||dw_active||ic==last_channel;
  wire dw8_done=dw_active?oc+7'd4>=co:pw8_active?oc+7'd2>=co:oc==co-1;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
@@ -241,7 +242,7 @@ module yunet_network #(
   weight_address<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic});
  weight_address2<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic})+{10'd0,ci};
   instruction<=program_rom[operation_index];bias_addr_q<=bias_base+oc;
- bias_q<=unpack_model_bias(bias_addr_q,biases[bias_addr_q]);shift_q<=unpack_model_shift(bias_addr_q,shifts[bias_addr_q]);
+ bias_q<=metadata_bias;shift_q<=metadata_shift;
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
  wq0b<=wm0[weight_address2[15:2]];wq1b<=wm1[weight_address2[15:2]];wq2b<=wm2[weight_address2[15:2]];wq3b<=wm3[weight_address2[15:2]];
   // READ captures the address; WAIT reads RAM; FEED consumes its registered data.
@@ -315,7 +316,7 @@ module yunet_network #(
    ox<=0;oy<=0;oc<=0;ic<=0;kx<=0;ky<=0;misc_step<=0;cshift<=0;pad_q<=0;a_bank_q<=0;w_bank_q<=0;
    misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_we<=0;
    write_data0<=0;write_data1<=0;write_data2<=0;write_data3<=0;
-   dw_active<=0;dw_relu_q<=0;dw_stop_q<=0;co_shift_q<=0;dw_load_step<=0;dw_drain<=0;
+   dw_active<=0;dw_relu_q<=0;dw_stop_q<=0;co_shift_q<=0;dw_load_step<=0;dw_drain<=0;dw_rounded<=0;dw_quant_shift_q<=0;
    pw8_active<=0;pw_bias_q<=0;pw_shift_q<=0;dw_bias_addr<=0;
    dw_bias0<=0;dw_bias1<=0;dw_bias2<=0;dw_bias3<=0;dw_sum0<=0;dw_sum1<=0;dw_sum2<=0;dw_sum3<=0;
    dw_shift0<=0;dw_shift1<=0;dw_shift2<=0;dw_shift3<=0;dw_val0<=0;dw_val1<=0;dw_val2<=0;dw_val3<=0;
@@ -376,10 +377,10 @@ module yunet_network #(
      // One DRAM port: the address was precomputed at INIT and now just
      // increments, keeping the DRAM->unpack->register path short.
      case(dw_load_step)
-      0:begin dw_bias0<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift0<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
-      1:begin dw_bias1<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift1<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
-      2:begin dw_bias2<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift2<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
-      3:begin dw_bias3<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift3<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
+      0:begin dw_bias0<=metadata_bias;dw_shift0<=metadata_shift;end
+      1:begin dw_bias1<=metadata_bias;dw_shift1<=metadata_shift;end
+      2:begin dw_bias2<=metadata_bias;dw_shift2<=metadata_shift;end
+      3:begin dw_bias3<=metadata_bias;dw_shift3<=metadata_shift;end
      endcase
      dw_bias_addr<=dw_bias_addr+1'b1;
      if(dw_load_step==3)state<=META;else dw_load_step<=dw_load_step+1'b1;
@@ -417,12 +418,16 @@ module yunet_network #(
      end
      state<=NEXT_OUTPUT;end
     DW_DRAIN:begin
-     if(dw_drain<5)dw_drain<=dw_drain+1'b1;
+     if(dw_drain<6)dw_drain<=dw_drain+1'b1;
+     if(dw_drain>=2&&dw_drain<=5)begin
+      dw_rounded<=$signed({dw_quant_sum[31],dw_quant_sum})+dw_rounding;
+      dw_quant_shift_q<=dw_quant_shift[4:0];
+     end
      case(dw_drain)
-      2:dw_val0<=dw_quant_value;
-      3:dw_val1<=dw_quant_value;
-      4:dw_val2<=dw_quant_value;
-      5:begin
+      3:dw_val0<=dw_quant_value;
+      4:dw_val1<=dw_quant_value;
+      5:dw_val2<=dw_quant_value;
+      6:begin
        write_pending<=1;write_we<=4'b1111;write_address<=output_address;
        write_data0<=dw_val0;write_data1<=dw_val1;
        write_data2<=dw_val2;write_data3<=dw_quant_value;
@@ -431,8 +436,8 @@ module yunet_network #(
      endcase
     end
     PW_BIAS:begin
-     pw_bias_q<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);
-     pw_shift_q<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);
+     pw_bias_q<=metadata_bias;
+     pw_shift_q<=metadata_shift;
      state<=META;
     end
     MISC_READ:if(address_wait==3)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
