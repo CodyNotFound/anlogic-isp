@@ -8,7 +8,7 @@ $installedRoot='[LOCAL_PATH]'
 if($root -ne $installedRoot -and -not($root.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
-$jobPath=Join-Path $root "build/verification/${version}_job.json"
+$jobPath=Join-Path $root ".agent/build/verification/${version}_job.json"
 $utf8=[Text.UTF8Encoding]::new($false)
 $job=[ordered]@{status='running';run=$RunName;pid=$PID;started_utc=[DateTime]::UtcNow.ToString('o');stage='Check';completed_utc=$null;error=$null;disable_fsm_inference=[bool]$DisableFsmInference;slice_packing_probe=[bool]$AllowSlicePackingProbe;min_ripple_length=$MinRippleLength}
 function Save-Job{[IO.File]::WriteAllText($jobPath,($job|ConvertTo-Json -Depth 5),$utf8)}
@@ -22,7 +22,7 @@ try{
   if($MinRippleLength -ge 0){$buildArguments.MinRippleLength=$MinRippleLength}
   & (Join-Path $root 'scripts/build.ps1') @buildArguments
   if($stage -eq 'Synthesis'){
-   $area=[IO.File]::ReadAllText((Join-Path $root "build/td/$RunName/syn/anlogic-isp_gate.area"))
+   $area=[IO.File]::ReadAllText((Join-Path $root ".agent/build/td/$RunName/syn/anlogic-isp_gate.area"))
    foreach($limit in @(@('slice\*?',21216),@('eram',108),@('dsp',40),@('used ram',8112))){
     $m=[regex]::Match($area,('(?m)^\s*#'+$limit[0]+'\s+(\d+)'))
     if(-not $m.Success){throw "Missing resource metric: $($limit[0])"}
@@ -36,14 +36,14 @@ try{
  }
  # Deterministic process completion: no model polling while TD is running.
  & (Join-Path $PSScriptRoot 'verify_build.ps1') -TdProcessId 0 -ProjectRoot $root -RunName $RunName
- $report=Get-Content -LiteralPath (Join-Path $root "build/verification/${version}_completion.json") -Raw|ConvertFrom-Json
+ $report=Get-Content -LiteralPath (Join-Path $root ".agent/build/verification/${version}_completion.json") -Raw|ConvertFrom-Json
  $job.status=$report.status
  if($report.status -ne 'passed'){$job.error=$report.errors -join '; '}
 }catch{
  $job.status='failed';$job.error=$_.Exception.Message
  if([string]::IsNullOrWhiteSpace($job.error)){
   $phaseDir=if($job.stage -eq 'Implementation'){'phy'}else{'syn'}
-  $phaseLog=Join-Path $root ("build/td/$RunName/$phaseDir/"+$job.stage.ToLower()+'.log')
+  $phaseLog=Join-Path $root (".agent/build/td/$RunName/$phaseDir/"+$job.stage.ToLower()+'.log')
   if(Test-Path -LiteralPath $phaseLog){
    $tdErrors=[regex]::Matches([IO.File]::ReadAllText($phaseLog),'(?im)^[^\r\n]*\bERROR:[^\r\n]*')
    if($tdErrors.Count){$job.error=$tdErrors[$tdErrors.Count-1].Value.Trim()}

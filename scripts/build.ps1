@@ -13,7 +13,7 @@ if($RouteOnly -and $Stage -ne 'Implementation'){throw 'RouteOnly requires Implem
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if ($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$') { throw 'Invalid isolated run name.' }
 $projectDir = Join-Path $projectRoot 'td_project'
-$runRoot = Join-Path $projectRoot ('build/td/'+$RunName)
+$runRoot = Join-Path $projectRoot ('.agent/build/td/'+$RunName)
 $synDir = Join-Path $runRoot 'syn'
 $phyDir = Join-Path $runRoot 'phy'
 $tdTool = (Get-Command td_commands_prompt.exe -ErrorAction SilentlyContinue).Source
@@ -39,9 +39,9 @@ foreach($line in [IO.File]::ReadAllLines($shiftFile)){
 }
 $packingPython=Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
 if(-not(Test-Path -LiteralPath $packingPython)){$packingPython=(Get-Command python.exe -ErrorAction Stop).Source}
-& $packingPython (Join-Path $projectRoot 'tools/check_yunet_dw_bounds.py') --root $projectRoot --bits 18
+& $packingPython (Join-Path $projectRoot 'scripts/check_yunet_dw_bounds.py') --root $projectRoot --bits 18
 if($LASTEXITCODE){throw 'Depthwise accumulator range proof failed'}
-& $packingPython (Join-Path $projectRoot 'tools/pack_yunet_rom.py') --root $projectRoot --check
+& $packingPython (Join-Path $projectRoot 'scripts/pack_yunet_rom.py') --root $projectRoot --check
 if($LASTEXITCODE){throw 'Packed CNN constants stale or incompatible; regenerate after model export.'}
 $sources += $alFile # The active source-set definition is a reproducibility input too.
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/isp') -Filter 'colorshading_*.vh' | ForEach-Object { $_.FullName }

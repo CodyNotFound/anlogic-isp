@@ -1,50 +1,21 @@
-# Tang Dynasty generated output
-td_project/*_Runs/
+# All reproducible build and simulation output.
+/build/
+/releases/
+/reports/
+/worktrees/
+td_project/*_runs_*/
 td_project/log/
 td_project/*.log
 td_project/*.logw
+td_project/*.dmp
 td_project/.lock.f
 *.jou
 *.wlf
 *.vcd
 *.do
-
-# Local tool state
 *.recent_user_depot.ini
 *.swp
 *.tmp
 Thumbs.db
-
-# Keep empty report directories
-!reports/**/
-!reports/**/.gitkeep
-
-# Isolated Tang Dynasty build runs; bitstreams and reports are archived outside git.
-td_project/anlogic-isp_runs_*/
-# Standalone face detector probes; small verified evidence is in reports/face_lbp.
-td_project/face_lbp_probe_*/
-td_project/object_classifier_probe_*/
-sim/vision_tasks_work/
-releases/
-
-# Generated validation and standalone probes remain outside source history.
-/reports/
-td_project/yunet_probe_*/
-doc/compile/*_job.json
-doc/compile/*_completion.json
-sim/*_work/
-sim/work*/
 **/__pycache__/
-
-# Generated final-build verification output
-/build/
-
-# Historic generated runs remain local only.
-td_project/colorshading_runs_*/
-
-# Current simulation work products
-/sim/**/*.log
-/sim/**/*.wlf
-/sim/**/work/
-/sim/**/work_*/
-/worktrees/
+/.agent/

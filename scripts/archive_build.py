@@ -8,10 +8,10 @@ parser.add_argument('--check-only',action='store_true',help='Validate the retain
 args=parser.parse_args()
 assert re.fullmatch(r'anlogic-isp_runs_[A-Za-z0-9_]+',args.run)
 root=Path(__file__).resolve().parents[1]
-run=root/'build/td'/args.run
+run=root/'.agent/build/td'/args.run
 match=re.search(r'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$',args.run)
 version=args.run
-completion=root/'build/verification'/f'{version}_completion.json'
+completion=root/'.agent/build/verification'/f'{version}_completion.json'
 record=json.loads(completion.read_text(encoding='utf-8-sig'))
 assert record['status']=='passed',record
 for key in ('setup_wns_ns','hold_wns_ns'):assert record[key]>=0
@@ -40,7 +40,7 @@ for source in (bit,run/'source_sha256.txt',completion,run/'phy/anlogic-isp_phy.t
 # Current regression proofs are optional and must match their actual inputs.
 # Stale/failed results never become functional acceptance for a newer build.
 functional=[]
-for proof_path in sorted((root/'build/sim').glob('*/completion.json')):
+for proof_path in sorted((root/'.agent/build/sim').glob('*/completion.json')):
     proof=json.loads(proof_path.read_text(encoding='utf-8-sig'))
     inputs=proof.get('source_sha256',[])
     if proof.get('status')!='passed' or not inputs:

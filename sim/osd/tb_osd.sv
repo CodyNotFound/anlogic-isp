@@ -20,7 +20,7 @@ module tb_osd;
  repeat(5)@(negedge clk);rst=1;force dut.S_fps_d1=6;force dut.S_fps_d0=0;
  for(f=0;f<5;f=f+1)begin
   connected=f!=2;mode=f==0?11:f==1?12:f==2?0:f==3?13:14;panel=f==1?15:7;ms=f==0?16'h0267:f==2?16'h0003:16'h0015;
-  $sformat(name,"build/sim/osd/frame%0d.ppm",f);fd=$fopen(name,"wb");$fwrite(fd,"P6\n1280 720\n255\n");n=0;checking=1;
+  $sformat(name,".agent/build/sim/osd/frame%0d.ppm",f);fd=$fopen(name,"wb");$fwrite(fd,"P6\n1280 720\n255\n");n=0;checking=1;
   for(y=0;y<720;y=y+1)begin
    for(x=0;x<1280;x=x+1)begin de=1;sof=x==0&&y==0;eol=x==1279;@(negedge clk);end
    de=0;sof=0;eol=0;repeat(4)@(negedge clk);

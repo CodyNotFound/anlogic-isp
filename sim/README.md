@@ -22,7 +22,7 @@
 | osd | 实际字体和安路Logo、五帧逐像素参考、云台位置映射及状态稳定 |
 | reliability / gimbal / ddr | I2C时钟使能、AE跨域/复位、零移位、PWM行为、DDR握手/背压 |
 
-所有输出放入 `build/sim/<测试名>/`，每项保留编译日志、仿真日志和输入SHA256。编译要求零错误、零警告，仿真要求零错误和明确PASS；项目自有代码不允许警告。ISP/DDR仅允许 `vendor_fifo_warnings.json`、`vendor_isp_warnings.json` 中按源SHA256、警告编号及端口名核实的厂商FIFO和去马赛克RAM既有告警，原始日志和逐条告警均保留；不使用全局屏蔽。退出码0不足以判定通过。可用 `MODELSIM_BIN` 指定ModelSim目录。
+所有输出放入 `.agent/build/sim/<测试名>/`，每项保留编译日志、仿真日志和输入SHA256。编译要求零错误、零警告，仿真要求零错误和明确PASS；项目自有代码不允许警告。ISP/DDR仅允许 `vendor_fifo_warnings.json`、`vendor_isp_warnings.json` 中按源SHA256、警告编号及端口名核实的厂商FIFO和去马赛克RAM既有告警，原始日志和逐条告警均保留；不使用全局屏蔽。退出码0不足以判定通过。可用 `MODELSIM_BIN` 指定ModelSim目录。
 
 `reference/`是当前逐值验证依赖的独立参考实现，`cnn/data/network_reference/`是原模型参考数据，`osd/reference/`是像素参考。它们不能按“旧文件”删除。头扫描夹具由 `cnn/check_head_offsets.py` 在执行双时钟回归前生成到build目录。
 

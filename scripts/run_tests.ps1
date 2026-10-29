@@ -14,15 +14,15 @@ $inc=@('rtl/analytics/face_cnn')
 Push-Location $root
 try{
  if(@($Tests|Where-Object {$_ -in 'network','cnn-unit','dual-clock','tracking','controls'}).Count){
-  & $PythonExe tools/check_yunet_dw_bounds.py --bits 18;if($LASTEXITCODE){throw 'Accumulator bounds failed'}
-  & $PythonExe tools/pack_yunet_rom.py --check;if($LASTEXITCODE){throw 'Packed model constants mismatch'}
+  & $PythonExe scripts/check_yunet_dw_bounds.py --bits 18;if($LASTEXITCODE){throw 'Accumulator bounds failed'}
+  & $PythonExe scripts/pack_yunet_rom.py --check;if($LASTEXITCODE){throw 'Packed model constants mismatch'}
  }
  if($Tests -contains 'tone'){Invoke-RtlTest -Name tone -Top tb_color_tone_luma -Files @('rtl/isp/color_tone4.v','sim/reference/color_tone4_before_luma.v','sim/isp/tb_color_tone_luma.sv') -Includes @('rtl/isp')}
  if($Tests -contains 'effects'){Invoke-RtlTest -Name effects -Top tb_pixel_cartoon_timing -Files @('rtl/isp/pixel_cartoon.v','sim/reference/pixel_cartoon_timing_ref.v','sim/isp/tb_pixel_cartoon_timing.sv')}
  if($Tests -contains 'osd'){
-  New-Item -ItemType Directory -Force build/sim/osd|Out-Null
+  New-Item -ItemType Directory -Force .agent/build/sim/osd|Out-Null
   Invoke-RtlTest -Name osd -Top tb_osd -Files @('rtl/hardware/hdl_source/hdmi_mixer.v','sim/osd/osd_rom_full_models.v','sim/osd/tb_osd.sv') -Cwd $root
-  & $PythonExe tools/check_osd.py;if($LASTEXITCODE){throw 'OSD pixel references differ'}
+  & $PythonExe scripts/check_osd.py;if($LASTEXITCODE){throw 'OSD pixel references differ'}
  }
  if($Tests -contains 'cnn-unit'){
   foreach($top in @('tb_yunet_rom_unpack','tb_yunet_address_exact','tb_yunet_dw18_quant','tb_yunet_fast_mac','tb_yunet_mac20','tb_yunet_vector_misc')){

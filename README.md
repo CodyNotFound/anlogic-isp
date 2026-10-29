@@ -13,14 +13,11 @@
 | 目录 | 用途 |
 | --- | --- |
 | rtl | 应用、ISP、检测跟踪、OSD 逻辑、厂商接口及 IP |
-| assets | 字模、Logo、ROM 初始化文件与色彩校准数据；ROM 包装器与 MIF 同目录以保持 TD 的文件解析方式 |
-| models | 基础模型及许可证 |
-| training/yunet | 可选训练与导出工具，不参与在线推理，不自动替换最终权重 |
-| tools | 字库、Logo 预览、校准、ROM 打包、结果检查等 Python 工具 |
-| scripts | 构建、时序审核和仿真入口 |
+| assets | 模型及许可证、字模、Logo、ROM 初始化文件与色彩校准数据；ROM 包装器与 MIF 同目录以保持 TD 的文件解析方式 |
+| scripts | 构建、仿真、字库/Logo生成、校准及ROM工具；yunet子目录保留可选训练导出工具 |
 | sim | 按 cnn、isp、osd、control、tracking、video 分组的当前测试及独立参考 |
 | td_project | 仅工程与时序约束 |
-| build | 可重建输出：TD 中间文件、仿真缓存和日志；不入 Git |
+| .agent | 临时监视器与可重建输出：TD 中间文件、仿真缓存和日志；全部不入 Git |
 
 ## 构建与验证
 
@@ -33,7 +30,7 @@
 ./scripts/run_tests.ps1 -Tests all
 ```
 
-TD 输出统一在 `build/td/`，仿真输出在 `build/sim/`；构建记录在 `build/verification/`。通过最终时序、资源、约束和源哈希检查后，用 `python tools/archive_build.py <RunName>` 保存交付到项目外。不能仅凭进程退出码判定通过。`tools/build_font.py`、`tools/export_calibration.py` 会修改综合输入，执行后须重新构建。
+TD 输出统一在 `.agent/build/td/`，仿真输出在 `.agent/build/sim/`；构建记录在 `.agent/build/verification/`。通过最终时序、资源、约束和源哈希检查后，用 `python scripts/archive_build.py <RunName>` 保存交付到项目外。不能仅凭进程退出码判定通过。`scripts/build_font.py`、`scripts/export_calibration.py` 会修改综合输入，执行后须重新构建。
 
 ## 操作
 

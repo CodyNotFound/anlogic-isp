@@ -22,7 +22,7 @@ function Test-KnownVendorWarning([string]$Line){
 function Invoke-RtlTest {
  param([string]$Name,[string]$Top,[string[]]$Files,[string[]]$Includes=@(),[string]$Cwd=$script:SimRoot,[string[]]$ExtraTops=@(),[string[]]$Parameters=@(),[switch]$AllowVendorModelWarnings)
  $ErrorActionPreference='Stop'
- $out=Join-Path $script:SimRoot "build/sim/$Name";$work=Join-Path $out 'work'
+ $out=Join-Path $script:SimRoot ".agent/build/sim/$Name";$work=Join-Path $out 'work'
  New-Item -ItemType Directory -Force $out|Out-Null
  $sources=@($Files|ForEach-Object {if([IO.Path]::IsPathRooted($_)){$_}else{Join-Path $script:SimRoot $_}})
  foreach($source in $sources){if(!(Test-Path -LiteralPath $source)){throw "Missing simulation source: $source"}}
@@ -35,7 +35,7 @@ function Invoke-RtlTest {
  if($Includes -contains 'rtl/analytics/face_cnn'){
   $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'rtl/analytics/face_cnn') -File|Where-Object {$_.Extension -in '.hex','.vh','.lo16','.packed'}|ForEach-Object FullName)
  }
- $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'assets') -Recurse -File |ForEach-Object FullName)
+ $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'assets') -Recurse -File |Where-Object {$_.Extension -in '.hex','.mif','.v','.json','.npy'}|ForEach-Object FullName)
  $inputs+=@(Get-ChildItem (Join-Path $script:SimRoot 'sim') -Recurse -File|Where-Object {$_.Extension -in '.hex','.txt','.json','.png' -and $_.Name -notlike 'vendor_*_warnings.json'}|ForEach-Object FullName)
  if($AllowVendorModelWarnings){$inputs+=@('sim/vendor_fifo_warnings.json','sim/vendor_isp_warnings.json')|ForEach-Object {Join-Path $script:SimRoot $_}}
  $snapshot=@($inputs|Sort-Object -Unique|ForEach-Object {[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})

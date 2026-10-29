@@ -1,6 +1,5 @@
-# Overlay Layer
+# OSD逻辑
 
-`logo_overlay.v` is an always-on display compositor. It uses the official Lab3
-`anlogic_logo_rom.v` asset and sits after pixel algorithms, so the logo remains
-visible in color, binary, grayscale, and Sobel modes. The current placement is
-the active-frame origin, 160x160 pixels, matching Lab3.
+最终显示合成入口是 `rtl/hardware/hdl_source/hdmi_mixer.v`，并使用本目录的状态与云台绘制逻辑。字体、安路Logo及BRAM初始化文件集中在 `assets/`。
+
+本次整理仅搬迁资源和测试文件，没有重绘字体、Logo或修改布局。像素回归位于 `sim/osd/`，通过 `scripts/run_tests.ps1 -Tests osd` 执行。

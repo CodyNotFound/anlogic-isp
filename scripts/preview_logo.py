@@ -5,7 +5,7 @@ from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
 ap = argparse.ArgumentParser(description=__doc__)
-ap.add_argument('--out', type=Path, default=root / 'build/logo.png')
+ap.add_argument('--out', type=Path, default=root / '.agent/build/logo.png')
 args = ap.parse_args()
 indices = [int(v, 16) for v in (root / 'assets/rom/logo_idx.hex').read_text().split()]
 palette = [int(v, 16) for v in (root / 'assets/rom/logo_pal.hex').read_text().split()]

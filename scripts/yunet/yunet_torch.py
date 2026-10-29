@@ -1,4 +1,4 @@
-"""PyTorch replica of the yunet_n graph in models/yunet/face_detection_yunet_2023mar.onnx.
+"""PyTorch replica of the yunet_n graph in assets/models/yunet/yunet.onnx.
 
 Parameters are registered under their exact ONNX initializer names so a trained
 model can be written back into the original graph without touching topology.
@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 
 ROOT = Path(__file__).resolve().parents[2]
-ONNX_PATH = ROOT / 'models/yunet/face_detection_yunet_2023mar.onnx'
+ONNX_PATH = ROOT / 'assets/models/yunet/yunet.onnx'
 STRIDES = (8, 16, 32)
 VISIBLE_H, PAD_H, W, H = 90, 6, 160, 96
 

@@ -6,7 +6,7 @@ import hashlib,json,re
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
 rom=root/'rtl/analytics/face_cnn';ref=root/'sim/cnn/data/network_reference'
-out=root/'build/head_offsets';out.mkdir(parents=True,exist_ok=True)
+out=root/'.agent/build/head_offsets';out.mkdir(parents=True,exist_ok=True)
 mem=[0]*65536
 for i,line in enumerate((ref/'op_checks.txt').read_text().splitlines()):
  base,count=map(int,line.split());values=[int(v,16) for v in (ref/f'op_{i:02d}.hex').read_text().split()]
