@@ -46,6 +46,7 @@ module design_top_wrapper (
 );
 
     wire        hdmi_pixel_clk;
+    wire        cnn_core_clk;
     wire        hdmi_rst_n;
     wire        hdmi_vsync;
     wire        hdmi_hsync;
@@ -77,7 +78,7 @@ module design_top_wrapper (
         .I_button(I_button), .O_screen_pwm(O_screen_pwm),
         .O_tmds_ch0_p(O_tmds_ch0_p), .O_tmds_ch1_p(O_tmds_ch1_p),
         .O_tmds_ch2_p(O_tmds_ch2_p), .O_tmds_clk_p(O_tmds_clk_p),
-        .O_hdmi_pixel_clk(hdmi_pixel_clk), .O_hdmi_rst_n(hdmi_rst_n),
+        .O_cnn_core_clk(cnn_core_clk),.O_hdmi_pixel_clk(hdmi_pixel_clk), .O_hdmi_rst_n(hdmi_rst_n),
         .O_hdmi_vsync(hdmi_vsync), .O_hdmi_hsync(hdmi_hsync),
         .O_hdmi_de(hdmi_de), .O_hdmi_sof(hdmi_sof), .O_hdmi_eol(hdmi_eol),
         .O_hdmi_debug_status(hdmi_debug_status),
@@ -96,7 +97,8 @@ module design_top_wrapper (
     // Application layer: mode control, pixel algorithms, Logo, and HDMI
     // composition. It runs in the platform-provided HDMI pixel clock domain.
     // v45 isolated candidate: compile the actual CNN replacement, not both cores.
-    vision_pipeline #(.FACE_CNN_ENABLE(1),.ENABLE_HMI(0)) u_vision_pipeline (
+    vision_pipeline #(.FACE_CNN_ENABLE(1),.FACE_CORE_CLK_X2(1),.ENABLE_HMI(0)) u_vision_pipeline (
+        .cnn_core_clk(cnn_core_clk),
         .clk             (hdmi_pixel_clk),
         .rst_n           (hdmi_rst_n),
         .switches_n      (I_switch),

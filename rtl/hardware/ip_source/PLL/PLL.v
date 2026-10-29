@@ -24,6 +24,7 @@ module PLL
   input                         refclk,
   output                        clk0_out,
   output                        clk1_out,
+  output                        clk2_out,
   output                        clk4_out,
   output                        clk5_out,
   output                        lock,
@@ -63,6 +64,13 @@ PH1P_LOGIC_BUFG bufg_feedback (
       .CLKC1_FPHASE_RSTSEL(0),
       .CLKC1_DUTY50("ENABLE"),
       .CLKC1_DUTY_INT(32),
+      .CLKC2_ENABLE("ENABLE"),
+      .CLKC2_DIV(10),
+      .CLKC2_CPHASE(9),
+      .CLKC2_FPHASE(0),
+      .CLKC2_FPHASE_RSTSEL(0),
+      .CLKC2_DUTY50("ENABLE"),
+      .CLKC2_DUTY_INT(5),
       .CLKC4_ENABLE("ENABLE"),
       .CLKC4_DIV(20),
       .CLKC4_CPHASE(19),
@@ -93,8 +101,8 @@ PH1P_LOGIC_BUFG bufg_feedback (
       .DYN_CPHASE_EN("DISABLE")
   )ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst
   (
-      .clk2_en(1'b0),
-      .clk2_out(),
+      .clk2_en(1'b1),
+      .clk2_out(clk2_out),
       .clkb2_out(),
       .clk3_en(1'b0),
       .clk3_out(),

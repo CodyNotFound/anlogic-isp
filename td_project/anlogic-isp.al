@@ -720,6 +720,7 @@
                     <Attr Name="CompileOrder" Val="94"/>
                 </FileInfo>
             </File>
+            <File Path="../rtl/analytics/face_cnn/yunet_clock_bridge.v"><FileInfo><Attr Name="UsedInSyn" Val="true"/><Attr Name="BelongTo" Val="design_1"/><Attr Name="CompileOrder" Val="0"/></FileInfo></File>
             <File Path="../rtl/analytics/face_cnn/yunet_network.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

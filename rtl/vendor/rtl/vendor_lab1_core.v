@@ -26,6 +26,7 @@ module vendor_lab1_core (
     // HDMI pixel-domain platform boundary. The application layer owns the
     // processing between these signals and the returned HDMI stream.
     output wire       O_hdmi_pixel_clk,
+    output wire       O_cnn_core_clk,
     output wire       O_hdmi_rst_n,
     output wire       O_hdmi_vsync,
     output wire       O_hdmi_hsync,
@@ -543,6 +544,7 @@ module vendor_lab1_core (
         
         .clk0_out    ( S_100m_clk        ),
         .clk1_out    ( S_24m_clk         ),
+        .clk2_out    ( O_cnn_core_clk    ),
 
         .clk4_out    ( S_hdmi_pixel_clk  ),
         .clk5_out    ( S_hdmi_serial_clk ),

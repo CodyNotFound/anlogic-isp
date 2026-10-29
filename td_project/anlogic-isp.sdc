@@ -4,6 +4,7 @@ create_clock -name {mipi_rx_ck_pad} -period 4.167 -waveform {0.000 2.083} [get_n
 derive_clocks
 
 rename_clock -name {pll_clk_100m} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[0]}]
+rename_clock -name {CNN_CORE_CLK} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[2]}]
 rename_clock -name {pll_clk_24m} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[1]}]
 rename_clock -name {HDMI_PIXEL_CLK} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[4]}]
 rename_clock -name {HDMI_SERIAL_CLK} [get_clocks {u_vendor_pipeline/u_PLL/ph1p_phy_pll_wrapper_25a56e5ce2f9_Inst/u_PH1P_PHY_PLL.clkc[5]}]

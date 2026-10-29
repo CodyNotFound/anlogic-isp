@@ -2,13 +2,13 @@
 // All inference and output decoding execute in RTL. No host decision is used.
 // A camera adapter may load while ready; start only after all 61,440 bytes.
 module yunet_position_snapshot #(
- parameter integer SHARED_TRACK_FRAME=0,
+ parameter integer SHARED_TRACK_FRAME=0,CORE_CLK_X2=0,
  parameter PROGRAM_FILE="rtl/analytics/face_cnn/program.hex",
  parameter W0_FILE="rtl/analytics/face_cnn/weights0.hex",W1_FILE="rtl/analytics/face_cnn/weights1.hex",
  parameter W2_FILE="rtl/analytics/face_cnn/weights2.hex",W3_FILE="rtl/analytics/face_cnn/weights3.hex",
  parameter BIAS_FILE="rtl/analytics/face_cnn/bias.hex",SHIFT_FILE="rtl/analytics/face_cnn/shift.hex",
  parameter SIGMOID_FILE="rtl/analytics/face_cnn/sigmoid.hex",OFFSET_FILE="rtl/analytics/face_cnn/offset.hex",SIZE_FILE="rtl/analytics/face_cnn/size.hex"
-)(input wire clk,rst_n,start,load_valid,input wire [16:0] load_address,input wire [7:0] load_data,
+)(input wire clk,core_clk,rst_n,start,load_valid,input wire [16:0] load_address,input wire [7:0] load_data,
  output wire ready,busy,output reg result_valid,found,
  output reg [11:0] box_x,box_y,box_size,center_x,center_y,
  output reg [13:0] score_product,output wire [31:0] cycles,
@@ -23,9 +23,21 @@ module yunet_position_snapshot #(
  assign ready=state==IDLE;assign busy=state!=IDLE;
  assign external_read_data=data;
  wire [16:0] selected_address=SHARED_TRACK_FRAME&&external_read_enable?external_read_address:address;
- yunet_network #(.PROGRAM_FILE(PROGRAM_FILE),.W0_FILE(W0_FILE),.W1_FILE(W1_FILE),.W2_FILE(W2_FILE),.W3_FILE(W3_FILE),.BIAS_FILE(BIAS_FILE),.SHIFT_FILE(SHIFT_FILE)) network(
-  .clk(clk),.rst_n(rst_n),.start(start&&ready),.load_valid(load_valid&&ready),.load_address(load_address),.load_data(load_data),
-  .read_address(selected_address),.read_data(data),.busy(nn_busy),.done(nn_done),.operation_done(nn_op_done),.operation_index(nn_op),.cycles(cycles),.read_word(external_read_word));
+ wire compute_clk=CORE_CLK_X2?core_clk:clk;
+ wire compute_rst,compute_start,compute_done;wire [31:0] compute_cycles;
+ generate if(CORE_CLK_X2)begin:g_clock_bridge
+  wire pending;wire [31:0] io_cycles;
+  yunet_clock_bridge bridge(.io_clk(clk),.core_clk(core_clk),.rst_n(rst_n),
+   .io_start(start&&ready),.core_ready(!nn_busy),.core_done(compute_done),.core_cycles(compute_cycles),
+   .core_rst_n(compute_rst),.core_start(compute_start),.io_done(nn_done),.io_pending(pending),.io_cycles(io_cycles));
+  // Existing latency telemetry counts 75MHz video-domain ticks.
+  assign cycles=io_cycles>>1;
+ end else begin:g_same_clock
+  assign compute_rst=rst_n;assign compute_start=start&&ready;assign nn_done=compute_done;assign cycles=compute_cycles;
+ end endgenerate
+ yunet_network #(.DUAL_CLOCK(CORE_CLK_X2),.PROGRAM_FILE(PROGRAM_FILE),.W0_FILE(W0_FILE),.W1_FILE(W1_FILE),.W2_FILE(W2_FILE),.W3_FILE(W3_FILE),.BIAS_FILE(BIAS_FILE),.SHIFT_FILE(SHIFT_FILE)) network(
+  .clk(compute_clk),.io_clk(clk),.rst_n(compute_rst),.start(compute_start),.load_valid(load_valid&&ready),.load_address(load_address),.load_data(load_data),
+  .read_address(selected_address),.read_data(data),.busy(nn_busy),.done(compute_done),.operation_done(nn_op_done),.operation_index(nn_op),.cycles(compute_cycles),.read_word(external_read_word));
  yunet_decode #(.SIGMOID_FILE(SIGMOID_FILE),.OFFSET_FILE(OFFSET_FILE),.SIZE_FILE(SIZE_FILE)) decoder(
   .clk(clk),.rst_n(rst_n),.frame_start(state==FRAME),.in_valid(state==SEND),.in_last(last_anchor),.level(level),.grid_x(gx),.grid_y(gy),
   .cls(cls),.obj(obj),.bx(bx),.by(by),.bw(bw),.bh(bh),.result_valid(decoded),.found(decode_found),.score_product(decode_score),

@@ -9,6 +9,7 @@ module vision_pipeline #(
     parameter integer ENABLE_EDGE = `VISION_ENABLE_EDGE,
     parameter integer ENABLE_OSD = `VISION_ENABLE_OSD,
     parameter integer FACE_CNN_ENABLE = 0,
+    parameter integer FACE_CORE_CLK_X2 = 0,
     parameter integer FACE_MOTION_ENABLE = 1,
     parameter integer ENABLE_HMI = 0,
     parameter integer DEBUG_MODE = `VISION_DEBUG_MODE,
@@ -19,6 +20,7 @@ module vision_pipeline #(
     parameter FACE_GEOMETRY_FILE="human_geometry.hex"
 )(
     input  wire        clk,
+    input  wire        cnn_core_clk,
     input  wire        rst_n,
     input  wire [3:0]  switches_n,
     input  wire [3:0]  buttons_n,        // K1..K4 active-low
@@ -341,8 +343,8 @@ module vision_pipeline #(
         .box_x(lbp_x),.box_y(lbp_y),.box_size(lbp_size),.center_x(lbp_cx),.center_y(lbp_cy),
         .busy(),.stream_error(),.timeout_error(),.accepted_frames(),.completed_frames());
     generate if(FACE_CNN_ENABLE)begin: cnn_mode
-        face_video_cnn #(.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.SHARED_TRACK_FRAME(1)) u_cnn(
-            .clk(clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
+        face_video_cnn #(.CORE_CLK_X2(FACE_CORE_CLK_X2),.WIDTH(IMG_WIDTH),.HEIGHT(IMG_HEIGHT),.SHARED_TRACK_FRAME(1)) u_cnn(
+            .clk(clk),.core_clk(cnn_core_clk),.rst_n(rst_n),.enable(face_enable),.sof(video_sof),.eol(video_eol),.de(video_de),.rgb(pixel_in),
             .position_valid(raw_face_valid),.found(raw_face_found),.box_x(raw_face_x),.box_y(raw_face_y),.box_size(raw_face_size),
             .center_x(raw_face_cx),.center_y(raw_face_cy),.busy(),.stream_error(),.completed_frames(),
             .shared_enable(ENABLE_PIPELINE&&!demo_active&&(mode==12||mode==13||mode==14)),.shared_write_en(shared_track_write),
