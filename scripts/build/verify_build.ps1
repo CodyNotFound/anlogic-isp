@@ -1,12 +1,13 @@
 ﻿param(
  [Parameter(Mandatory=$true)][int]$TdProcessId,
- [string]$ProjectRoot='[LOCAL_PATH]',
+ [string]$ProjectRoot='',
  [string]$RunName=('anlogic-isp_runs_'+(Get-Date -Format 'yyyyMMdd_HHmmss'))
 )
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../common/environment.ps1')
+
+if(!$ProjectRoot){$ProjectRoot=Get-RepositoryRoot}
 $ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot)
-$installedRoot='[LOCAL_PATH]'
-if($ProjectRoot -ne $installedRoot -and -not($ProjectRoot.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $ProjectRoot '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
 if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $run=Join-Path $ProjectRoot ".agent/build/td/$RunName"
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
@@ -43,7 +44,7 @@ try{
  if(Test-Path -LiteralPath $routeDb){
   $auditDir=Join-Path $phy 'sta_audit'
   New-Item -ItemType Directory -Force $auditDir | Out-Null
-  $helper=(Join-Path $ProjectRoot 'scripts/report_sta.tcl').Replace('\','/')
+  $helper=(Join-Path $ProjectRoot 'scripts/build/report_sta.tcl').Replace('\','/')
   $auditScript="set route_db {$($routeDb.Replace('\','/'))}`nset audit_dir {$($auditDir.Replace('\','/'))}`nif {[catch {source {$helper}} message]} {puts stderr `$message;exit 1}`nexit 0`n"
   $auditTcl=Join-Path $auditDir 'audit.tcl'
   [IO.File]::WriteAllText($auditTcl,$auditScript,$utf8)

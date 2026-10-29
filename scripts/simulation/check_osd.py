@@ -2,7 +2,7 @@
 from pathlib import Path
 from PIL import Image,ImageChops
 import json,hashlib
-root=Path(__file__).resolve().parents[1]
+root=Path(__file__).resolve().parents[2]
 records=[]
 for i in range(5):
     actual_path=root/f'.agent/build/sim/osd/frame{i}.ppm'

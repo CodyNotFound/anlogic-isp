@@ -1,6 +1,8 @@
 ﻿param(
-    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$ProjectRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 )
+
+. (Join-Path $PSScriptRoot '../common/environment.ps1')
 
 $al = Join-Path $ProjectRoot 'td_project\anlogic-isp.al'
 $sdc = Join-Path $ProjectRoot 'td_project\anlogic-isp.sdc'

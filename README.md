@@ -24,13 +24,13 @@
 使用 TD 6.2.168116、ModelSim Altera 10.3c 和 Windows PowerShell 5.1。Python 工具按需使用 numpy、Pillow。
 
 ```powershell
-./scripts/check_project.ps1
+./scripts/build/check_project.ps1
 ./scripts/build_verified.ps1 -DisableFsmInference -AllowSlicePackingProbe -MinRippleLength 24
 ./scripts/run_tests.ps1 -List
 ./scripts/run_tests.ps1 -Tests all
 ```
 
-TD 输出统一在 `.agent/build/td/`，仿真输出在 `.agent/build/sim/`；构建记录在 `.agent/build/verification/`。通过最终时序、资源、约束和源哈希检查后，用 `python scripts/archive_build.py <RunName>` 保存交付到项目外。不能仅凭进程退出码判定通过。`scripts/build_font.py`、`scripts/export_calibration.py` 会修改综合输入，执行后须重新构建。
+TD 输出统一在 `.agent/build/td/`，仿真输出在 `.agent/build/sim/`；构建记录在 `.agent/build/verification/`。通过最终时序、资源、约束和源哈希检查后，用 `python scripts/build/archive_build.py <RunName>` 保存交付到项目外。不能仅凭进程退出码判定通过。`scripts/resources/build_font.py`、`scripts/calibration/export_calibration.py` 会修改综合输入，执行后须重新构建。
 
 ## 操作
 

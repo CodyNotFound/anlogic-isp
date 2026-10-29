@@ -56,7 +56,7 @@ def prove(root, bits, mac_bits=20):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--bits', type=int, default=18)
     parser.add_argument('--mac-bits', type=int, default=20)
     parser.add_argument('--out', type=Path)

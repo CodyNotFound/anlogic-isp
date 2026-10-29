@@ -1,9 +1,10 @@
-﻿# Shared ModelSim invocation; each test has isolated output and source hashes.
-$script:SimRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+﻿. (Join-Path $PSScriptRoot '../common/environment.ps1')
+# Shared ModelSim invocation; each test has isolated output and source hashes.
+$script:SimRoot=(Get-RepositoryRoot)
 $script:SimBin=$env:MODELSIM_BIN
 if(!$script:SimBin){
  $vlog=Get-Command vlog.exe -ErrorAction SilentlyContinue
- if($vlog){$script:SimBin=Split-Path $vlog.Source}else{$script:SimBin='[LOCAL_PATH]'}
+ if($vlog){$script:SimBin=Split-Path $vlog.Source}else{throw 'ModelSim unavailable. Add it to PATH or set MODELSIM_BIN.'}
 }
 function Test-KnownVendorWarning([string]$Line){
  $rules=@(Get-Content (Join-Path $script:SimRoot 'sim/vendor_fifo_warnings.json') -Raw|ConvertFrom-Json)+@(Get-Content (Join-Path $script:SimRoot 'sim/vendor_isp_warnings.json') -Raw|ConvertFrom-Json)
@@ -22,6 +23,7 @@ function Test-KnownVendorWarning([string]$Line){
 function Invoke-RtlTest {
  param([string]$Name,[string]$Top,[string[]]$Files,[string[]]$Includes=@(),[string]$Cwd=$script:SimRoot,[string[]]$ExtraTops=@(),[string[]]$Parameters=@(),[switch]$AllowVendorModelWarnings)
  $ErrorActionPreference='Stop'
+
  $out=Join-Path $script:SimRoot ".agent/build/sim/$Name";$work=Join-Path $out 'work'
  New-Item -ItemType Directory -Force $out|Out-Null
  $sources=@($Files|ForEach-Object {if([IO.Path]::IsPathRooted($_)){$_}else{Join-Path $script:SimRoot $_}})

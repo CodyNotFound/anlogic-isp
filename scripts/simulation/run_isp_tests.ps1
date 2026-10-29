@@ -1,7 +1,9 @@
 ﻿param([string]$PlatformRoot='', [switch]$FullFrame)
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot 'sim_common.ps1')
-$root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $PSScriptRoot '../common/environment.ps1')
+
+. (Join-Path (Get-RepositoryRoot) 'scripts/simulation/sim_common.ps1')
+$root=(Get-RepositoryRoot)
 if(-not $PlatformRoot){$PlatformRoot=$root}
 $PlatformRoot=[IO.Path]::GetFullPath($PlatformRoot)
 $sim=Join-Path $root 'sim'

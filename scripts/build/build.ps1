@@ -9,8 +9,10 @@
   [switch]$RouteOnly
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../common/environment.ps1')
+
 if($RouteOnly -and $Stage -ne 'Implementation'){throw 'RouteOnly requires Implementation'}
-$projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$projectRoot = (Get-RepositoryRoot)
 if ($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$') { throw 'Invalid isolated run name.' }
 $projectDir = Join-Path $projectRoot 'td_project'
 $runRoot = Join-Path $projectRoot ('.agent/build/td/'+$RunName)
@@ -37,11 +39,10 @@ $shiftFile=Join-Path $projectRoot 'rtl/analytics/face_cnn/shift.hex'
 foreach($line in [IO.File]::ReadAllLines($shiftFile)){
  if($line.Trim() -and [Convert]::ToInt32($line.Trim(),16) -gt 31){throw 'MODEL_SHIFT must be in 0..31; re-export or extend RTL explicitly.'}
 }
-$packingPython=Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
-if(-not(Test-Path -LiteralPath $packingPython)){$packingPython=(Get-Command python.exe -ErrorAction Stop).Source}
-& $packingPython (Join-Path $projectRoot 'scripts/check_yunet_dw_bounds.py') --root $projectRoot --bits 18
+$packingPython=Get-ProjectPython
+& $packingPython (Join-Path $projectRoot 'scripts/cnn/check_yunet_dw_bounds.py') --root $projectRoot --bits 18
 if($LASTEXITCODE){throw 'Depthwise accumulator range proof failed'}
-& $packingPython (Join-Path $projectRoot 'scripts/pack_yunet_rom.py') --root $projectRoot --check
+& $packingPython (Join-Path $projectRoot 'scripts/cnn/pack_yunet_rom.py') --root $projectRoot --check
 if($LASTEXITCODE){throw 'Packed CNN constants stale or incompatible; regenerate after model export.'}
 $sources += $alFile # The active source-set definition is a reproducibility input too.
 $sources += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'rtl/isp') -Filter 'colorshading_*.vh' | ForEach-Object { $_.FullName }

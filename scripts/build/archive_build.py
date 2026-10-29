@@ -7,7 +7,7 @@ parser.add_argument('run',help='isolated anlogic-isp_runs_* directory name')
 parser.add_argument('--check-only',action='store_true',help='Validate the retained build without creating an archive')
 args=parser.parse_args()
 assert re.fullmatch(r'anlogic-isp_runs_[A-Za-z0-9_]+',args.run)
-root=Path(__file__).resolve().parents[1]
+root=Path(__file__).resolve().parents[2]
 run=root/'.agent/build/td'/args.run
 match=re.search(r'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$',args.run)
 version=args.run

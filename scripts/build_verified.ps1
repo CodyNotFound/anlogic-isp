@@ -3,9 +3,9 @@
 [switch]$AllowSlicePackingProbe,
 [int]$MinRippleLength=-1)
 $ErrorActionPreference='Stop'
-$root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$installedRoot='[LOCAL_PATH]'
-if($root -ne $installedRoot -and -not($root.StartsWith(($installedRoot+'\worktrees\'),[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Leaf))){throw 'Unexpected project/worktree root'}
+. (Join-Path $PSScriptRoot 'common/environment.ps1')
+
+$root=(Get-RepositoryRoot)
 if($RunName -notmatch '^anlogic-isp_runs_[A-Za-z0-9_]+$'){throw 'Invalid run name'}
 $match=[regex]::Match($RunName,'_(v[0-9]+(?:_[A-Za-z0-9_]+)?)$');$version=$RunName
 $jobPath=Join-Path $root ".agent/build/verification/${version}_job.json"
@@ -20,7 +20,7 @@ try{
   $buildArguments=@{Stage=$stage;RunName=$RunName;AllowGateTimingExploration=$true}
   if($DisableFsmInference){$buildArguments.DisableFsmInference=$true}
   if($MinRippleLength -ge 0){$buildArguments.MinRippleLength=$MinRippleLength}
-  & (Join-Path $root 'scripts/build.ps1') @buildArguments
+  & (Join-Path $root 'scripts/build/build.ps1') @buildArguments
   if($stage -eq 'Synthesis'){
    $area=[IO.File]::ReadAllText((Join-Path $root ".agent/build/td/$RunName/syn/anlogic-isp_gate.area"))
    foreach($limit in @(@('slice\*?',21216),@('eram',108),@('dsp',40),@('used ram',8112))){
@@ -35,7 +35,7 @@ try{
   }
  }
  # Deterministic process completion: no model polling while TD is running.
- & (Join-Path $PSScriptRoot 'verify_build.ps1') -TdProcessId 0 -ProjectRoot $root -RunName $RunName
+ & (Join-Path (Get-RepositoryRoot) 'scripts/build/verify_build.ps1') -TdProcessId 0 -ProjectRoot $root -RunName $RunName
  $report=Get-Content -LiteralPath (Join-Path $root ".agent/build/verification/${version}_completion.json") -Raw|ConvertFrom-Json
  $job.status=$report.status
  if($report.status -ne 'passed'){$job.error=$report.errors -join '; '}
@@ -52,6 +52,6 @@ try{
  }
 }finally{
  $job.completed_utc=[DateTime]::UtcNow.ToString('o');Save-Job
- # Keep v*_job.json in colorshading; obsolete stage sync disabled.
+ # Keep detailed stage evidence in ignored output.
 }
 if($job.status -ne 'passed'){throw "Build failed: $($job.error)"}

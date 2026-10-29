@@ -58,13 +58,13 @@ def generate(root):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[1]);ap.add_argument('--check',action='store_true')
+    ap.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[2]);ap.add_argument('--check',action='store_true')
     a=ap.parse_args();folder,files,report=generate(a.root)
     if a.check:
         for name,data in files.items():
             p=folder/name
             if not p.is_file() or p.read_bytes()!=data.encode('ascii'):
-                raise SystemExit('Stale packed model: run scripts/pack_yunet_rom.py: '+str(p))
+                raise SystemExit('Stale packed model: run scripts/cnn/pack_yunet_rom.py: '+str(p))
     else:
         for name,data in files.items():(folder/name).write_bytes(data.encode('ascii'))
     print(json.dumps(dict(status='checked' if a.check else 'generated',**report)))

@@ -3,7 +3,7 @@ from pathlib import Path
 import argparse
 from PIL import Image
 
-root = Path(__file__).resolve().parents[1]
+root = Path(__file__).resolve().parents[2]
 ap = argparse.ArgumentParser(description=__doc__)
 ap.add_argument('--out', type=Path, default=root / '.agent/build/logo.png')
 args = ap.parse_args()

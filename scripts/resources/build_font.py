@@ -3,7 +3,7 @@ from pathlib import Path
 import json,sys,hashlib
 # Requires Pillow; no external project dependency.
 from PIL import Image,ImageDraw,ImageFont
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 MODES=['色彩还原','灰度','反色','二值','增亮','锐化','模糊','边缘','浮雕','卡通','换色','人脸','模板','均衡','色区','运动']
 TEXTS=['安路模式原图','等待','跟踪中','目标丢失','手动控制','自动关闭','等待选取','正在取样','重新选取','运动检测','光照变化','云台移动','建立背景','暂无运动','SW4手动开','SW4手动关','SW3跟随开','SW3跟随关','SW2曝光自','SW2曝光锁','SW1白平衡自','SW1白平衡锁','K4向左','K3向下','K2向上','K1向右','K4重置','K4选取','K4无','K3无','K2上一项','K1下一项']
 ASCII='0123456789ABCDEFGHIMNOPRSTVWXY:-. ms'
