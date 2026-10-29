@@ -22,7 +22,7 @@ module yunet_network #(
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="dram" *) reg [7:0] cache0[0:1919];
  (* ram_style="bram" *) reg [7:0] cache1[0:1919],cache2[0:1919],cache3[0:1919];
- reg [12:0] cache_read_address;
+ reg [12:0] cache_read_address;reg prefetch_sel_q;
  (* ram_style="dram" *) reg [7:0] pixel0[0:15],pixel1[0:15],pixel2[0:15],pixel3[0:15];
  reg [7:0] cq0,cq1,cq2,cq3,pq0,pq1,pq2,pq3;
  (* ram_style="bram" *) reg signed [7:0] wm0[0:WEIGHT_DEPTH-1],wm1[0:WEIGHT_DEPTH-1],wm2[0:WEIGHT_DEPTH-1],wm3[0:WEIGHT_DEPTH-1];
@@ -97,7 +97,7 @@ module yunet_network #(
  // Pointwise pairs: a second MAC consumes the same activations against the
  // adjacent output channel's weights, read through the weight banks' second
  // port (address = primary + ci, no relayout of the weight ROM).
- reg pw8_active;reg signed [31:0] pw_bias_q;reg signed [6:0] pw_shift_q;
+ reg pw8_active;reg signed [31:0] pw_bias_q;reg signed [6:0] pw_shift_q;reg [10:0] dw_bias_addr,bias_addr_q;
  reg [16:0] weight_address2;reg signed [7:0] wq0b,wq1b,wq2b,wq3b;
  wire [3:0] tap=kernel3?({2'b0,ky}<<1)+ky+kx:4'd0;
  // Depthwise ROM words hold [tap][oc]: four adjacent channels of one tap
@@ -229,11 +229,13 @@ module yunet_network #(
   // next four weights when a beat is accepted, avoiding a redundant WAIT.
   weight_address<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic});
  weight_address2<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic})+{10'd0,ci};
-  instruction<=program_rom[operation_index];bias_q<=unpack_model_bias(bias_base+oc,biases[bias_base+oc]);shift_q<=unpack_model_shift(bias_base+oc,shifts[bias_base+oc]);
+  instruction<=program_rom[operation_index];bias_addr_q<=bias_base+oc;
+ bias_q<=unpack_model_bias(bias_addr_q,biases[bias_addr_q]);shift_q<=unpack_model_shift(bias_addr_q,shifts[bias_addr_q]);
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
  wq0b<=wm0[weight_address2[15:2]];wq1b<=wm1[weight_address2[15:2]];wq2b<=wm2[weight_address2[15:2]];wq3b<=wm3[weight_address2[15:2]];
   // READ captures the address; WAIT reads RAM; FEED consumes its registered data.
-  cache_read_address<=padding?13'd0:cache_base_r|{6'd0,((CHANNEL_PREFETCH&&prefetch_beat&&use_row)?next_channel:channel)};
+  prefetch_sel_q<=CHANNEL_PREFETCH&&prefetch_beat&&use_row;
+  cache_read_address<=padding?13'd0:cache_base_r|{6'd0,prefetch_sel_q?next_channel:channel};
   cq0<=cache0[cache_read_address[12:2]];cq1<=cache1[cache_read_address[12:2]];cq2<=cache2[cache_read_address[12:2]];cq3<=cache3[cache_read_address[12:2]];
   pq0<=pixel0[ic[5:2]];pq1<=pixel1[ic[5:2]];pq2<=pixel2[ic[5:2]];pq3<=pixel3[ic[5:2]];
   if(state==ROW_WRITE)begin cache0[fill_cache_addr[12:2]]<=aq0;cache1[fill_cache_addr[12:2]]<=aq1;cache2[fill_cache_addr[12:2]]<=aq2;cache3[fill_cache_addr[12:2]]<=aq3;end
@@ -303,7 +305,7 @@ module yunet_network #(
    misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_we<=0;
    write_data0<=0;write_data1<=0;write_data2<=0;write_data3<=0;
    dw_active<=0;dw_relu_q<=0;dw_stop_q<=0;co_shift_q<=0;dw_load_step<=0;dw_drain<=0;
-   pw8_active<=0;pw_bias_q<=0;pw_shift_q<=0;weight_address2<=0;wq0b<=0;wq1b<=0;wq2b<=0;wq3b<=0;
+   pw8_active<=0;pw_bias_q<=0;pw_shift_q<=0;dw_bias_addr<=0;
    dw_bias0<=0;dw_bias1<=0;dw_bias2<=0;dw_bias3<=0;dw_sum0<=0;dw_sum1<=0;dw_sum2<=0;dw_sum3<=0;
    dw_shift0<=0;dw_shift1<=0;dw_shift2<=0;dw_shift3<=0;dw_val0<=0;dw_val1<=0;dw_val2<=0;dw_val3<=0;
   end else begin
@@ -334,8 +336,8 @@ module yunet_network #(
      ic<=0;kx<=0;ky<=0;misc_step<=0;
      if(opcode==1&&in_place&&kernel3&&!row_ready)begin prep_row<=0;state<=ROW_PREP;end
      else if(opcode==1&&in_place&&!kernel3&&!pixel_ready)begin pixel_offset<=0;state<=PIXEL_READ;end
-     else if(opcode==1&&dw_active)begin dw_load_step<=0;state<=DW_BIAS;end
-     else if(opcode==1&&pw8_active)state<=PW_BIAS;
+     else if(opcode==1&&dw_active)begin dw_load_step<=0;dw_bias_addr<=bias_base+oc;state<=DW_BIAS;end
+     else if(opcode==1&&pw8_active)begin dw_bias_addr<=bias_base+oc+7'd1;state<=PW_BIAS;end
      else state<=opcode==1?META:MISC_READ;
     end
     ROW_PREP:begin
@@ -360,13 +362,15 @@ module yunet_network #(
      else begin pixel_offset<=pixel_offset+7'd4;state<=PIXEL_READ;end
     end
     DW_BIAS:begin
-     // One DRAM port: stream the four per-channel biases and shifts.
+     // One DRAM port: the address was precomputed at INIT and now just
+     // increments, keeping the DRAM->unpack->register path short.
      case(dw_load_step)
-      0:begin dw_bias0<=unpack_model_bias(bias_base+oc,biases[bias_base+oc]);dw_shift0<=unpack_model_shift(bias_base+oc,shifts[bias_base+oc]);end
-      1:begin dw_bias1<=unpack_model_bias(bias_base+oc+7'd1,biases[bias_base+oc+7'd1]);dw_shift1<=unpack_model_shift(bias_base+oc+7'd1,shifts[bias_base+oc+7'd1]);end
-      2:begin dw_bias2<=unpack_model_bias(bias_base+oc+7'd2,biases[bias_base+oc+7'd2]);dw_shift2<=unpack_model_shift(bias_base+oc+7'd2,shifts[bias_base+oc+7'd2]);end
-      3:begin dw_bias3<=unpack_model_bias(bias_base+oc+7'd3,biases[bias_base+oc+7'd3]);dw_shift3<=unpack_model_shift(bias_base+oc+7'd3,shifts[bias_base+oc+7'd3]);end
+      0:begin dw_bias0<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift0<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
+      1:begin dw_bias1<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift1<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
+      2:begin dw_bias2<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift2<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
+      3:begin dw_bias3<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);dw_shift3<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);end
      endcase
+     dw_bias_addr<=dw_bias_addr+1'b1;
      if(dw_load_step==3)state<=META;else dw_load_step<=dw_load_step+1'b1;
     end
     META:begin
@@ -415,8 +419,8 @@ module yunet_network #(
      end
     end
     PW_BIAS:begin
-     pw_bias_q<=unpack_model_bias(bias_base+oc+7'd1,biases[bias_base+oc+7'd1]);
-     pw_shift_q<=unpack_model_shift(bias_base+oc+7'd1,shifts[bias_base+oc+7'd1]);
+     pw_bias_q<=unpack_model_bias(dw_bias_addr,biases[dw_bias_addr]);
+     pw_shift_q<=unpack_model_shift(dw_bias_addr,shifts[dw_bias_addr]);
      state<=META;
     end
     MISC_READ:if(address_wait==3)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end

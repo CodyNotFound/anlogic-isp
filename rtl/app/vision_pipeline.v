@@ -82,7 +82,7 @@ module vision_pipeline #(
     wire       task_action;
     wire [2:0] demo_step;
     wire [3:0] feature_enable;
-    assign feature_enable={1'b1,1'b0,1'b1,feature_requested[1]}; // AB fixed on; SW1 AWB AUTO/HOLD, SW2 AE AUTO/HOLD
+    assign feature_enable={1'b0,1'b0,1'b1,feature_requested[1]}; // AB fixed off; SW1 AWB AUTO/HOLD, SW2 AE AUTO/HOLD
     wire [23:0] algorithm_pixel;
     wire [23:0] exposure_pixel;
     wire [23:0] white_balance_pixel;
