@@ -472,12 +472,30 @@ module vision_pipeline #(
     end
     wire gimbal_auto_enable=ENABLE_PIPELINE && feature_requested[2] && !demo_active &&
         gimbal_mode_d==mode && (mode==11 || mode==12 || mode==13);
+    // Register the entire visual-control command together. The mode decoder
+    // no longer feeds through target planning into controller registers.
+    reg gimbal_en_q,gimbal_valid_q,gimbal_found_q,gimbal_manual_q,gimbal_slow_q,gimbal_capture_q;
+    reg [7:0] gimbal_cx_q,gimbal_cy_q;reg [3:0] gimbal_keys_q;
+    always @(posedge clk or negedge rst_n)begin
+        if(!rst_n)begin
+            gimbal_en_q<=0;gimbal_valid_q<=0;gimbal_found_q<=0;gimbal_manual_q<=0;
+            gimbal_slow_q<=0;gimbal_capture_q<=0;gimbal_cx_q<=0;gimbal_cy_q<=0;gimbal_keys_q<=0;
+        end else begin
+            gimbal_en_q<=gimbal_auto_enable;
+            gimbal_valid_q<=face_enable?face_position_valid:track_valid;
+            gimbal_found_q<=face_enable?face_found:track_found;
+            gimbal_cx_q<=face_enable?face_center_x[10:3]:track_x;
+            gimbal_cy_q<=face_enable?face_center_y[10:3]:track_y;
+            gimbal_manual_q<=manual_motion;gimbal_keys_q<=keys_pressed;
+            gimbal_slow_q<=face_enable&&FACE_CNN_ENABLE&&!face_fast;
+            gimbal_capture_q<=face_capture_started;
+        end
+    end
     servo_gimbal_ctrl #(.IMG_W(IMG_WIDTH/8),.IMG_H(IMG_HEIGHT/8)) u_gimbal(.clk(clk),.rst_n(rst_n),
-        .enable(gimbal_auto_enable),
-        .result_valid(face_enable?face_position_valid:track_valid),.found(face_enable?face_found:track_found),
-        .cx(face_enable?face_center_x[10:3]:track_x),.cy(face_enable?face_center_y[10:3]:track_y),
-        .manual_mode(manual_motion),.keys_pressed(keys_pressed),.pwm_h(servo_pwm_h),.pwm_v(servo_pwm_v),
-        .pulse_h_us(pulse_h),.pulse_v_us(pulse_v),.ctl_state(gimbal_state),.slow_source(face_enable&&FACE_CNN_ENABLE&&!face_fast),.capture_valid(face_capture_started));
+        .enable(gimbal_en_q),.result_valid(gimbal_valid_q),.found(gimbal_found_q),
+        .cx(gimbal_cx_q),.cy(gimbal_cy_q),.manual_mode(gimbal_manual_q),.keys_pressed(gimbal_keys_q),
+        .pwm_h(servo_pwm_h),.pwm_v(servo_pwm_v),.pulse_h_us(pulse_h),.pulse_v_us(pulse_v),
+        .ctl_state(gimbal_state),.slow_source(gimbal_slow_q),.capture_valid(gimbal_capture_q));
     gimbal_panel u_panel(.clk(clk),.rst_n(rst_n),.features(feature_requested),.pulse_h(pulse_h),.pulse_v(pulse_v),
         .leds(panel_leds),.segments(panel_segments),.selects(panel_selects),.h_digits(h_digits),.v_digits(v_digits),.display_h(display_h),.display_v(display_v));
     // Keep the existing two registered video clocks. All text/position drawing

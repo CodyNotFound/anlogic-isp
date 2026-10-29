@@ -43,11 +43,15 @@ module pixel_cartoon #(
  wire [31:0] t2=s1_x<2?t1:th2,m2=s1_x<2?m1:mh2,b2=s1_x<2?b1:bh2;
  // All spatial modes use this existing RGB/Y window. Only strong blur
  // needs one additional RGB row for its vertical recursive state.
- wire[9:0] ytop={2'd0,t2[31:24]}+{2'd0,t1[31:24]}+{2'd0,tn[31:24]};
- wire[9:0] ymid={2'd0,m2[31:24]}+{2'd0,m1[31:24]}+{2'd0,mn[31:24]};
- wire[9:0] ybot={2'd0,b2[31:24]}+{2'd0,b1[31:24]}+{2'd0,bn[31:24]};
- wire[11:0] ysum={2'd0,ytop}+{2'd0,ymid}+{2'd0,ybot};
- wire[11:0] neighbor_y=(ysum-{4'd0,m1[31:24]})>>3;
+ // Sum the eight neighbors directly: the old ninth-sample sum followed
+ // by subtracting the center adds an avoidable carry chain after line RAM.
+ wire [8:0] yp0={1'b0,t2[31:24]}+{1'b0,t1[31:24]};
+ wire [8:0] yp1={1'b0,tn[31:24]}+{1'b0,m2[31:24]};
+ wire [8:0] yp2={1'b0,mn[31:24]}+{1'b0,b2[31:24]};
+ wire [8:0] yp3={1'b0,b1[31:24]}+{1'b0,bn[31:24]};
+ wire [9:0] yh0={1'b0,yp0}+{1'b0,yp1},yh1={1'b0,yp2}+{1'b0,yp3};
+ wire [10:0] neighbor_sum={1'b0,yh0}+{1'b0,yh1};
+ wire [11:0] neighbor_y={4'd0,neighbor_sum[10:3]};
  wire signed[11:0] detail_y=$signed({4'd0,m1[31:24]})-$signed(neighbor_y);
  wire signed[11:0] sharp_delta=(detail_y>6||detail_y< -6)?(detail_y<<<2):12'sd0;
  wire signed[11:0] emboss_d=$signed({4'd0,m1[31:24]})-$signed({4'd0,t2[31:24]});

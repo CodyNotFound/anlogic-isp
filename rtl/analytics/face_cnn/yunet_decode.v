@@ -37,22 +37,25 @@ module yunet_decode #(
  wire [11:0] right2=bound((cx2+$signed({17'b0,w2[15:1]})+32'sd15)>>>4,12'd160);
  wire [11:0] top2=bound((cy2-$signed({17'b0,h2[15:1]}))>>>4,12'd90);
  wire [11:0] bottom2=bound((cy2+$signed({17'b0,h2[15:1]})+32'sd15)>>>4,12'd90);
- wire [11:0] width2=right2-left2,height2=bottom2-top2;
- wire [11:0] side2=width2>height2?width2:height2;
- wire [11:0] side_cam=side2>90?12'd720:side2<<3;
- wire [11:0] cx_cam=(left2+right2)<<2,cy_cam=(top2+bottom2)<<2;
+ // Clip corners in a separate stage before box geometry and best selection.
+ (* syn_preserve=1 *) reg [11:0] left3,right3,top3,bottom3;
+ reg v3,last3,domain3;reg [13:0] score3;
+ wire [11:0] width3=right3-left3,height3=bottom3-top3;
+ wire [11:0] side3=width3>height3?width3:height3;
+ wire [11:0] side_cam=side3>90?12'd720:side3<<3;
+ wire [11:0] cx_cam=(left3+right3)<<2,cy_cam=(top3+bottom3)<<2;
  wire [11:0] x_cam=bound($signed({1'b0,cx_cam})-$signed({1'b0,side_cam[11:1]}),12'd1280-side_cam);
  wire [11:0] y_cam=bound($signed({1'b0,cy_cam})-$signed({1'b0,side_cam[11:1]}),12'd720-side_cam);
- wire valid2=score2>=SCORE_THRESHOLD && cx2>=0 && cx2<2560 && cy2>=0 && cy2<1440 && right2>left2 && bottom2>top2;
- wire replace2=valid2&&(!best_valid||score2>best_score);
+ wire valid3=domain3 && right3>left3 && bottom3>top3;
+ wire replace3=valid3&&(!best_valid||score3>best_score);
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
-   v1<=0;v2<=0;last1<=0;last2<=0;cp1<=0;op1<=0;dx1<=0;dy1<=0;w1<=0;h1<=0;gx1<=0;gy1<=0;lev1<=0;
+   v1<=0;v2<=0;v3<=0;last1<=0;last2<=0;last3<=0;domain3<=0;score3<=0;left3<=0;right3<=0;top3<=0;bottom3<=0;cp1<=0;op1<=0;dx1<=0;dy1<=0;w1<=0;h1<=0;gx1<=0;gy1<=0;lev1<=0;
    cx2<=0;cy2<=0;w2<=0;h2<=0;score2<=0;best_valid<=0;best_score<=0;
    best_x<=0;best_y<=0;best_size<=0;best_cx<=0;best_cy<=0;
    result_valid<=0;found<=0;score_product<=0;box_x<=0;box_y<=0;box_size<=0;center_x<=0;center_y<=0;
   end else begin
-   result_valid<=0;v1<=in_valid;v2<=v1;last1<=in_last;last2<=last1;
+   result_valid<=0;v1<=in_valid;v2<=v1;v3<=v2;last1<=in_last;last2<=last1;last3<=last2;
    if(frame_start)begin best_valid<=0;best_score<=0;found<=0;end
    if(in_valid)begin
     cp1<=sigmoid_rom[clsa];op1<=sigmoid_rom[11'd768+obja];
@@ -65,13 +68,17 @@ module yunet_decode #(
     cy2<=$signed({1'b0,gy1,7'b0}<<lev1)+{{16{dy1[15]}},dy1};
    end
    if(v2)begin
-    if(replace2)begin best_valid<=1;best_score<=score2;best_x<=x_cam;best_y<=y_cam;best_size<=side_cam;best_cx<=cx_cam;best_cy<=cy_cam;end
-    if(last2)begin
-     result_valid<=1;found<=replace2||best_valid;
-     score_product<=replace2?score2:best_valid?best_score:14'd0;
-     box_x<=replace2?x_cam:best_valid?best_x:12'd0;box_y<=replace2?y_cam:best_valid?best_y:12'd0;
-     box_size<=replace2?side_cam:best_valid?best_size:12'd0;
-     center_x<=replace2?cx_cam:best_valid?best_cx:12'd0;center_y<=replace2?cy_cam:best_valid?best_cy:12'd0;
+    left3<=left2;right3<=right2;top3<=top2;bottom3<=bottom2;score3<=score2;
+    domain3<=score2>=SCORE_THRESHOLD&&cx2>=0&&cx2<2560&&cy2>=0&&cy2<1440;
+   end
+   if(v3)begin
+    if(replace3)begin best_valid<=1;best_score<=score3;best_x<=x_cam;best_y<=y_cam;best_size<=side_cam;best_cx<=cx_cam;best_cy<=cy_cam;end
+    if(last3)begin
+     result_valid<=1;found<=replace3||best_valid;
+     score_product<=replace3?score3:best_valid?best_score:14'd0;
+     box_x<=replace3?x_cam:best_valid?best_x:12'd0;box_y<=replace3?y_cam:best_valid?best_y:12'd0;
+     box_size<=replace3?side_cam:best_valid?best_size:12'd0;
+     center_x<=replace3?cx_cam:best_valid?best_cx:12'd0;center_y<=replace3?cy_cam:best_valid?best_cy:12'd0;
     end
    end
   end

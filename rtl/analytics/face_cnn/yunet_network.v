@@ -119,7 +119,8 @@ module yunet_network #(
  wire [16:0] w_offset=depthwise ? (({14'b0,tap}<<co_shift_q)+{10'b0,oc}) :
     (((kernel3?(({10'b0,oc}<<3)+oc):{10'b0,oc})+tap)<<cshift)+ic;
  wire [16:0] conv_weight=weight_base+w_offset;
- reg [16:0] weight_row_r,weight_scale_r,weight_base_r,tap_scale_r,tap_base_r;
+ reg [16:0] weight_row_r,weight_scale_r,weight_base_r,tap_scale_r,tap_base_r,pw_weight_base_r;
+ reg [15:0] conv_row_origin_r;
  wire [6:0] prefetched_ic=ic+7'd4;
 
  reg single_lane,one_beat;reg [6:0] last_channel;
@@ -203,11 +204,23 @@ module yunet_network #(
   (debug_bank==0?aq0:debug_bank==1?aq1:debug_bank==2?aq2:aq3);
  wire prefetch_beat=state==CONV_FEED&&dot_in_ready&&
   ((PIXEL_PREFETCH&&use_pixel&&!last_tap)||(CHANNEL_PREFETCH&&!last_ic));
+ // Lookahead changes only the small kernel row offset. Keep that control
+ // out of the DSP row-origin product and of the second-OC base addition.
+ wire signed [17:0] conv_row_offset=address_ky==0?(pad1?-$signed({10'd0,iw}):18'sd0):
+  address_ky==1?(pad1?18'sd0:$signed({10'd0,iw})):
+  (pad1?$signed({10'd0,iw}):$signed({9'd0,iw,1'b0}));
+ wire signed [17:0] conv_row_start=$signed({2'd0,conv_row_origin_r})<<<stride2;
+ wire signed [17:0] conv_pixel_next=conv_row_start+conv_row_offset+$signed({{8{pipeline_x[9]}},pipeline_x});
+ // A speculative read after the last multichannel beat is harmless. Avoid
+ // feeding the ic==last_channel comparator into both weight-ROM addresses.
+ wire weight_prefetch=state==CONV_FEED&&dot_in_ready&&!one_beat&&
+  (CHANNEL_PREFETCH||(PIXEL_PREFETCH&&use_pixel));
  // Spatial address arithmetic is pipelined; channel prefetch cadence is retained.
  // Read states wait only when geometry or the source tensor changes.
  // All stages use ordinary single-cycle timing constraints.
  always @(posedge clk)begin
-  conv_pixel_r<={1'b0,geometry_product(pipeline_y[7:0],iw)}+pipeline_x[7:0];
+  conv_row_origin_r<=geometry_product(oy,iw);
+  conv_pixel_r<=conv_pixel_next[16:0];
   misc_y_r<=misc_y;misc_x_r<=misc_x;
   misc_pixel_r<={1'b0,geometry_product(misc_y_r,iw)}+misc_x_r;
   fill_pixel_r<={1'b0,geometry_product(fill_y,iw)};
@@ -218,6 +231,7 @@ module yunet_network #(
   weight_base_r<=weight_base+weight_scale_r;
   tap_scale_r<=depthwise?({13'd0,pipeline_tap}<<co_shift_q):({13'd0,pipeline_tap}<<cshift);
   tap_base_r<=weight_base_r+tap_scale_r;
+  pw_weight_base_r<=weight_base_r+{10'd0,ci};
 
   conv_base_r<=src_base+(conv_pixel_r<<cshift);
   misc_base_r<=misc_base+(misc_pixel_r<<cshift);
@@ -243,8 +257,8 @@ module yunet_network #(
   operand_address<=CHANNEL_PREFETCH&&prefetch_beat&&!in_place?conv_prefetch:calculated_address;
   // 1x1 in-place pixels already have a one-cycle cache read. Prefetch the
   // next four weights when a beat is accepted, avoiding a redundant WAIT.
-  weight_address<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic});
- weight_address2<=tap_base_r+(prefetch_beat?{10'd0,prefetched_ic}:{10'd0,ic})+{10'd0,ci};
+  weight_address<=tap_base_r+(weight_prefetch?{10'd0,prefetched_ic}:{10'd0,ic});
+ weight_address2<=pw_weight_base_r+(weight_prefetch?{10'd0,prefetched_ic}:{10'd0,ic});
   instruction<=program_rom[operation_index];bias_addr_q<=bias_base+oc;
  bias_q<=metadata_bias;shift_q<=metadata_shift;
   wq0<=wm0[weight_address[15:2]];wq1<=wm1[weight_address[15:2]];wq2<=wm2[weight_address[15:2]];wq3<=wm3[weight_address[15:2]];
