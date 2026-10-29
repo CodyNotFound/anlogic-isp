@@ -8,9 +8,9 @@ module tb_yunet_dual_arena;
   repeat(5)@(negedge io_clk);rst=1;
   for(i=0;i<65536;i=i+1)begin load=1;la=i;ld=(i*29)^(i>>8);expected[i]=ld;@(negedge io_clk);end
   load=0;
-  force dut.write_pending=1;force dut.write_address=wa;force dut.write_data=wd;
-  for(i=0;i<1024;i=i+1)begin @(negedge clk);wa=(i*61)%65536;wd=i^8'hb7;expected[wa]=wd;end
-  @(negedge clk);release dut.write_pending;release dut.write_address;release dut.write_data;
+  force dut.write_pending=1;force dut.write_address=wa;force dut.write_we=4'b0001<<wa[1:0];force dut.write_data0=wd;force dut.write_data1=wd;force dut.write_data2=wd;force dut.write_data3=wd;
+  for(i=0;i<1024;i=i+1)begin @(negedge clk);wa=(i*61)%65536;wd=i^8'hb7;expected[wa]=wd;force dut.write_we=4'b0001<<wa[1:0];end
+  @(negedge clk);release dut.write_pending;release dut.write_address;release dut.write_we;release dut.write_data0;release dut.write_data1;release dut.write_data2;release dut.write_data3;
   for(i=0;i<65536;i=i+1)begin
    @(negedge io_clk);ra=i;@(negedge io_clk);
    if(rd!==expected[i])$fatal(1,"dual arena byte mismatch %0d got%h want%h",i,rd,expected[i]);

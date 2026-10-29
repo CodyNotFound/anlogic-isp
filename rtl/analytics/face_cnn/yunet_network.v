@@ -16,7 +16,8 @@ module yunet_network #(
  localparam IDLE=0,CONFIG_WAIT=1,CONFIG=2,INIT=3,META=4,DOT_START=5,
   CONV_READ=6,CONV_WAIT=7,CONV_FEED=8,CONV_RESULT=9,NEXT_OUTPUT=10,
   MISC_READ=11,MISC_WAIT=12,MISC_EVAL=13,ROW_PREP=14,ROW_READ=15,ROW_WAIT=16,ROW_WRITE=17,
-  PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21,ROW_SLOT=22,ROW_DECIDE=23;
+  PIXEL_READ=18,PIXEL_WAIT=19,PIXEL_WRITE=20,MISC_QUANT=21,ROW_SLOT=22,ROW_DECIDE=23,
+  DW_BIAS=24,DW_DRAIN=25;
  reg beat_prefetched;reg [4:0] state;assign busy=state!=IDLE;
  (* ram_style="bram" *) reg [7:0] fm0[0:16383],fm1[0:16383],fm2[0:16383],fm3[0:16383];
  (* ram_style="dram" *) reg [7:0] cache0[0:1919];
@@ -48,7 +49,7 @@ module yunet_network #(
  reg [7:0] aq0,aq1,aq2,aq3;reg signed [7:0] wq0,wq1,wq2,wq3;
  reg signed [31:0] bias_q;reg signed [6:0] shift_q;
  reg signed [7:0] misc_temp;reg signed [9:0] misc_sum_q;reg misc_half_q;
- reg write_pending;reg [16:0] write_address;reg [7:0] write_data;
+ reg write_pending;reg [16:0] write_address;
  function [15:0] multiply8;
  input [7:0] a,b;reg [15:0] aa;
  // The generated 160x96 graph has only these six row widths. A general
@@ -85,15 +86,33 @@ module yunet_network #(
  wire [6:0] next_channel=channel+7'd4;
  wire [16:0] conv_prefetch=conv_base_r|{10'd0,next_channel};
 
+ // Depthwise lanes: four adjacent output channels share one beat. The lane
+ // products drain into four network-side accumulators, so the four physical
+ // multipliers stay fully occupied without extra DSPs or bank replication.
+ reg dw_active,dw_relu_q,dw_stop_q;reg [2:0] co_shift_q;reg [1:0] dw_load_step,dw_drain;
+ reg signed [31:0] dw_bias0,dw_bias1,dw_bias2,dw_bias3,dw_sum0,dw_sum1,dw_sum2,dw_sum3;
+ reg signed [6:0] dw_shift0,dw_shift1,dw_shift2,dw_shift3;
+ reg signed [7:0] dw_val0,dw_val1,dw_val2,dw_val3;
+ reg [3:0] write_we;reg [7:0] write_data0,write_data1,write_data2,write_data3;
  wire [3:0] tap=kernel3?({2'b0,ky}<<1)+ky+kx:4'd0;
- wire [16:0] w_offset=depthwise ? (({10'b0,oc}<<3)+oc+tap) :
+ // Depthwise ROM words hold [tap][oc]: four adjacent channels of one tap
+ // occupy the four weight banks of a single word, matching the arena banks.
+ wire [16:0] w_offset=depthwise ? (({14'b0,tap}<<co_shift_q)+{10'b0,oc}) :
     (((kernel3?(({10'b0,oc}<<3)+oc):{10'b0,oc})+tap)<<cshift)+ic;
  wire [16:0] conv_weight=weight_base+w_offset;
  reg [16:0] weight_row_r,weight_scale_r,weight_base_r,tap_scale_r,tap_base_r;
  wire [6:0] prefetched_ic=ic+7'd4;
 
  reg single_lane,one_beat;reg [6:0] last_channel;
- wire last_ic=single_lane||ic==last_channel;
+ function signed [7:0] requant_model_dw;
+ input signed [31:0] a;input signed [6:0] s;input r;
+ reg signed [32:0] q;
+ begin
+  if(s==0) q=$signed({a[31],a});
+  else q=($signed({a[31],a})+(33'sd1<<(s[4:0]-1)))>>>s[4:0];
+  requant_model_dw=(r&&q<0)?8'sd0:q>127?8'sd127:q<-128?-8'sd128:q[7:0];
+ end endfunction
+ wire last_ic=single_lane||dw_active||ic==last_channel;
  wire last_tap=last_ic&&(!kernel3||(kx==2&&ky==2));
  // Calculate the next kernel position during WAIT/FEED when the current
  // tap is already in RAM output registers. This hides address stages on
@@ -135,12 +154,16 @@ module yunet_network #(
  wire [7:0] selected_memory_a=a_bank_q==0?aq0:a_bank_q==1?aq1:a_bank_q==2?aq2:aq3;
  wire signed [7:0] selected_w=w_bank_q==0?wq0:w_bank_q==1?wq1:w_bank_q==2?wq2:wq3;
  wire signed [8:0] first_a=input_unsigned?$signed({1'b0,selected_a}):$signed({selected_a[7],selected_a});
- wire [35:0] dot_a=pad_q?36'd0:single_lane?{27'd0,first_a}:
+ wire solo=single_lane&&!dw_active;
+ wire [35:0] dot_a=pad_q?36'd0:solo?{27'd0,first_a}:
   {input_unsigned?{1'b0,a3}:{a3[7],a3},input_unsigned?{1'b0,a2}:{a2[7],a2},input_unsigned?{1'b0,a1}:{a1[7],a1},input_unsigned?{1'b0,a0}:{a0[7],a0}};
- wire [31:0] dot_w=single_lane?{24'd0,selected_w}:{wq3,wq2,wq1,wq0};
+ wire [31:0] dot_w=solo?{24'd0,selected_w}:{wq3,wq2,wq1,wq0};
  wire dot_ready,dot_in_ready,dot_valid;wire signed [31:0] dot_acc;wire signed [7:0] dot_value;
+ wire dw_p_valid;wire signed [16:0] dw_p0,dw_p1,dw_p2,dw_p3;
  yunet_dot4 #(.MODEL_SHIFT(1),.FAST_PIPELINE(1)) mac(.clk(clk),.rst_n(rst_n),.start(state==DOT_START),.bias(bias_q),.shift(shift_q),.relu(relu),.ready(dot_ready),
-  .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap),.activations(dot_a),.weights(dot_w),
+  .in_valid(state==CONV_FEED),.in_ready(dot_in_ready),.in_last(last_tap&&!dw_active),
+  .activations(dot_a),.weights(dot_w),.dw_mode(dw_active),.dw_stop(dw_stop_q),
+  .dw_p_valid(dw_p_valid),.dw_p0(dw_p0),.dw_p1(dw_p1),.dw_p2(dw_p2),.dw_p3(dw_p3),
   .out_valid(dot_valid),.out_ready(state==CONV_RESULT),.accumulator(dot_acc),.value(dot_value));
  reg [1:0] debug_bank;
  reg [7:0] io_q0,io_q1,io_q2,io_q3;
@@ -162,10 +185,10 @@ module yunet_network #(
   fill_pixel_r<={1'b0,multiply8(fill_y,iw)};
   pixel_pixel_r<={1'b0,multiply8(oy,iw)}+ox;
   out_pixel_r<={1'b0,multiply8(oy,ow)}+ox;
-  weight_row_r<=(depthwise||kernel3)?({10'd0,oc}<<3)+oc:{10'd0,oc};
+  weight_row_r<=depthwise?{10'd0,oc}:(kernel3?({10'd0,oc}<<3)+oc:{10'd0,oc});
   weight_scale_r<=depthwise?weight_row_r:weight_row_r<<cshift;
   weight_base_r<=weight_base+weight_scale_r;
-  tap_scale_r<=depthwise?{13'd0,pipeline_tap}:({13'd0,pipeline_tap}<<cshift);
+  tap_scale_r<=depthwise?({13'd0,pipeline_tap}<<co_shift_q):({13'd0,pipeline_tap}<<cshift);
   tap_base_r<=weight_base_r+tap_scale_r;
 
   conv_base_r<=src_base+(conv_pixel_r<<cshift);
@@ -207,13 +230,13 @@ module yunet_network #(
  // through synchronizer flops, and each read retains one-clock latency.
  generate if(DUAL_CLOCK)begin: g_dual_arena
   always @(posedge clk)begin
-   if(write_pending&&write_address[1:0]==2'd0)fm0[core_port_address[15:2]]<=write_data;
+   if(write_we[0])fm0[core_port_address[15:2]]<=write_data0;
    else aq0<=fm0[core_port_address[15:2]];
-   if(write_pending&&write_address[1:0]==2'd1)fm1[core_port_address[15:2]]<=write_data;
+   if(write_we[1])fm1[core_port_address[15:2]]<=write_data1;
    else aq1<=fm1[core_port_address[15:2]];
-   if(write_pending&&write_address[1:0]==2'd2)fm2[core_port_address[15:2]]<=write_data;
+   if(write_we[2])fm2[core_port_address[15:2]]<=write_data2;
    else aq2<=fm2[core_port_address[15:2]];
-   if(write_pending&&write_address[1:0]==2'd3)fm3[core_port_address[15:2]]<=write_data;
+   if(write_we[3])fm3[core_port_address[15:2]]<=write_data3;
    else aq3<=fm3[core_port_address[15:2]];
   end
   always @(posedge io_clk)begin
@@ -234,7 +257,10 @@ module yunet_network #(
   if(!busy&&load_valid)begin
    case(load_address[1:0])0:fm0[load_address[15:2]]<=load_data;1:fm1[load_address[15:2]]<=load_data;2:fm2[load_address[15:2]]<=load_data;3:fm3[load_address[15:2]]<=load_data;endcase
   end else if(write_pending)begin
-   case(write_address[1:0])0:fm0[write_address[15:2]]<=write_data;1:fm1[write_address[15:2]]<=write_data;2:fm2[write_address[15:2]]<=write_data;3:fm3[write_address[15:2]]<=write_data;endcase
+   if(write_we[0])fm0[write_address[15:2]]<=write_data0;
+   if(write_we[1])fm1[write_address[15:2]]<=write_data1;
+   if(write_we[2])fm2[write_address[15:2]]<=write_data2;
+   if(write_we[3])fm3[write_address[15:2]]<=write_data3;
   end
   end
  end endgenerate
@@ -260,17 +286,27 @@ module yunet_network #(
    kernel3<=0;stride2<=0;pad1<=0;depthwise<=0;relu<=0;input_unsigned<=0;weight_base<=0;bias_base<=0;shift1<=0;shift2<=0;
    in_place<=0;reverse_order<=0;row_ready<=0;pixel_ready<=0;row_valid<=0;prep_row<=0;fill_slot<=0;fill_y<=0;fill_offset<=0;pixel_offset<=0;
    ox<=0;oy<=0;oc<=0;ic<=0;kx<=0;ky<=0;misc_step<=0;cshift<=0;pad_q<=0;a_bank_q<=0;w_bank_q<=0;
-   misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_data<=0;
+   misc_temp<=0;misc_sum_q<=0;misc_half_q<=0;write_pending<=0;write_address<=0;write_we<=0;
+   write_data0<=0;write_data1<=0;write_data2<=0;write_data3<=0;
+   dw_active<=0;dw_relu_q<=0;dw_stop_q<=0;co_shift_q<=0;dw_load_step<=0;dw_drain<=0;
+   dw_bias0<=0;dw_bias1<=0;dw_bias2<=0;dw_bias3<=0;dw_sum0<=0;dw_sum1<=0;dw_sum2<=0;dw_sum3<=0;
+   dw_shift0<=0;dw_shift1<=0;dw_shift2<=0;dw_shift3<=0;dw_val0<=0;dw_val1<=0;dw_val2<=0;dw_val3<=0;
   end else begin
-   done<=0;operation_done<=0;write_pending<=0;
+   done<=0;operation_done<=0;write_pending<=0;write_we<=0;dw_stop_q<=0;
+   if(dw_p_valid)begin
+    dw_sum0<=dw_sum0+{{15{dw_p0[16]}},dw_p0};dw_sum1<=dw_sum1+{{15{dw_p1[16]}},dw_p1};
+    dw_sum2<=dw_sum2+{{15{dw_p2[16]}},dw_p2};dw_sum3<=dw_sum3+{{15{dw_p3[16]}},dw_p3};
+   end
    if(busy)cycles<=cycles+1'b1;
    if(state==CONV_READ)beat_prefetched<=0;else if(state==CONV_FEED&&dot_in_ready)beat_prefetched<=!last_ic;
    case(state)
     IDLE:if(start)begin operation_index<=0;cycles<=0;state<=CONFIG_WAIT;end
     CONFIG_WAIT:state<=CONFIG;
     CONFIG:begin
-     single_lane<=instruction[104]||instruction[93:87]==1;
+     single_lane<=instruction[93:87]==1;
      one_beat<=instruction[104]||instruction[93:87]<=4;last_channel<=instruction[93:87]-7'd4;
+     dw_active<=instruction[104];dw_relu_q<=instruction[105];
+     case(instruction[100:94])7'd4:co_shift_q<=3'd2;7'd16:co_shift_q<=3'd4;7'd32:co_shift_q<=3'd5;7'd64:co_shift_q<=3'd6;default:co_shift_q<=3'd0;endcase
      opcode<=instruction[3:0];src_base<=instruction[20:4];src2_base<=instruction[37:21];dst_base<=instruction[54:38];
      iw<=instruction[62:55];ih<=instruction[70:63];ow<=instruction[78:71];oh<=instruction[86:79];ci<=instruction[93:87];co<=instruction[100:94];
      kernel3<=instruction[101];stride2<=instruction[102];pad1<=instruction[103];depthwise<=instruction[104];relu<=instruction[105];
@@ -282,6 +318,7 @@ module yunet_network #(
      ic<=0;kx<=0;ky<=0;misc_step<=0;
      if(opcode==1&&in_place&&kernel3&&!row_ready)begin prep_row<=0;state<=ROW_PREP;end
      else if(opcode==1&&in_place&&!kernel3&&!pixel_ready)begin pixel_offset<=0;state<=PIXEL_READ;end
+     else if(opcode==1&&dw_active)begin dw_load_step<=0;state<=DW_BIAS;end
      else state<=opcode==1?META:MISC_READ;
     end
     ROW_PREP:begin
@@ -305,19 +342,49 @@ module yunet_network #(
      if(pixel_offset+7'd4>=ci)begin pixel_ready<=1;state<=INIT;end
      else begin pixel_offset<=pixel_offset+7'd4;state<=PIXEL_READ;end
     end
-    META:state<=DOT_START;
+    DW_BIAS:begin
+     // One DRAM port: stream the four per-channel biases and shifts.
+     case(dw_load_step)
+      0:begin dw_bias0<=unpack_model_bias(bias_base+oc,biases[bias_base+oc]);dw_shift0<=unpack_model_shift(bias_base+oc,shifts[bias_base+oc]);end
+      1:begin dw_bias1<=unpack_model_bias(bias_base+oc+7'd1,biases[bias_base+oc+7'd1]);dw_shift1<=unpack_model_shift(bias_base+oc+7'd1,shifts[bias_base+oc+7'd1]);end
+      2:begin dw_bias2<=unpack_model_bias(bias_base+oc+7'd2,biases[bias_base+oc+7'd2]);dw_shift2<=unpack_model_shift(bias_base+oc+7'd2,shifts[bias_base+oc+7'd2]);end
+      3:begin dw_bias3<=unpack_model_bias(bias_base+oc+7'd3,biases[bias_base+oc+7'd3]);dw_shift3<=unpack_model_shift(bias_base+oc+7'd3,shifts[bias_base+oc+7'd3]);end
+     endcase
+     if(dw_load_step==3)state<=META;else dw_load_step<=dw_load_step+1'b1;
+    end
+    META:begin
+     if(dw_active)begin
+      dw_sum0<=dw_bias0;dw_sum1<=dw_bias1;dw_sum2<=dw_bias2;dw_sum3<=dw_bias3;
+     end
+     state<=DOT_START;
+    end
     DOT_START:if(dot_ready)state<=CONV_READ;
     CONV_READ:if(tap_prefetched||beat_prefetched||address_wait==2)begin pad_q<=padding;a_bank_q<=conv_addr[1:0];w_bank_q<=conv_weight[1:0];state<=((PIXEL_PREFETCH&&use_pixel)||(CHANNEL_PREFETCH&&beat_prefetched))?CONV_FEED:CONV_WAIT;end
     CONV_WAIT:state<=CONV_FEED;
     CONV_FEED:if(dot_in_ready)begin
-     if(last_tap)state<=CONV_RESULT;
+     if(last_tap)begin dw_drain<=0;state<=dw_active?DW_DRAIN:CONV_RESULT;end
      else begin
       if(last_ic)begin ic<=0;if(kx==2)begin kx<=0;ky<=ky+1'b1;end else kx<=kx+1'b1;end
       else ic<=ic+7'd4;
       state<=CONV_READ;
      end
     end
-    CONV_RESULT:if(dot_valid)begin write_pending<=1;write_address<=output_address;write_data<=dot_value;state<=NEXT_OUTPUT;end
+    CONV_RESULT:if(dot_valid)begin write_pending<=1;write_we<=4'b0001<<output_address[1:0];
+     write_data0<=dot_value;write_data1<=dot_value;write_data2<=dot_value;write_data3<=dot_value;
+     write_address<=output_address;state<=NEXT_OUTPUT;end
+    DW_DRAIN:begin
+     // Two lanes of multiplier latency, then requantize and arm the four-byte
+     // write here so it lands on the NEXT_OUTPUT beat like every other op.
+     if(dw_drain!=2)dw_drain<=dw_drain+1'b1;
+     else begin
+      write_pending<=1;write_we<=4'b1111;write_address<=output_address;
+      write_data0<=requant_model_dw(dw_sum0,dw_shift0,dw_relu_q);
+      write_data1<=requant_model_dw(dw_sum1,dw_shift1,dw_relu_q);
+      write_data2<=requant_model_dw(dw_sum2,dw_shift2,dw_relu_q);
+      write_data3<=requant_model_dw(dw_sum3,dw_shift3,dw_relu_q);
+      dw_stop_q<=1;state<=NEXT_OUTPUT;
+     end
+    end
     MISC_READ:if(address_wait==3)begin a_bank_q<=misc_addr[1:0];state<=MISC_WAIT;end
     MISC_WAIT:state<=MISC_EVAL;
     MISC_EVAL:begin
@@ -330,10 +397,13 @@ module yunet_network #(
      end
     end
     MISC_QUANT:begin
-     write_pending<=1;write_address<=output_address;write_data<=quantize_misc(misc_sum_q,misc_half_q);state<=NEXT_OUTPUT;
+     write_pending<=1;write_we<=4'b0001<<output_address[1:0];
+     write_data0<=quantize_misc(misc_sum_q,misc_half_q);write_data1<=quantize_misc(misc_sum_q,misc_half_q);
+     write_data2<=quantize_misc(misc_sum_q,misc_half_q);write_data3<=quantize_misc(misc_sum_q,misc_half_q);
+     write_address<=output_address;state<=NEXT_OUTPUT;
     end
     NEXT_OUTPUT:begin
-     if(oc==co-1)begin
+     if(dw_active?oc+7'd4>=co:oc==co-1)begin
       oc<=0;pixel_ready<=0;
       if(reverse_order?ox==0:ox==ow-1)begin
        ox<=reverse_order?ow-1'b1:8'd0;row_ready<=0;
@@ -343,7 +413,7 @@ module yunet_network #(
         else begin operation_index<=operation_index+1'b1;state<=CONFIG_WAIT;end
        end else begin oy<=reverse_order?oy-1'b1:oy+1'b1;state<=INIT;end
       end else begin ox<=reverse_order?ox-1'b1:ox+1'b1;state<=INIT;end
-     end else begin oc<=oc+1'b1;state<=INIT;end
+     end else begin oc<=dw_active?oc+7'd4:oc+1'b1;state<=INIT;end
     end
     default:state<=IDLE;
    endcase

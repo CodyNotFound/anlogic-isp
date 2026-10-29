@@ -10,6 +10,8 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
  output wire ready,
  input wire in_valid,output wire in_ready,input wire in_last,
  input wire [35:0] activations,input wire [31:0] weights,
+ input wire dw_mode,input wire dw_stop,
+ output wire dw_p_valid,output wire signed [16:0] dw_p0,dw_p1,dw_p2,dw_p3,
  output reg out_valid,input wire out_ready,
  output reg signed [31:0] accumulator,
  output reg signed [7:0] value
@@ -46,26 +48,32 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
   wire signed [17:0] pair01=$signed({p0[16],p0})+$signed({p1[16],p1});
   wire signed [17:0] pair23=$signed({p2[16],p2})+$signed({p3[16],p3});
   wire signed [18:0] products=$signed({pair01[17],pair01})+$signed({pair23[17],pair23});
-  reg signed [18:0] beat;reg beat_valid,beat_last;
-  reg [35:0] input_a;reg [31:0] input_w;reg input_valid,input_last;
-  reg round_valid,shift_valid,clip_valid;
-  reg signed [32:0] rounding,rounded,shifted;
-  wire signed [31:0] accumulated=sum+{{13{beat[18]}},beat};
+ reg signed [18:0] beat;reg beat_valid,beat_last;
+ reg [35:0] input_a;reg [31:0] input_w;reg input_valid,input_last;
+ reg round_valid,shift_valid,clip_valid;
+ reg signed [32:0] rounding,rounded,shifted;
+ reg dw_mode_q;
+ wire signed [31:0] accumulated=sum+{{13{beat[18]}},beat};
+ // Depthwise groups pass raw lane products straight to the network's four
+ // accumulators; the single-sum pipeline below stays idle and is bypassed.
+ assign dw_p_valid=p_valid&&dw_mode_q;
+ assign dw_p0=p0;assign dw_p1=p1;assign dw_p2=p2;assign dw_p3=p3;
   always @(posedge clk or negedge rst_n)begin
    if(!rst_n)begin
-    busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;
+    busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;dw_mode_q<=0;
     sum<=0;p0<=0;p1<=0;p2<=0;p3<=0;out_valid<=0;accumulator<=0;value<=0;
     beat<=0;beat_valid<=0;beat_last<=0;round_valid<=0;shift_valid<=0;clip_valid<=0;
     rounding<=0;rounded<=0;shifted<=0;input_a<=0;input_w<=0;input_valid<=0;input_last<=0;
    end else begin
     input_valid<=0;p_valid<=input_valid;beat_valid<=p_valid;round_valid<=0;shift_valid<=round_valid;clip_valid<=shift_valid;
     if(start&&ready)begin
-     busy<=1;closing<=0;sum<=bias;shift_q<=shift;relu_q<=relu;
+     busy<=1;closing<=0;sum<=bias;shift_q<=shift;relu_q<=relu;dw_mode_q<=dw_mode;
      rounding<=shift==0?33'sd0:33'sd1<<(shift[4:0]-1'b1);
     end
+    if(dw_stop&&dw_mode_q)busy<=0;
     if(in_valid&&in_ready)begin
      input_a<=activations;input_w<=weights;input_valid<=1;input_last<=in_last;
-     if(in_last)closing<=1;
+     if(in_last&&!dw_mode_q)closing<=1;
     end
     if(input_valid)begin
      p0<=$signed(input_a[8:0])*$signed(input_w[7:0]);
@@ -86,6 +94,9 @@ module yunet_dot4 #(parameter MODEL_SHIFT=0,FAST_PIPELINE=0)(
    end
   end
  end else begin: g_original
+ // The production instantiation always uses the fast pipeline; the legacy
+ // branch has no depthwise bypass and must never be selected for it.
+ assign dw_p_valid=0;assign dw_p0=0;assign dw_p1=0;assign dw_p2=0;assign dw_p3=0;
  always @(posedge clk or negedge rst_n)begin
   if(!rst_n)begin
    busy<=0;closing<=0;p_valid<=0;p_last<=0;shift_q<=0;relu_q<=0;

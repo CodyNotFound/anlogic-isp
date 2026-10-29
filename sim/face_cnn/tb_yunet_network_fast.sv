@@ -6,7 +6,7 @@ module tb_yunet_network_fast;
  yunet_network #(.DUAL_CLOCK(1)) dut(.clk(clk),.io_clk(io_clk),.rst_n(rst),.start(start),.load_valid(load),.load_address(la),.load_data(ld),.read_address(ra),.read_data(rd),.busy(busy),.done(done),.operation_done(opdone),.operation_index(opidx),.cycles(cycles),.read_word());
  reg [7:0] input_pixels[0:61439],expected[0:65535],actual;
  integer fd,rc,base,count,i,op=0,total=0;string path;
- integer next_progress=1000000;
+ integer next_progress=1000000;integer mism=0;
  always @(posedge clk)if(rst&&cycles>=next_progress)begin $display("PROGRESS cycles%0d op%0d state%0d x%0d y%0d oc%0d",cycles,op,dut.state,dut.ox,dut.oy,dut.oc);next_progress=next_progress+1000000;end
  always @(posedge clk)begin
   #1;
@@ -19,14 +19,16 @@ module tb_yunet_network_fast;
      0:actual=dut.fm0[(base+i)/4];1:actual=dut.fm1[(base+i)/4];
      2:actual=dut.fm2[(base+i)/4];3:actual=dut.fm3[(base+i)/4];
     endcase
-    if(actual!==expected[i])$fatal(1,"YuNet op%0d byte%0d address%0d got%h want%h cycle%0d",op,i,base+i,actual,expected[i],cycles);
+    if(actual!==expected[i])begin mism=mism+1;if(mism<=16)$display("MISMATCH op%0d byte%0d addr%0d lane%0d got%h want%h",op,i,base+i,(base+i)%4,actual,expected[i]);end
    end
-   total=total+count;$display("PASS YuNet operation%0d exact_bytes%0d cycles%0d",op,count,cycles);op=op+1;
+   total=total+count;$display("PASS YuNet operation%0d exact_bytes%0d cycles%0d",op,count,cycles);if(mism)$fatal(1,"YuNet op%0d had %0d mismatched bytes",op,mism);mism=0;op=op+1;
   end
  end
  reg [16:0] aq_address_trace,wq_address_trace;reg [12:0] cq_address_trace;
+ reg [7:0] oc_trace,ox_trace,oy_trace;
  always @(posedge clk)begin
   aq_address_trace<=dut.core_port_address;wq_address_trace<=dut.weight_address;cq_address_trace<=dut.cache_read_address;
+  oc_trace<=dut.oc;ox_trace<=dut.ox;oy_trace<=dut.oy;
   if(rst)begin
    if(dut.state==8&&dut.dot_in_ready&&wq_address_trace[15:2]!==dut.conv_weight[15:2])$fatal(1,"weight address mismatch cycle%0d got%0d expected%0d",cycles,wq_address_trace,dut.conv_weight);
    if(dut.state==8 && dut.dot_in_ready && !dut.padding)begin
@@ -36,7 +38,7 @@ module tb_yunet_network_fast;
    if(dut.state==13 && aq_address_trace[16:2]!==dut.misc_addr[16:2])$fatal(1,"misc read mismatch cycle%0d",cycles);
    if(dut.state==17 && aq_address_trace[16:2]!==dut.fill_address[16:2])$fatal(1,"row read mismatch cycle%0d",cycles);
    if(dut.state==20 && aq_address_trace[16:2]!==dut.pixel_address[16:2])$fatal(1,"pixel read mismatch cycle%0d",cycles);
-   if(dut.write_pending && dut.write_address!==dut.feature_index(dut.dst_base,dut.oy,dut.ox,dut.ow,dut.oc,dut.channel_shift(dut.co)))$fatal(1,"write address mismatch cycle%0d",cycles);
+   if(dut.write_pending && dut.write_address!==dut.feature_index(dut.dst_base,oy_trace,ox_trace,dut.ow,oc_trace,dut.channel_shift(dut.co)))$fatal(1,"write address mismatch cycle%0d",cycles);
   end
  end
  initial begin
