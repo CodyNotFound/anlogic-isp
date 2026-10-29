@@ -44,7 +44,9 @@ module tb_yunet_network_fast;
   fd=$fopen("sim/face_cnn/data/network_reference/op_checks.txt","r");if(!fd)$fatal(1,"missing op checks");
   repeat(5)@(negedge io_clk);rst=1;
   for(integer j=0;j<61440;j=j+1)begin load=1;la=j;ld=input_pixels[j];@(negedge io_clk);end
-  load=0;start=1;@(negedge clk);start=0;
+  load=0;@(negedge clk);start=1;@(negedge clk);start=0;
+  if(!busy)$fatal(1,"compute clock did not accept full-cycle start");
+  $display("START_ACCEPTED compute clock, cycles%0d state%0d",cycles,dut.state);
   wait(done);@(negedge clk);
   if(op!=55)$fatal(1,"incomplete graph %0d",op);
   $display("PASS tb_yunet_network_fast: all 55 operations, %0d exact activation bytes, %0d cycles; actual image to actual heads",total,cycles);$finish;
