@@ -28,7 +28,7 @@ module tb_yunet_dual_tracker;
  end
  sv=0;fe=0;waits=0;
  while(b)begin @(negedge clk);waits=waits+1;if(waits>1500000)$fatal(1,"search stuck state%0d",dut.state);end
- repeat(3)@(negedge clk);frames=frames+1;if(cycles>maxcycles)maxcycles=cycles;
+ repeat(3)@(negedge clk);frames=frames+1;$display("PROGRESS tracker frame%0d found%0d xy%0d,%0d cycles%0d",frames,f,x,y,cycles);if(cycles>maxcycles)maxcycles=cycles;
  end endtask
  initial begin
  repeat(5)@(negedge clk);rst=1;repeat(5)@(negedge clk);

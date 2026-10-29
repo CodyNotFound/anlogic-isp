@@ -207,19 +207,25 @@ module yunet_network #(
  // through synchronizer flops, and each read retains one-clock latency.
  generate if(DUAL_CLOCK)begin: g_dual_arena
   always @(posedge clk)begin
-   aq0<=fm0[core_port_address[15:2]];aq1<=fm1[core_port_address[15:2]];
-   aq2<=fm2[core_port_address[15:2]];aq3<=fm3[core_port_address[15:2]];
-   if(write_pending)begin
-    case(write_address[1:0])0:fm0[write_address[15:2]]<=write_data;1:fm1[write_address[15:2]]<=write_data;2:fm2[write_address[15:2]]<=write_data;3:fm3[write_address[15:2]]<=write_data;endcase
-   end
+   if(write_pending&&write_address[1:0]==2'd0)fm0[core_port_address[15:2]]<=write_data;
+   else aq0<=fm0[core_port_address[15:2]];
+   if(write_pending&&write_address[1:0]==2'd1)fm1[core_port_address[15:2]]<=write_data;
+   else aq1<=fm1[core_port_address[15:2]];
+   if(write_pending&&write_address[1:0]==2'd2)fm2[core_port_address[15:2]]<=write_data;
+   else aq2<=fm2[core_port_address[15:2]];
+   if(write_pending&&write_address[1:0]==2'd3)fm3[core_port_address[15:2]]<=write_data;
+   else aq3<=fm3[core_port_address[15:2]];
   end
   always @(posedge io_clk)begin
    debug_bank<=read_address[1:0];
-   io_q0<=fm0[io_port_address[15:2]];io_q1<=fm1[io_port_address[15:2]];
-   io_q2<=fm2[io_port_address[15:2]];io_q3<=fm3[io_port_address[15:2]];
-   if(load_valid)begin
-    case(load_address[1:0])0:fm0[load_address[15:2]]<=load_data;1:fm1[load_address[15:2]]<=load_data;2:fm2[load_address[15:2]]<=load_data;3:fm3[load_address[15:2]]<=load_data;endcase
-   end
+   if(load_valid&&load_address[1:0]==2'd0)fm0[io_port_address[15:2]]<=load_data;
+   else io_q0<=fm0[io_port_address[15:2]];
+   if(load_valid&&load_address[1:0]==2'd1)fm1[io_port_address[15:2]]<=load_data;
+   else io_q1<=fm1[io_port_address[15:2]];
+   if(load_valid&&load_address[1:0]==2'd2)fm2[io_port_address[15:2]]<=load_data;
+   else io_q2<=fm2[io_port_address[15:2]];
+   if(load_valid&&load_address[1:0]==2'd3)fm3[io_port_address[15:2]]<=load_data;
+   else io_q3<=fm3[io_port_address[15:2]];
   end
  end else begin: g_single_arena
   always @(posedge clk)begin

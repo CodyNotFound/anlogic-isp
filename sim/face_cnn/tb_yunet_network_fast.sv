@@ -6,6 +6,8 @@ module tb_yunet_network_fast;
  yunet_network #(.DUAL_CLOCK(1)) dut(.clk(clk),.io_clk(io_clk),.rst_n(rst),.start(start),.load_valid(load),.load_address(la),.load_data(ld),.read_address(ra),.read_data(rd),.busy(busy),.done(done),.operation_done(opdone),.operation_index(opidx),.cycles(cycles),.read_word());
  reg [7:0] input_pixels[0:61439],expected[0:65535],actual;
  integer fd,rc,base,count,i,op=0,total=0;string path;
+ integer next_progress=1000000;
+ always @(posedge clk)if(rst&&cycles>=next_progress)begin $display("PROGRESS cycles%0d op%0d state%0d x%0d y%0d oc%0d",cycles,op,dut.state,dut.ox,dut.oy,dut.oc);next_progress=next_progress+1000000;end
  always @(posedge clk)begin
   #1;
   if(rst&&opdone)begin

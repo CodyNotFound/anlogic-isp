@@ -15,7 +15,7 @@ try{
   $job=Get-Content $jobPath -Raw|ConvertFrom-Json
   if($job.status -eq 'failed'){throw $job.error}
   $networkPath=Join-Path $root 'build/fast_network_dual/test.log'
-  if(Test-Path $networkPath){$log=[IO.File]::ReadAllText($networkPath);if($log -match '(?m)^# \*\* (Fatal|Error):'){throw 'Dual-clock full network regression failed'}}
+  if(Test-Path $networkPath){$log=Get-Content -LiteralPath $networkPath -Raw;if($log -match '(?m)^# \*\* (Fatal|Error):'){throw 'Dual-clock full network regression failed'}}
   $suitePath=Join-Path $root 'build/dual_clock/completion.json'
  }while($job.status -ne 'passed' -or !(Test-Path $suitePath) -or $log -notmatch 'PASS tb_yunet_network_fast: all 55 operations' -or $log -notmatch 'Errors: 0, Warnings: 0')
  $suite=Get-Content $suitePath -Raw|ConvertFrom-Json
