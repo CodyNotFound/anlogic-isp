@@ -18,11 +18,19 @@ def quantize(args):
     reference=args.work/'scheduled_baseline'
     subprocess.run([sys.executable,str(Path(__file__).parent/'schedule.py'),'--qdir',str(args.work/'quantized/baseline'),'--out',str(reference)],check=True)
     names=['program.hex','bias.hex','shift.hex']+[f'weights{i}.hex' for i in range(4)]
+    deployment=ROOT/'assets/models/yunet/deployment.json'
+    fixed=read(deployment).get('official_baseline_word_sha256',{}) if deployment.exists() else {}
+    matches_production=True
     for name in names:
         original=[int(v,16) for v in (ROOT/'rtl/analytics/face_cnn'/name).read_text().split()]
         actual=[int(v,16) for v in (reference/name).read_text().split()]
-        if actual!=original:raise ValueError('Baseline does not reproduce production: '+name)
-    stamp(args.work,'quantize',status='passed',contract_sha256=sha(CONTRACT),baseline_matches_production=True)
+        matches_production &= actual==original
+        if name in fixed:
+            import hashlib
+            digest=hashlib.sha256(','.join(map(str,actual)).encode('ascii')).hexdigest()
+            if digest!=fixed[name]:raise ValueError('Baseline does not reproduce official reference: '+name)
+        elif actual!=original:raise ValueError('Baseline does not reproduce production: '+name)
+    stamp(args.work,'quantize',status='passed',contract_sha256=sha(CONTRACT),baseline_matches_production=matches_production,baseline_matches_official_reference=True)
 
 def export(args):
     from data import verify_sources
