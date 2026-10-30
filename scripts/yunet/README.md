@@ -13,6 +13,8 @@ python scripts/yunet/pipeline.py all --work .agent/yunet --steps 1000
 
 首次自动下载官方原模型、WIDER train/val及标注；固定SHA256校验，支持HTTP断点续传。输出都在指定work中。默认准备4000个训练视场、400个选模视场、800个最终测试视场；完整WIDER压缩包仍会下载。可通过 `--train-samples`、`--val-samples`、`--test-samples`、`--steps`、`--batch`调整。
 
+可用 `--recipe localization` 冻结特征提取及分类／目标置信度分支，只微调定位框分支；默认 `full` 为完整网络微调。两者均不改变网络结构。定位配方保留原来的框蒸馏与标注回归损失，不以提高置信度来换取更多检测。置信度浮点输出保持一致，整数输出及最终选框仍须实际评测，不能据此保证误检率完全不变。配方也纳入断点恢复指纹，切换配方需要新的work。
+
 Mac自动使用MPS，支持CUDA和CPU；可用 `--device`指定。ModelSim可从PATH、MODELSIM_BIN或 `--modelsim-bin`读取；`--verify-rtl require`要求本机完成RTL验证，`auto`在缺少工具时保留pending，`skip`明确跳过。未验证的包不会被标成可进入整机编译。
 
 只检查流程的小规模运行：

@@ -3,7 +3,7 @@ import argparse,json,os,shutil,sys,time,traceback
 from pathlib import Path
 from common import ROOT,CONTRACT,read,write,sha,stamp,source_hash
 
-DEFAULTS=dict(train_samples=4000,val_samples=400,test_samples=800,steps=1000,batch=12,lr=1e-5,
+DEFAULTS=dict(recipe='full',train_samples=4000,val_samples=400,test_samples=800,steps=1000,batch=12,lr=1e-5,
               eval_every=250,checkpoint_every=25,threads=4,seed=7351,device='auto',verify_rtl='auto',timeout=3600)
 STAGES=('download','prepare','train','quantize','evaluate','export','verify')
 
@@ -14,7 +14,7 @@ def parser():
     for n in ('downloads','data-root','model','modelsim-bin'):ap.add_argument('--'+n,type=Path)
     for n in ('train-samples','val-samples','test-samples','steps','batch','eval-every','checkpoint-every','threads','seed','timeout'):
         ap.add_argument('--'+n,type=int)
-    ap.add_argument('--lr',type=float);ap.add_argument('--device',choices=('auto','cpu','cuda','mps'))
+    ap.add_argument('--recipe',choices=('full','localization'));ap.add_argument('--lr',type=float);ap.add_argument('--device',choices=('auto','cpu','cuda','mps'))
     ap.add_argument('--verify-rtl',choices=('auto','require','skip'))
     ap.add_argument('--resume',action='store_true');ap.add_argument('--offline',action='store_true')
     ap.add_argument('--smoke',action='store_true',default=None,help='Tiny execution test, never accuracy-qualified')

@@ -9,15 +9,23 @@ from data import dataset,render,verify_sources
 from yunet_torch import YuNetN,export_onnx_weights
 from evaluate import FloatRunner,metrics,acceptable
 
-def loss_fn(student,teacher,gt):
+def configure_training(model,lr,recipe):
+    if recipe not in ('full','localization'):raise ValueError('Unknown training recipe')
+    groups=[dict(params=[],lr=lr/5),dict(params=[],lr=lr)]
+    for name,p in model.p.items():
+        p.requires_grad_('multi_level_bbox' in name if recipe=='localization' else 'kps' not in name)
+        if p.requires_grad:groups[int('bbox_head' in name)]['params'].append(p)
+    return [g for g in groups if g['params']]
+
+def loss_fn(student,teacher,gt,recipe='full'):
     # Unannotated/tiny/invalid faces are not made hard background targets:
     # keep teacher probabilities there. Only annotation-disjoint crops are explicit negatives.
-    total=student['cls'][0].sum()*0
+    total=student['box'][0].sum()*0 if recipe=='localization' else student['cls'][0].sum()*0
     for level,stride in enumerate((8,16,32)):
         sc,so,sb=(student[k][level] for k in ('cls','obj','box'))
         tc,to,tb=(teacher[k][level] for k in ('cls','obj','box'))
         confidence=(tc.sigmoid()*to.sigmoid()).sqrt()
-        total+=2*F.binary_cross_entropy_with_logits(sc,tc.sigmoid())+2*F.binary_cross_entropy_with_logits(so,to.sigmoid())
+        if recipe=='full':total+=2*F.binary_cross_entropy_with_logits(sc,tc.sigmoid())+2*F.binary_cross_entropy_with_logits(so,to.sigmoid())
         trusted=confidence[:,0]>.2
         if trusted.any():total+=.25*F.smooth_l1_loss(sb.permute(0,2,3,1)[trusted],tb.permute(0,2,3,1)[trusted])
         positive=[];targets=[]
@@ -34,11 +42,12 @@ def loss_fn(student,teacher,gt):
                     positive.append((n,yy,xx));targets.append([(x+w/2)/stride-xx,(y+h/2)/stride-yy,math.log(w/stride),math.log(h/stride)])
         if positive:
             n,y,x=zip(*positive)
-            total+=.15*F.binary_cross_entropy_with_logits(sc[n,0,y,x],torch.ones_like(sc[n,0,y,x]))
-            total+=.15*F.binary_cross_entropy_with_logits(so[n,0,y,x],torch.ones_like(so[n,0,y,x]))
+            if recipe=='full':
+                total+=.15*F.binary_cross_entropy_with_logits(sc[n,0,y,x],torch.ones_like(sc[n,0,y,x]))
+                total+=.15*F.binary_cross_entropy_with_logits(so[n,0,y,x],torch.ones_like(so[n,0,y,x]))
             total+=.25*F.smooth_l1_loss(sb.permute(0,2,3,1)[n,y,x],torch.tensor(targets,device=sb.device,dtype=sb.dtype))
         negatives=[n for n,b in enumerate(gt) if not len(b)]
-        if negatives:
+        if negatives and recipe=='full':
             for output in (sc,so):
                 flat=output[negatives].flatten(1);hard=flat.topk(min(12,flat.shape[1]),dim=1).values
                 total+=.10*F.binary_cross_entropy_with_logits(hard,torch.zeros_like(hard))
@@ -57,13 +66,10 @@ def run(args):
     model=YuNetN().load_onnx(work/'upstream/yunet.onnx').to(device)
     teacher=YuNetN().load_onnx(work/'upstream/yunet.onnx').to(device).eval()
     for p in teacher.parameters():p.requires_grad_(False)
-    groups=[dict(params=[],lr=args.lr/5),dict(params=[],lr=args.lr)]
-    for name,p in model.p.items():
-        p.requires_grad_('kps' not in name)
-        if p.requires_grad:groups[int('bbox_head' in name)]['params'].append(p)
+    groups=configure_training(model,args.lr,args.recipe)
     optimizer=torch.optim.AdamW(groups,weight_decay=1e-5)
     data,rows=dataset(work,'train')
-    signature=dict(steps=args.steps,batch=args.batch,lr=args.lr,seed=args.seed,eval_every=args.eval_every,
+    signature=dict(recipe=args.recipe,steps=args.steps,batch=args.batch,lr=args.lr,seed=args.seed,eval_every=args.eval_every,
                    manifest_sha256=sha(work/'prepared/manifest.json'),source_model_sha256=sha(work/'upstream/yunet.onnx'),scripts={k:v for k,v in source_hash().items() if Path(k).name in ('train.py','data.py','deployment.py','yunet_torch.py','evaluate.py','common.py')})
     current=out/'last.pt';start=0;best=-1e9;history=[];selected=None
     if current.exists():
@@ -87,10 +93,10 @@ def run(args):
             batch=[render(data,rng.choice(rows),rng) for _ in range(args.batch)]
             x=torch.from_numpy(np.stack([b[0] for b in batch]).transpose(0,3,1,2).astype(np.float32)).to(device)
             with torch.no_grad():old=teacher(x)
-            model.train();new=model(x);loss=loss_fn(new,old,[b[1] for b in batch])
+            model.train();new=model(x);loss=loss_fn(new,old,[b[1] for b in batch],args.recipe)
             if not torch.isfinite(loss):raise ValueError('Non-finite training loss')
             optimizer.zero_grad(set_to_none=True);loss.backward();torch.nn.utils.clip_grad_norm_(model.parameters(),2);optimizer.step()
-            for j,g in enumerate(optimizer.param_groups):g['lr']=args.lr/(5 if j==0 else 1)*(.1+.9*(1+math.cos(math.pi*step/args.steps))/2)
+            for j,g in enumerate(optimizer.param_groups):g['lr']=args.lr/(5 if args.recipe=='full' and j==0 else 1)*(.1+.9*(1+math.cos(math.pi*step/args.steps))/2)
             log.write(f'{step},{loss.item():.8f},{time.monotonic()-t0:.2f}\n');log.flush()
             if step==1 or step%25==0:print('TRAIN STEP',step,'/',args.steps,'loss',round(loss.item(),6),flush=True)
             if step%args.eval_every==0 or step==args.steps:
@@ -111,7 +117,7 @@ def run(args):
     if chosen.keys()!=original.keys() or any(chosen[k].shape!=original[k].shape for k in original):raise ValueError('Topology changed')
     changed=sum(not torch.equal(chosen[k],original[k]) for k in original)
     if not changed:raise ValueError('No trained tensors changed')
-    write(out/'result.json',dict(status='completed',steps=args.steps,selected_step=selected,changed_tensors=changed,
+    write(out/'result.json',dict(status='completed',recipe=args.recipe,steps=args.steps,selected_step=selected,changed_tensors=changed,
                                 candidate_sha256=sha(out/'candidate.onnx'),weights_only=True,architecture_changed=False,
                                 validation_eligible=next(h['eligible'] for h in history if h['step']==selected)))
     stamp(work,'train',status='completed',changed_tensors=changed,selected_step=selected)
