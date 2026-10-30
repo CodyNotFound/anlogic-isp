@@ -1,5 +1,5 @@
 ﻿param(
- [ValidateSet('all','tone','effects','osd','network','cnn-unit','dual-clock','controls','tracking','reticle','reliability','gimbal','isp','ddr')][string[]]$Tests=@('all'),
+ [ValidateSet('all','tone','effects','osd','network','camera-input','cnn-unit','dual-clock','controls','tracking','reticle','reliability','gimbal','isp','ddr')][string[]]$Tests=@('all'),
  [string]$PythonExe='',
  [switch]$List,[switch]$FullFrame
 )
@@ -9,16 +9,20 @@ $ErrorActionPreference='Stop'
 . (Join-Path (Get-RepositoryRoot) 'scripts/simulation/sim_common.ps1')
 $root=$script:SimRoot
 if(!$PythonExe){$PythonExe=Get-ProjectPython}
-$groups=@('tone','effects','osd','cnn-unit','network','dual-clock','controls','tracking','reticle','reliability','gimbal','isp','ddr')
+$groups=@('tone','effects','osd','cnn-unit','network','camera-input','dual-clock','controls','tracking','reticle','reliability','gimbal','isp','ddr')
 if($List){$groups;return}
 if($Tests -contains 'all'){$Tests=$groups}
 $cnn=@('rtl/analytics/face_cnn/yunet_dot4.v','rtl/analytics/face_cnn/yunet_network.v')
 $inc=@('rtl/analytics/face_cnn')
 Push-Location $root
 try{
- if(@($Tests|Where-Object {$_ -in 'network','cnn-unit','dual-clock','tracking','controls'}).Count){
+ if(@($Tests|Where-Object {$_ -in 'network','camera-input','cnn-unit','dual-clock','tracking','controls'}).Count){
   & $PythonExe scripts/cnn/check_yunet_dw_bounds.py --bits 18;if($LASTEXITCODE){throw 'Accumulator bounds failed'}
   & $PythonExe scripts/cnn/pack_yunet_rom.py --check;if($LASTEXITCODE){throw 'Packed model constants mismatch'}
+ }
+ if($Tests -contains 'camera-input'){
+  & $PythonExe scripts/yunet/make_input_fixture.py;if($LASTEXITCODE){throw 'Camera fixture failed'}
+  Invoke-RtlTest -Name camera_input -Top tb_yunet_camera_input -Files @('rtl/analytics/face_cnn/yunet_rgb_snapshot.v','sim/cnn/tb_yunet_camera_input.sv')
  }
  if($Tests -contains 'tone'){Invoke-RtlTest -Name tone -Top tb_color_tone_luma -Files @('rtl/isp/color_tone4.v','sim/reference/color_tone4_before_luma.v','sim/isp/tb_color_tone_luma.sv') -Includes @('rtl/isp')}
  if($Tests -contains 'effects'){Invoke-RtlTest -Name effects -Top tb_pixel_cartoon_timing -Files @('rtl/isp/pixel_cartoon.v','sim/reference/pixel_cartoon_timing_ref.v','sim/isp/tb_pixel_cartoon_timing.sv')}

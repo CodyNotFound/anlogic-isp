@@ -15,6 +15,7 @@
 | tone / effects | 全RGB亮度恒等式、色彩/Gamma/背压；卡通/边缘/锐化/模糊/浮雕与边界同步 |
 | isp | AWB、LSC逐值一致；实际ISP及视频入队的帧前导与背压；FullFrame扩展到720行 |
 | cnn-unit | ROM解包、地址、18位DW量化、MAC流水/20位累加、向量Pool/Resize/Add、解码 |
+| camera-input | 完整1280×720输入，经真实RTL取样，与Python的61440字节BGR0参考逐值比较 |
 | network | 当前150MHz原模型55层、659460个激活字节逐值比较，同时记录实际周期 |
 | dual-clock | 时钟桥、64KiB共享arena、实际头扫描、运动/颜色/模板共享内存与重捕 |
 | controls | 当前CNN150、HMI关闭、补帧关闭配置下的实体按键、手动优先/自动恢复及普通模式延迟 |
