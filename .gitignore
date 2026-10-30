@@ -19,3 +19,14 @@ td_project/.lock.f
 Thumbs.db
 **/__pycache__/
 /.agent/
+
+# GUI-generated runs, logs and local credentials.
+td_project/*_Runs/
+*.log
+*.logw
+*.bit
+.env
+.env.*
+!.env.example
+.venv/
+venv/

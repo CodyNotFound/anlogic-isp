@@ -1,5 +1,5 @@
 {
-  "source": "[LOCAL_PATH]",
+  "source": "Aurora-520_anlogic-ph1p35-vision/rtl/overlay/status_overlay.v",
   "source_sha256": "6e8be8781906733b38c0f793d27a7ac8fb70463a50973e40bb3a2c2a2f772eb7",
   "reference_chars": "ABEFHNOW0123456789CLT",
   "glyphs": {
