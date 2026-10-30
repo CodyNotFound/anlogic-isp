@@ -423,8 +423,95 @@
 
     // 模式名称字符表, idx 超出名称长度返回 0(空白)
     // 模式名(中文两字, 0x80系字库码; 超出返回空白)
-function[7:0] F_mode_name_char;input[3:0] kind;input[3:0] slot;begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h81;2: F_mode_name_char=8'h82;3: F_mode_name_char=8'h83;default:F_mode_name_char=0;endcase 1:case(slot)0: F_mode_name_char=8'h84;1: F_mode_name_char=8'h85;default:F_mode_name_char=0;endcase 2:case(slot)0: F_mode_name_char=8'h86;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 3:case(slot)0: F_mode_name_char=8'h87;1: F_mode_name_char=8'h88;default:F_mode_name_char=0;endcase 4:case(slot)0: F_mode_name_char=8'h89;1: F_mode_name_char=8'h8a;default:F_mode_name_char=0;endcase 5:case(slot)0: F_mode_name_char=8'h8b;1: F_mode_name_char=8'h8c;default:F_mode_name_char=0;endcase 6:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h8e;default:F_mode_name_char=0;endcase 7:case(slot)0: F_mode_name_char=8'h8f;1: F_mode_name_char=8'h90;default:F_mode_name_char=0;endcase 8:case(slot)0: F_mode_name_char=8'h91;1: F_mode_name_char=8'h92;default:F_mode_name_char=0;endcase 9:case(slot)0: F_mode_name_char=8'h93;1: F_mode_name_char=8'h94;default:F_mode_name_char=0;endcase 10:case(slot)0: F_mode_name_char=8'h95;1: F_mode_name_char=8'h80;default:F_mode_name_char=0;endcase 11:case(slot)0: F_mode_name_char=8'h96;1: F_mode_name_char=8'h97;default:F_mode_name_char=0;endcase 12:case(slot)0: F_mode_name_char=8'h8d;1: F_mode_name_char=8'h98;default:F_mode_name_char=0;endcase 13:case(slot)0: F_mode_name_char=8'h80;1: F_mode_name_char=8'h9b;default:F_mode_name_char=0;endcase 14:case(slot)0: F_mode_name_char=8'h9c;1: F_mode_name_char=8'h9d;default:F_mode_name_char=0;endcase default:F_mode_name_char=0;endcase end endfunction
-function[7:0] F_isp_name_char;input[2:0] kind;input[2:0] slot;begin case(kind)0:case(slot)0: F_isp_name_char=8'h83;1: F_isp_name_char=8'h83;2: F_isp_name_char=8'ha1;3: F_isp_name_char=8'ha1;default:F_isp_name_char=0;endcase 1:case(slot)0: F_isp_name_char=8'h42;1: F_isp_name_char=8'h4c;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 2:case(slot)0: F_isp_name_char=8'h41;1: F_isp_name_char=8'h57;2: F_isp_name_char=8'h42;default:F_isp_name_char=0;endcase 3:case(slot)0: F_isp_name_char=8'h4c;1: F_isp_name_char=8'h53;2: F_isp_name_char=8'h43;default:F_isp_name_char=0;endcase 4:case(slot)0: F_isp_name_char=8'h47;1: F_isp_name_char=8'h41;2: F_isp_name_char=8'h4d;3: F_isp_name_char=8'h4d;4: F_isp_name_char=8'h41;default:F_isp_name_char=0;endcase 5:case(slot)0: F_isp_name_char=8'h80;1: F_isp_name_char=8'h80;2: F_isp_name_char=8'h81;3: F_isp_name_char=8'h81;4: F_isp_name_char=8'h82;5: F_isp_name_char=8'h82;6: F_isp_name_char=8'h83;7: F_isp_name_char=8'h83;default:F_isp_name_char=0;endcase default:F_isp_name_char=0;endcase end endfunction
+function[7:0] F_mode_name_char;
+    input[3:0] kind;
+    input[3:0] slot;
+    begin case(kind)0:case(slot)0: F_mode_name_char=8'h80;
+    1: F_mode_name_char=8'h81;
+    2: F_mode_name_char=8'h82;
+    3: F_mode_name_char=8'h83;
+    default:F_mode_name_char=0;
+    endcase 1:case(slot)0: F_mode_name_char=8'h84;
+    1: F_mode_name_char=8'h85;
+    default:F_mode_name_char=0;
+    endcase 2:case(slot)0: F_mode_name_char=8'h86;
+    1: F_mode_name_char=8'h80;
+    default:F_mode_name_char=0;
+    endcase 3:case(slot)0: F_mode_name_char=8'h87;
+    1: F_mode_name_char=8'h88;
+    default:F_mode_name_char=0;
+    endcase 4:case(slot)0: F_mode_name_char=8'h89;
+    1: F_mode_name_char=8'h8a;
+    default:F_mode_name_char=0;
+    endcase 5:case(slot)0: F_mode_name_char=8'h8b;
+    1: F_mode_name_char=8'h8c;
+    default:F_mode_name_char=0;
+    endcase 6:case(slot)0: F_mode_name_char=8'h8d;
+    1: F_mode_name_char=8'h8e;
+    default:F_mode_name_char=0;
+    endcase 7:case(slot)0: F_mode_name_char=8'h8f;
+    1: F_mode_name_char=8'h90;
+    default:F_mode_name_char=0;
+    endcase 8:case(slot)0: F_mode_name_char=8'h91;
+    1: F_mode_name_char=8'h92;
+    default:F_mode_name_char=0;
+    endcase 9:case(slot)0: F_mode_name_char=8'h93;
+    1: F_mode_name_char=8'h94;
+    default:F_mode_name_char=0;
+    endcase 10:case(slot)0: F_mode_name_char=8'h95;
+    1: F_mode_name_char=8'h80;
+    default:F_mode_name_char=0;
+    endcase 11:case(slot)0: F_mode_name_char=8'h96;
+    1: F_mode_name_char=8'h97;
+    default:F_mode_name_char=0;
+    endcase 12:case(slot)0: F_mode_name_char=8'h8d;
+    1: F_mode_name_char=8'h98;
+    default:F_mode_name_char=0;
+    endcase 13:case(slot)0: F_mode_name_char=8'h80;
+    1: F_mode_name_char=8'h9b;
+    default:F_mode_name_char=0;
+    endcase 14:case(slot)0: F_mode_name_char=8'h9c;
+    1: F_mode_name_char=8'h9d;
+    default:F_mode_name_char=0;
+    endcase default:F_mode_name_char=0;
+    endcase end endfunction
+function[7:0] F_isp_name_char;
+    input[2:0] kind;
+    input[2:0] slot;
+    begin case(kind)0:case(slot)0: F_isp_name_char=8'h83;
+    1: F_isp_name_char=8'h83;
+    2: F_isp_name_char=8'ha1;
+    3: F_isp_name_char=8'ha1;
+    default:F_isp_name_char=0;
+    endcase 1:case(slot)0: F_isp_name_char=8'h42;
+    1: F_isp_name_char=8'h4c;
+    2: F_isp_name_char=8'h43;
+    default:F_isp_name_char=0;
+    endcase 2:case(slot)0: F_isp_name_char=8'h41;
+    1: F_isp_name_char=8'h57;
+    2: F_isp_name_char=8'h42;
+    default:F_isp_name_char=0;
+    endcase 3:case(slot)0: F_isp_name_char=8'h4c;
+    1: F_isp_name_char=8'h53;
+    2: F_isp_name_char=8'h43;
+    default:F_isp_name_char=0;
+    endcase 4:case(slot)0: F_isp_name_char=8'h47;
+    1: F_isp_name_char=8'h41;
+    2: F_isp_name_char=8'h4d;
+    3: F_isp_name_char=8'h4d;
+    4: F_isp_name_char=8'h41;
+    default:F_isp_name_char=0;
+    endcase 5:case(slot)0: F_isp_name_char=8'h80;
+    1: F_isp_name_char=8'h80;
+    2: F_isp_name_char=8'h81;
+    3: F_isp_name_char=8'h81;
+    4: F_isp_name_char=8'h82;
+    5: F_isp_name_char=8'h82;
+    6: F_isp_name_char=8'h83;
+    7: F_isp_name_char=8'h83;
+    default:F_isp_name_char=0;
+    endcase default:F_isp_name_char=0;
+    endcase end endfunction
 function F_isp_name_cjk;input[2:0] I_step;begin F_isp_name_cjk=I_step==0||I_step>=5;end endfunction
     // ================= 级A: 区域判定与字符选择 (像素位置在 S_x_1d/S_y_1d) =================
     // 纯位置判定, 各区域显式互斥, 不存在旧实现的 S_osd_hit 反馈(组合环)
