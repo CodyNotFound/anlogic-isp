@@ -911,8 +911,14 @@
     <Runs>
         <Run Name="syn_1" Type="Synthesis" ConstraintSet="constraint_1" Description="" Active="true" useDefaultScript="false">
             <Strategy Name="Default_Synthesis_Strategy">
+                <RtlProperty>
+                    <infer_fsm>off</infer_fsm>
+                    <min_ripple_len>24</min_ripple_len>
+                </RtlProperty>
             </Strategy>
             <UserParams>
+                <param>set_param rtl infer_fsm off</param>
+                <param>set_param rtl min_ripple_len 24</param>
             </UserParams>
         </Run>
         <Run Name="phy_1" Type="PhysicalDesign" ConstraintSet="constraint_1" Description="" SynRun="syn_1" Active="true">
