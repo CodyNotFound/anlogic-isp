@@ -267,9 +267,9 @@ def check_contracts(ops, wq, bq):
     problems = []
     for op in ops:
         if op['op'] == 'conv':
-            bad = [int(s) for s in op['shift'] if not (1 <= int(s) <= 31)]
+            bad = [int(s) for s in op['shift'] if not (0 <= int(s) <= 31)]
             if bad:
-                problems.append(f"{op['name']}: conv shifts outside 1..31 e.g. {bad[:3]}")
+                problems.append(f"{op['name']}: conv shifts outside 0..31 e.g. {bad[:3]}")
         elif op['op'] == 'add':
             if not all(s in (0, 1) for s in op['shifts']):
                 problems.append(f"{op['name']}: add shifts {op['shifts']} not in {{0,1}}")
@@ -299,23 +299,31 @@ def main():
     ap.add_argument('--model', type=Path, required=True)
     ap.add_argument('--calib-dir', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--scale-reference', type=Path, help='Freeze deployed activation/head exponents')
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
     m, weights = load_graph(args.model)
     images = load_calib_images(args.calib_dir)
     calib_scales, shapes = calibrate(m, images)
+    if args.scale_reference:
+        reference=json.loads(args.scale_reference.read_text(encoding='utf-8'))['scales']
+        if not set(calib_scales).issubset(reference):raise ValueError('Scale contract does not cover this graph')
+        calib_scales=reference
     ops, final_scales, heads, wq, bq, shifts = lower(m, weights, calib_scales, shapes)
 
     float_errors = verify_lowering(m, weights, ops, images[0])
+    if max(float_errors.values())>1e-3:raise ValueError('Float lowering does not match ONNX')
     problems = check_contracts(ops, wq, bq)
 
     run = session(m)
     trace = None
     agreement = {}
+    saturation_max = {}
     for a in images[:6]:
         raw = run.run(None, {'input': a.transpose(2, 0, 1)[None].astype(np.float32)})
         t, acc, sat = infer(a, ops)
+        for name,value in sat.items():saturation_max[name]=max(saturation_max.get(name,0),value)
         if trace is None:
             trace = t
         for name, src in heads.items():
@@ -326,7 +334,7 @@ def main():
             fv = fv.reshape(H // stride, W // stride, c)  # graph tail flattens to HWC
             if name.startswith(('cls', 'obj')):
                 qv = 1 / (1 + np.exp(-qv))
-                fv = 1 / (1 + np.exp(-fv))
+                # ONNX detection outputs already contain sigmoid probabilities.
             agreement[name] = float(np.max(np.abs(qv - fv)))
 
     serial = [{k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in op.items()
@@ -345,9 +353,13 @@ def main():
                   operations=len(ops), weight_bytes=int(len(wq)),
                   lowered_float_max_abs_error=max(float_errors.values()),
                   worst_integer_head_deviation=max(agreement.values()),
-                  contract_problems=problems)
+                  contract_problems=problems,
+                  calibration_saturation_max=saturation_max,
+                  frozen_scale_reference=bool(args.scale_reference))
     (args.out / 'quantize_report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-    print(json.dumps(report, indent=2))
+    summary={k:v for k,v in report.items() if k!='calibration_saturation_max'}
+    summary['worst_saturation_fraction']=max(saturation_max.values(),default=0)
+    print(json.dumps(summary,indent=2))
     if problems:
         raise SystemExit('RTL contract violations; ROMs NOT eligible for the FPGA')
 

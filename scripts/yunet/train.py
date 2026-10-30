@@ -1,249 +1,117 @@
-"""Fine-tune yunet_n on WIDER Face crops rendered as 160x96 canvases.
-
-Warm start = official opencv_zoo weights. Supervision is FCOS-style: cls BCE
-over grid cells, centerness BCE on positives, L1 on (offset_x, offset_y,
-log w, log h). The optimizer only ever sees losses on the cls/obj/bbox
-branches; kps parameters stay at their pretrained values.
-
-Usage: python train.py --images <WIDER_train/images> --split <bbx_gt txt>
-                        --work <dir> [--steps 9000] [--batch 16]
-"""
-import argparse
-import math
-import queue
-import threading
-import time
+"""Full YuNet warm-start fine-tuning with deterministic resume and held-out selection."""
+import math,os,random,time
 from pathlib import Path
-
 import numpy as np
 import torch
+import torch.nn.functional as F
+from common import read,write,sha,source_hash,environment,stamp
+from data import dataset,render,verify_sources
+from yunet_torch import YuNetN,export_onnx_weights
+from evaluate import FloatRunner,metrics,acceptable
 
-from yunet_torch import YuNetN, decode_heads, STRIDES
-from data import (WiderCropDataset, parse_wider_annotations, make_crop_eval_set,
-                  VISIBLE_W, VISIBLE_H, CANVAS_H, assign_strides)
+def loss_fn(student,teacher,gt):
+    # Unannotated/tiny/invalid faces are not made hard background targets:
+    # keep teacher probabilities there. Only annotation-disjoint crops are explicit negatives.
+    total=student['cls'][0].sum()*0
+    for level,stride in enumerate((8,16,32)):
+        sc,so,sb=(student[k][level] for k in ('cls','obj','box'))
+        tc,to,tb=(teacher[k][level] for k in ('cls','obj','box'))
+        confidence=(tc.sigmoid()*to.sigmoid()).sqrt()
+        total+=2*F.binary_cross_entropy_with_logits(sc,tc.sigmoid())+2*F.binary_cross_entropy_with_logits(so,to.sigmoid())
+        trusted=confidence[:,0]>.2
+        if trusted.any():total+=.25*F.smooth_l1_loss(sb.permute(0,2,3,1)[trusted],tb.permute(0,2,3,1)[trusted])
+        positive=[];targets=[]
+        # Preserve the installed model's stride assignment at this input size;
+        # the other two heads remain protected by distillation.
+        if stride==8:
+            for n,boxes in enumerate(gt):
+                for x,y,w,h in boxes:
+                    x0=max(0,int((x+.25*w)/stride));x1=min(sc.shape[3]-1,int((x+.75*w)/stride))
+                    y0=max(0,int((y+.25*h)/stride));y1=min(sc.shape[2]-1,int((y+.75*h)/stride))
+                    if x1<x0 or y1<y0:continue
+                    scores=confidence[n,0,y0:y1+1,x0:x1+1];index=int(scores.argmax())
+                    yy=y0+index//scores.shape[1];xx=x0+index%scores.shape[1]
+                    positive.append((n,yy,xx));targets.append([(x+w/2)/stride-xx,(y+h/2)/stride-yy,math.log(w/stride),math.log(h/stride)])
+        if positive:
+            n,y,x=zip(*positive)
+            total+=.15*F.binary_cross_entropy_with_logits(sc[n,0,y,x],torch.ones_like(sc[n,0,y,x]))
+            total+=.15*F.binary_cross_entropy_with_logits(so[n,0,y,x],torch.ones_like(so[n,0,y,x]))
+            total+=.25*F.smooth_l1_loss(sb.permute(0,2,3,1)[n,y,x],torch.tensor(targets,device=sb.device,dtype=sb.dtype))
+        negatives=[n for n,b in enumerate(gt) if not len(b)]
+        if negatives:
+            for output in (sc,so):
+                flat=output[negatives].flatten(1);hard=flat.topk(min(12,flat.shape[1]),dim=1).values
+                total+=.10*F.binary_cross_entropy_with_logits(hard,torch.zeros_like(hard))
+    return total
 
-IGNORE, NEG, POS = 0, 1, 2
+def save(path,blob):
+    path=Path(path);temp=path.with_name(path.name+'.tmp');torch.save(blob,temp);os.replace(temp,path)
 
-
-def build_targets(boxes_list, device):
-    """Per-level cls/obj/box targets from a batch of (N_i,4) float box arrays."""
-    targets = []
-    for level, stride in enumerate(STRIDES):
-        gh, gw = CANVAS_H // stride, VISIBLE_W // stride
-        cls = torch.zeros(len(boxes_list), 1, gh, gw, device=device)
-        obj = torch.zeros(len(boxes_list), 1, gh, gw, device=device)
-        box = torch.zeros(len(boxes_list), 4, gh, gw, device=device)
-        pos = torch.zeros(len(boxes_list), 1, gh, gw, dtype=torch.bool, device=device)
-        for n, boxes in enumerate(boxes_list):
-            for (bx, by, bw, bh) in boxes:
-                x, y, w, h = float(bx), float(by), float(bw), float(bh)
-                if stride not in assign_strides(w, h):
-                    continue
-                # Center sampling: positives are cells inside the central half of the
-                # box. Full-box positives produced broad warm score maps and a
-                # precision collapse in the first fine-tuning iteration; small faces
-                # whose central half contains no cell fall back to the nearest cell.
-                cx_lo, cx_hi = x + 0.25 * w, x + 0.75 * w
-                cy_lo, cy_hi = y + 0.25 * h, y + 0.75 * h
-                cells = []
-                best = None
-                best_d = 1e9
-                for yy in range(max(0, int(y / stride)), min(gh - 1, int((y + h) / stride)) + 1):
-                    for xx in range(max(0, int(x / stride)), min(gw - 1, int((x + w) / stride)) + 1):
-                        px = (xx + 0.5) * stride
-                        py = (yy + 0.5) * stride
-                        if not (x <= px <= x + w and y <= py <= y + h):
-                            continue
-                        d = (px - (x + w / 2)) ** 2 + (py - (y + h / 2)) ** 2
-                        if d < best_d:
-                            best_d, best = d, (yy, xx)
-                        if cx_lo <= px <= cx_hi and cy_lo <= py <= cy_hi:
-                            cells.append((yy, xx))
-                if not cells and best is not None:
-                    cells = [best]
-                for yy, xx in cells:
-                    cls[n, 0, yy, xx] = 1.0
-                    obj[n, 0, yy, xx] = 1.0
-                    box[n, 0, yy, xx] = (x + w / 2) / stride - xx
-                    box[n, 1, yy, xx] = (y + h / 2) / stride - yy
-                    box[n, 2, yy, xx] = math.log(w / stride)
-                    box[n, 3, yy, xx] = math.log(h / stride)
-                    pos[n, 0, yy, xx] = True
-        targets.append((cls, obj, box, pos))
-    return targets
-
-
-def batch_loss(heads, targets):
-    losses = {}
-    cls_total = obj_total = box_total = 0.0
-    pos_total = 0
-    for level, (cls_t, obj_t, box_t, pos) in enumerate(targets):
-        cls_logits = heads['cls'][level]
-        obj_logits = heads['obj'][level]
-        box_pred = heads['box'][level]
-        pos = pos.expand_as(cls_logits)
-        npos = int(pos.sum())
-        if npos:
-            neg = (~pos) & (cls_t < 0.5)
-            nneg = max(1, int(neg.sum()))
-            w = torch.zeros_like(cls_t)
-            w[pos] = 1.0
-            w[neg] = min(3.0 * npos / nneg, 1.0)
-            cls_total = cls_total + torch.nn.functional.binary_cross_entropy_with_logits(
-                cls_logits, cls_t, weight=w)
-            obj_total = obj_total + torch.nn.functional.binary_cross_entropy_with_logits(
-                obj_logits[pos], obj_t[pos])
-            box_total = box_total + torch.nn.functional.smooth_l1_loss(
-                box_pred[pos.expand_as(box_pred)].view(-1, 4),
-                box_t[pos.expand_as(box_t)].view(-1, 4), beta=0.5)
-            pos_total += npos
-        else:
-            cls_total = cls_total + torch.nn.functional.binary_cross_entropy_with_logits(cls_logits, cls_t)
-    losses['cls'] = float(cls_total)
-    losses['obj'] = float(obj_total) if pos_total else 0.0
-    losses['box'] = float(box_total) if pos_total else 0.0
-    return cls_total + obj_total + 2.0 * box_total, losses, pos_total
-
-
-class BatchPrefetcher:
-    """Worker threads render sample batches while the main thread trains."""
-
-    def __init__(self, img_root, annotations, batch, seed, workers=3):
-        self.queue = queue.Queue(maxsize=8)
-        self.stop = threading.Event()
-        self.threads = []
-        for w in range(workers):
-            ds = WiderCropDataset(img_root, annotations, length=10 ** 9, seed=seed + 1000 * w + 7)
-            t = threading.Thread(target=self._produce, args=(ds, batch), daemon=True)
-            t.start()
-            self.threads.append(t)
-
-    def _produce(self, ds, batch):
-        i = 0
-        while not self.stop.is_set():
-            canvases, gts = [], []
-            for _ in range(batch):
-                c, b = ds[i]
-                canvases.append(c)
-                gts.append(b)
-                i += 1
-            self.queue.put((np.stack(canvases), gts))
-
-    def next(self):
-        return self.queue.get()
-
-
-@torch.no_grad()
-def quick_eval(model, crop_eval, device, per_size=12, threshold=0.5):
-    model.eval()
-    hits = total = 0
-    for size, items in sorted(crop_eval.items()):
-        for canvas, boxes, _ in items[:per_size]:
-            x = torch.from_numpy(canvas.transpose(2, 0, 1)[None].astype(np.float32)).to(device)
-            heads = model(x)
-            best = decode_heads(heads, threshold=threshold, single=True)
-            gt = boxes[0]
-            if best is None:
-                total += 1
-                continue
-            from yunet_torch import _iou
-            hits += int(_iou(best, gt.tolist()) >= 0.5)
-            total += 1
-    model.train()
-    return hits / max(1, total)
-
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--images', type=Path, required=True)
-    ap.add_argument('--split', type=Path, required=True)
-    ap.add_argument('--eval-images', type=Path,
-                    help='WIDER val images; checkpoint selection uses val crops when given '
-                         '(train-crop selection is optimistic — see run 1)')
-    ap.add_argument('--eval-split', type=Path)
-    ap.add_argument('--work', type=Path, required=True)
-    ap.add_argument('--steps', type=int, default=9000)
-    ap.add_argument('--batch', type=int, default=16)
-    ap.add_argument('--lr', type=float, default=7e-5)
-    ap.add_argument('--warm', type=int, default=400)
-    ap.add_argument('--seed', type=int, default=20261028)
-    ap.add_argument('--threads', type=int, default=8)
-    ap.add_argument('--device', default='auto',
-                    help='auto picks cuda, then mps (Apple Silicon), then cpu')
-    args = ap.parse_args()
-
-    torch.manual_seed(args.seed)
-    torch.set_num_threads(max(1, args.threads))
-    if args.device == 'auto':
-        device = torch.device('cuda' if torch.cuda.is_available()
-                              else 'mps' if getattr(torch.backends, 'mps', None) is not None
-                              and torch.backends.mps.is_available() else 'cpu')
-    else:
-        device = torch.device(args.device)
-    args.work.mkdir(parents=True, exist_ok=True)
-
-    model = YuNetN().load_onnx().to(device)
-    annotations = parse_wider_annotations(args.split)
-    if args.eval_images and args.eval_split:
-        crop_eval = make_crop_eval_set(args.eval_images,
-                                       parse_wider_annotations(args.eval_split), per_size=16)
-        print('checkpoint selection: VAL crops', flush=True)
-    else:
-        crop_eval = make_crop_eval_set(args.images, annotations, per_size=16)
-        print('checkpoint selection: TRAIN crops (pass --eval-images/--eval-split for honest selection)',
-              flush=True)
-    prefetch = BatchPrefetcher(args.images, annotations, args.batch, args.seed)
-
-    trainable = [p for k, p in model.p.items() if 'kps' not in k]
-    opt = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=1e-4)
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt, max_lr=args.lr, total_steps=args.steps,
-        pct_start=min(0.3, args.warm / args.steps))
-
-    print(f'device={device} params={sum(p.numel() for p in model.p.values())} '
-          f'trainable={sum(p.numel() for p in trainable)}', flush=True)
-    baseline = quick_eval(model, crop_eval, device)
-    print(f'baseline official-weights crop recall@0.5 = {baseline:.4f}', flush=True)
-    best = -1.0
-    log = open(args.work / 'train_log.csv', 'a', encoding='utf-8')
-    log.write('step,loss,cls,obj,box,pos,recall,seconds\n')
-
-    t0 = time.time()
-    for step in range(1, args.steps + 1):
-        canvases, gts = prefetch.next()
-        batch = torch.from_numpy(canvases.transpose(0, 3, 1, 2).astype(np.float32)).to(device)
-        targets = build_targets(gts, device)
-        heads = model(batch)
-        loss, parts, npos = batch_loss(heads, targets)
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(trainable, 5.0)
-        opt.step()
-        sched.step()
-        if step % 100 == 0 or step == 1:
-            msg = (f'step {step}/{args.steps} loss={float(loss):.4f} '
-                   f'cls={parts["cls"]:.4f} obj={parts["obj"]:.4f} box={parts["box"]:.4f} '
-                   f'pos={npos} lr={sched.get_last_lr()[0]:.2e} {time.time()-t0:.0f}s')
-            print(msg, flush=True)
-            log.write(f'{step},{float(loss):.5f},{parts["cls"]:.5f},{parts["obj"]:.5f},'
-                      f'{parts["box"]:.5f},{npos},,{time.time()-t0:.1f}\n')
-            log.flush()
-        if step % 1500 == 0 or step == args.steps:
-            recall = quick_eval(model, crop_eval, device)
-            print(f'  eval@{step}: crop recall={recall:.4f} (best {max(best, recall):.4f})', flush=True)
-            log.seek(0, 2)
-            if recall >= best:
-                best = recall
-                torch.save({k: v.detach().cpu() for k, v in model.p.items()},
-                           args.work / 'best_weights.pt')
-                (args.work / 'best_meta.json').write_text(
-                    f'{{"step": {step}, "crop_recall": {recall}, "baseline": {baseline}}}\n',
-                    encoding='utf-8')
-    torch.save({k: v.detach().cpu() for k, v in model.p.items()}, args.work / 'final_weights.pt')
-    (args.work / 'final_meta.json').write_text(
-        f'{{"step": {args.steps}, "best_recall": {best}, "baseline": {baseline}}}\n', encoding='utf-8')
-    print(f'done. baseline={baseline:.4f} best={best:.4f}', flush=True)
-
-
-if __name__ == '__main__':
-    main()
+def run(args):
+    work=args.work;out=work/'training';out.mkdir(exist_ok=True)
+    cv2=__import__('cv2');cv2.setNumThreads(1);torch.set_num_threads(args.threads)
+    torch.manual_seed(args.seed);rng=random.Random(args.seed)
+    if args.device=='auto':device=torch.device('cuda' if torch.cuda.is_available() else 'mps' if hasattr(torch.backends,'mps') and torch.backends.mps.is_available() else 'cpu')
+    else:device=torch.device(args.device)
+    verify_sources(work)
+    model=YuNetN().load_onnx(work/'upstream/yunet.onnx').to(device)
+    teacher=YuNetN().load_onnx(work/'upstream/yunet.onnx').to(device).eval()
+    for p in teacher.parameters():p.requires_grad_(False)
+    groups=[dict(params=[],lr=args.lr/5),dict(params=[],lr=args.lr)]
+    for name,p in model.p.items():
+        p.requires_grad_('kps' not in name)
+        if p.requires_grad:groups[int('bbox_head' in name)]['params'].append(p)
+    optimizer=torch.optim.AdamW(groups,weight_decay=1e-5)
+    data,rows=dataset(work,'train')
+    signature=dict(steps=args.steps,batch=args.batch,lr=args.lr,seed=args.seed,eval_every=args.eval_every,
+                   manifest_sha256=sha(work/'prepared/manifest.json'),source_model_sha256=sha(work/'upstream/yunet.onnx'),scripts={k:v for k,v in source_hash().items() if Path(k).name in ('train.py','data.py','deployment.py','yunet_torch.py','evaluate.py','common.py')})
+    current=out/'last.pt';start=0;best=-1e9;history=[];selected=None
+    if current.exists():
+        if not args.resume:raise ValueError('Training checkpoint exists; use --resume or choose a new work directory')
+        checkpoint=torch.load(current,map_location='cpu',weights_only=False)
+        if checkpoint['signature']!=signature:raise ValueError('Resume configuration, data or script fingerprint changed')
+        model.load_state_dict(checkpoint['model']);optimizer.load_state_dict(checkpoint['optimizer'])
+        for state in optimizer.state.values():
+            for key,value in state.items():
+                if torch.is_tensor(value):state[key]=value.to(device)
+        rng.setstate(checkpoint['rng']);torch.set_rng_state(checkpoint['torch_rng'])
+        start=checkpoint['step'];best=checkpoint['best'];history=checkpoint['history'];selected=checkpoint['selected']
+    baseline,_=metrics(work,'val',FloatRunner(teacher,device),False)
+    write(out/'run.json',dict(signature=signature,environment=environment(),device=str(device),architecture='full YuNet, unchanged channels and layers',baseline=baseline))
+    print('TRAIN BASELINE',baseline,flush=True)
+    log_path=out/'loss.csv'
+    with log_path.open('a' if start else 'w',encoding='utf-8') as log:
+        if not start:log.write('step,loss,seconds\n')
+        t0=time.monotonic()
+        for step in range(start+1,args.steps+1):
+            batch=[render(data,rng.choice(rows),rng) for _ in range(args.batch)]
+            x=torch.from_numpy(np.stack([b[0] for b in batch]).transpose(0,3,1,2).astype(np.float32)).to(device)
+            with torch.no_grad():old=teacher(x)
+            model.train();new=model(x);loss=loss_fn(new,old,[b[1] for b in batch])
+            if not torch.isfinite(loss):raise ValueError('Non-finite training loss')
+            optimizer.zero_grad(set_to_none=True);loss.backward();torch.nn.utils.clip_grad_norm_(model.parameters(),2);optimizer.step()
+            for j,g in enumerate(optimizer.param_groups):g['lr']=args.lr/(5 if j==0 else 1)*(.1+.9*(1+math.cos(math.pi*step/args.steps))/2)
+            log.write(f'{step},{loss.item():.8f},{time.monotonic()-t0:.2f}\n');log.flush()
+            if step==1 or step%25==0:print('TRAIN STEP',step,'/',args.steps,'loss',round(loss.item(),6),flush=True)
+            if step%args.eval_every==0 or step==args.steps:
+                result,_=metrics(work,'val',FloatRunner(model,device),False)
+                eligible=acceptable(baseline,result)
+                score=result['single_target_hit_rate']+.5*result['precision']-2*result['negative_acceptance_rate']
+                history.append(dict(step=step,eligible=eligible,score=score,metrics=result));write(out/'selection.json',history)
+                # Store genuinely trained candidates even when rejected; never rename official weights as trained.
+                if selected is None or (eligible and score>best):
+                    selected=step;best=score if eligible else -1e9
+                    save(out/'best.pt',model.state_dict());export_onnx_weights(model,src=work/'upstream/yunet.onnx',dst=out/'candidate.onnx')
+                print('TRAIN EVAL',step,'eligible',eligible,'hit',result['single_target_hit_rate'],flush=True)
+            if step%args.checkpoint_every==0 or step%args.eval_every==0 or step==args.steps:
+                save(current,dict(model=model.state_dict(),optimizer=optimizer.state_dict(),step=step,best=best,history=history,selected=selected,
+                                  signature=signature,rng=rng.getstate(),torch_rng=torch.get_rng_state()))
+    chosen=torch.load(out/'best.pt',map_location='cpu',weights_only=True)
+    original={k:v.detach().cpu() for k,v in teacher.state_dict().items()}
+    if chosen.keys()!=original.keys() or any(chosen[k].shape!=original[k].shape for k in original):raise ValueError('Topology changed')
+    changed=sum(not torch.equal(chosen[k],original[k]) for k in original)
+    if not changed:raise ValueError('No trained tensors changed')
+    write(out/'result.json',dict(status='completed',steps=args.steps,selected_step=selected,changed_tensors=changed,
+                                candidate_sha256=sha(out/'candidate.onnx'),weights_only=True,architecture_changed=False,
+                                validation_eligible=next(h['eligible'] for h in history if h['step']==selected)))
+    stamp(work,'train',status='completed',changed_tensors=changed,selected_step=selected)

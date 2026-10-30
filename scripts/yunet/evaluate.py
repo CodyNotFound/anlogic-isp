@@ -1,198 +1,120 @@
-"""Compare candidate weights on WIDER Face derived 160x96 evaluation sets.
-
-Candidates:
-  old_float  - original opencv_zoo ONNX via onnxruntime (accuracy ceiling of shipped ROMs)
-  old_int8   - original ONNX through this repo's power-of-two integer pipeline
-  new_float  - fine-tuned ONNX via onnxruntime
-  new_int8   - fine-tuned ONNX through the same integer pipeline
-
-Metrics: multi-box recall/precision@IoU .5 and the deployment-relevant
-single-best-box hit rate (the RTL decoder keeps exactly one box).
-Usage: python evaluate.py --images <WIDER_val/images> --split <val bbx_gt>
-       --old <orig.onnx> --new <finetuned.onnx> --old-int8 <dir> --new-int8 <dir>
-       --out <report.json> [--val-images 600]
-"""
-import argparse
-import json
-import sys
+"""Single-target metrics using deployed LUTs, threshold, clipping and square conversion."""
+import math,pickle
 from pathlib import Path
-
 import numpy as np
-import onnxruntime as ort
+import torch
+from common import ROOT,read,write,sha,stamp
+from data import dataset,render
 
-sys.path.insert(0, str(Path(__file__).parent))
+def iou(a,b):
+    area=max(0,min(a[0]+a[2],b[0]+b[2])-max(a[0],b[0]))*max(0,min(a[1]+a[3],b[1]+b[3])-max(a[1],b[1]))
+    return float(area/max(1e-9,a[2]*a[3]+b[2]*b[3]-area))
 
-from data import (FullSceneDataset, parse_wider_annotations, make_crop_eval_set,
-                  VISIBLE_W, VISIBLE_H, CANVAS_H, MIN_FACE)
+class Decoder:
+    def __init__(self,rom=ROOT/'rtl/analytics/face_cnn'):
+        self.sigmoid=np.array([int(v,16) for v in (rom/'sigmoid.hex').read_text().split()])
+        a=np.array([int(v,16) for v in (rom/'offset.hex').read_text().split()]);self.offset=np.where(a>=32768,a-65536,a)
+        self.size=np.array([int(v,16) for v in (rom/'size.hex').read_text().split()])
+        if (len(self.sigmoid),len(self.offset),len(self.size))!=(1536,768,768):raise ValueError('Decoder LUT capacity mismatch')
 
-STRIDES = (8, 16, 32)
-GRIDS = {f'{kind}_{s}': (96 // s, 160 // s, c)
-         for s in STRIDES for kind, c in (('cls', 1), ('obj', 1), ('bbox', 4))}
+    def __call__(self,heads,integer):
+        best=None;best_score=-1
+        for level,stride in enumerate((8,16,32)):
+            cls,obj,box=heads['cls'][level],heads['obj'][level],heads['box'][level]
+            for y in range(cls.shape[0]):
+                for x in range(cls.shape[1]):
+                    if integer:
+                        c=int(cls[y,x,0])&255;o=int(obj[y,x,0])&255;b=[int(v)&255 for v in box[y,x]]
+                        score=int(self.sigmoid[level*256+c])*int(self.sigmoid[768+level*256+o])
+                        cx=x*stride*16+int(self.offset[level*256+b[0]]);cy=y*stride*16+int(self.offset[level*256+b[1]])
+                        w=int(self.size[level*256+b[2]]);h=int(self.size[level*256+b[3]])
+                        half_w=w//2;half_h=h//2
+                    else:
+                        c=float(np.clip(cls[y,x,0],-80,80));o=float(np.clip(obj[y,x,0],-80,80))
+                        score=127**2/((1+math.exp(-c))*(1+math.exp(-o)))
+                        b=box[y,x];cx=(x+float(b[0]))*stride*16;cy=(y+float(b[1]))*stride*16
+                        w=min(65535,max(0,round(math.exp(float(np.clip(b[2],-12,12)))*stride*16)))
+                        h=min(65535,max(0,round(math.exp(float(np.clip(b[3],-12,12)))*stride*16)))
+                        half_w=w//2;half_h=h//2
+                    if score<6815 or score<=best_score or not(0<=cx<2560 and 0<=cy<1440):continue
+                    left=max(0,min(160,math.floor((cx-half_w)/16)))
+                    right=max(0,min(160,math.floor((cx+half_w+15)/16)))
+                    top=max(0,min(90,math.floor((cy-half_h)/16)))
+                    bottom=max(0,min(90,math.floor((cy+half_h+15)/16)))
+                    if right<=left or bottom<=top:continue
+                    side=min(90,max(right-left,bottom-top))*8
+                    center=[(left+right)*4,(top+bottom)*4]
+                    square=[max(0,min(1280-side,center[0]-side//2)),max(0,min(720-side,center[1]-side//2)),side,side]
+                    best=dict(rect=[left,top,right-left,bottom-top],center=center,square=square,score=float(score),anchor=[level,x,y])
+                    best_score=score
+        return best
 
+class FloatRunner:
+    def __init__(self,model,device='cpu'):
+        self.model=model;self.device=device
+    @torch.no_grad()
+    def __call__(self,a):
+        self.model.eval()
+        raw=self.model(torch.from_numpy(a.transpose(2,0,1)[None].astype(np.float32)).to(self.device))
+        return {k:[v.detach().cpu().numpy()[0].transpose(1,2,0) for v in raw[k]] for k in ('cls','obj','box')}
 
-def iou(a, b):
-    x = max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
-    y = max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
-    inter = x * y
-    return inter / max(1e-12, a[2] * a[3] + b[2] * b[3] - inter)
-
-
-def decode(head_maps, threshold=0.65, iou_threshold=0.3):
-    """head_maps: {name: (H,W,C) float array} with cls_/obj_/bbox_ per stride."""
-    boxes = []
-    for stride in STRIDES:
-        cls = np.clip(head_maps[f'cls_{stride}'].reshape(-1), 0, 1)
-        obj = np.clip(head_maps[f'obj_{stride}'].reshape(-1), 0, 1)
-        reg = head_maps[f'bbox_{stride}'].reshape(-1, 4)
-        for i, score in enumerate(np.sqrt(cls * obj)):
-            if score < threshold:
-                continue
-            cx = (i % (VISIBLE_W // stride) + reg[i, 0]) * stride
-            cy = (i // (VISIBLE_W // stride) + reg[i, 1]) * stride
-            bw = np.exp(np.clip(reg[i, 2], -12, 12)) * stride
-            bh = np.exp(np.clip(reg[i, 3], -12, 12)) * stride
-            boxes.append([float(cx - bw / 2), float(cy - bh / 2), float(bw), float(bh), float(score)])
-    keep = []
-    for b in sorted(boxes, key=lambda b: -b[4]):
-        if all(iou(b, k) < iou_threshold for k in keep):
-            keep.append(b)
-    return keep
-
-
-class OnnxRunner:
-    def __init__(self, path):
-        from quantize import load_graph, session
-        m, _ = load_graph(path)          # rewrite the cached 640x640 input to 96x160
-        self.sess = session(m)
-        self.out_names = [o.name for o in self.sess.get_outputs() if not o.name.startswith('kps')]
-
-    def heads(self, canvas):
-        raw = self.sess.run(None, {'input': canvas.transpose(2, 0, 1)[None].astype(np.float32)})
-        all_names = [o.name for o in self.sess.get_outputs()]
-        out = {}
-        for name, v in zip(all_names, raw):
-            if name.startswith('kps'):
-                continue
-            # Graph tail: Transpose(0,2,3,1) then Reshape -> (1, H*W*C, 1) in HWC order.
-            out[name] = v.reshape(GRIDS[name])
-        return out
-
-
-class Int8Runner:
-    """Integer pipeline runner produced by quantize.py (ops_for_infer.pkl)."""
-
-    def __init__(self, qdir):
-        import pickle
+class IntegerRunner:
+    def __init__(self,qdir):
         from quantize import infer
-        with open(Path(qdir) / 'ops_for_infer.pkl', 'rb') as f:
-            blob = pickle.load(f)
-        self.ops = blob['ops']
-        self.scales = blob['scales']
-        self.heads_map = blob['heads']
-        self._infer = infer
+        # Local pipeline output only; downloaded input is always SHA-checked ONNX.
+        with (Path(qdir)/'ops_for_infer.pkl').open('rb') as f:self.blob=pickle.load(f)
+        self.infer=infer
+    def __call__(self,a):
+        values,_,_=self.infer(a,self.blob['ops'])
+        return {kind:[values[self.blob['heads'][f'{name}_{s}']] for s in (8,16,32)] for kind,name in [('cls','cls'),('obj','obj'),('box','bbox')]}
 
-    def heads(self, canvas):
-        tensors, _, _ = self._infer(canvas, self.ops)
-        out = {}
-        for name, src in self.heads_map.items():
-            v = tensors[src].astype(float) * 2.0 ** self.scales[src]
-            if name.startswith(('cls', 'obj')):
-                v = 1.0 / (1.0 + np.exp(-v))
-            out[name] = v
-        return out
+def metrics(work,split,runner,integer,decoder=None):
+    decoder=decoder or Decoder();data,rows=dataset(work,split)
+    result=dict(images=len(rows),positive_images=0,negative_images=0,accepted=0,hits=0,negative_accepted=0,
+                center_error_camera_pixels=[],square_iou=[],groups={});predictions=[]
+    for row in rows:
+        a,boxes,_=render(data,row);prediction=decoder(runner(a),integer)
+        negative=row['negative'];result['negative_images' if negative else 'positive_images']+=1
+        result['accepted']+=prediction is not None
+        hit=False
+        if negative:result['negative_accepted']+=prediction is not None
+        elif prediction and len(boxes):
+            value,index=max((iou(prediction['rect'],b),i) for i,b in enumerate(boxes));hit=value>=.5
+            if hit:
+                x,y,w,h=boxes[index];cx,cy=(x+w/2)*8,(y+h/2)*8
+                result['center_error_camera_pixels'].append(float(math.hypot(prediction['center'][0]-cx,prediction['center'][1]-cy)))
+                result['square_iou'].append(float(iou(prediction['square'],[x*8,y*8,w*8,h*8])))
+        result['hits']+=hit
+        size=max((max(b[2:]) for b in boxes),default=0)
+        group='background' if negative else 'small' if size<20 else 'near' if size>=48 else 'medium'
+        g=result['groups'].setdefault(group,dict(images=0,hits=0,accepted=0));g['images']+=1;g['hits']+=hit;g['accepted']+=prediction is not None
+        predictions.append(dict(id=row['id'],group=group,hit=hit,negative=negative,prediction=prediction))
+    result['single_target_hit_rate']=result['hits']/max(1,result['positive_images'])
+    result['precision']=result['hits']/max(1,result['accepted'])
+    result['negative_acceptance_rate']=result['negative_accepted']/max(1,result['negative_images'])
+    errors=result.pop('center_error_camera_pixels');result['mean_center_error_camera_pixels']=float(np.mean(errors)) if errors else None
+    result['mean_square_iou']=float(np.mean(result.pop('square_iou'))) if errors else None
+    result.update(integer=integer,iou_threshold=.5,selection='single highest score, no NMS',score_product_threshold=6815,
+                  scope='WIDER crops processed by camera contract; no physical-board accuracy claim')
+    return result,predictions
 
+def acceptable(base,new):
+    return (new['precision']>=base['precision']-.015 and
+            new['single_target_hit_rate']>=base['single_target_hit_rate']-.02 and
+            new['negative_acceptance_rate']<=base['negative_acceptance_rate']+.025)
 
-def score_image(runner, canvas, gt_boxes):
-    boxes = decode(runner.heads(canvas))
-    matched = np.zeros(len(gt_boxes), bool)
-    tp = 0
-    for b in boxes:
-        best_j, best_v = -1, 0.3
-        for j, g in enumerate(gt_boxes):
-            v = iou(b, g.tolist())
-            if v >= best_v:
-                best_j, best_v = j, v
-        if best_j >= 0 and not matched[best_j]:
-            matched[best_j] = True
-            tp += 1
-    fp = len(boxes) - tp
-    # single-best-box: deployment behavior, aim at the largest GT face
-    single = 0
-    if boxes:
-        gt_main = gt_boxes[np.argmax(gt_boxes[:, 2] * gt_boxes[:, 3])].tolist() if len(gt_boxes) else None
-        single = int(iou(boxes[0], gt_main) >= 0.5) if gt_main is not None else 0
-    return tp, fp, matched.sum(), single, len(gt_boxes)
-
-
-def eval_full_scene(runner, images, limit):
-    tp = fp = gt_total = gt_hit = 0
-    single_hits = single_total = 0
-    for i in range(min(limit, len(images))):
-        canvas, boxes, relpath = images[i]
-        if len(boxes) == 0:
-            continue
-        t, f, hits, single, n = score_image(runner, canvas, boxes)
-        tp += t
-        fp += f
-        gt_total += n
-        gt_hit += hits
-        single_hits += single
-        single_total += 1
-    prec = tp / max(1, tp + fp)
-    rec = gt_hit / max(1, gt_total)
-    return dict(images=single_total, recall=rec, precision=prec,
-                gt_faces=gt_total, single_best_hit_rate=single_hits / max(1, single_total))
-
-
-def eval_crop(runner, crop_eval, per_size):
-    per_size_report = {}
-    total_hit = total = 0
-    for size, items in sorted(crop_eval.items()):
-        use = items[:per_size]
-        hits = 0
-        for canvas, boxes, _ in use:
-            boxes_d = decode(runner.heads(canvas), threshold=0.5)
-            hits += int(any(iou(b, boxes[0].tolist()) >= 0.5 for b in boxes_d)) if len(boxes_d) else 0
-        per_size_report[size] = hits / max(1, len(use))
-        total_hit += hits
-        total += len(use)
-    return dict(per_size=per_size_report, overall=total_hit / max(1, total))
-
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--images', type=Path, required=True)
-    ap.add_argument('--split', type=Path, required=True)
-    ap.add_argument('--old', type=Path, required=True)
-    ap.add_argument('--new', type=Path, required=True)
-    ap.add_argument('--old-int8', type=Path)
-    ap.add_argument('--new-int8', type=Path)
-    ap.add_argument('--out', type=Path, required=True)
-    ap.add_argument('--val-images', type=int, default=600)
-    ap.add_argument('--per-size', type=int, default=30)
-    args = ap.parse_args()
-
-    annotations = parse_wider_annotations(args.split)
-    full = FullSceneDataset(args.images, annotations, limit=args.val_images)
-    crops = make_crop_eval_set(args.images, annotations, per_size=args.per_size)
-
-    candidates = [('old_float', OnnxRunner(args.old)), ('new_float', OnnxRunner(args.new))]
-    if args.old_int8:
-        candidates.append(('old_int8', Int8Runner(args.old_int8)))
-    if args.new_int8:
-        candidates.append(('new_int8', Int8Runner(args.new_int8)))
-
-    report = {}
-    for name, runner in candidates:
-        report[name] = dict(full_scene=eval_full_scene(runner, full, args.val_images),
-                            crop=eval_crop(runner, crops, args.per_size))
-        print(name, json.dumps(report[name]['full_scene']), flush=True)
-        print(name, 'crop overall', report[name]['crop']['overall'],
-              {k: round(v, 2) for k, v in report[name]['crop']['per_size'].items()}, flush=True)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-    print('wrote', args.out)
-
-
-if __name__ == '__main__':
-    main()
+def compare(args):
+    work=args.work;out=work/'evaluation';out.mkdir(exist_ok=True)
+    report={}
+    for split in ('val','test'):
+        report[split]={}
+        for tag in ('baseline','candidate'):
+            m,p=metrics(work,split,IntegerRunner(work/'quantized'/tag),True)
+            report[split][tag]=m;write(out/f'{split}_{tag}_predictions.json',p)
+    report['non_regression_passed']=all(acceptable(report[s]['baseline'],report[s]['candidate']) for s in ('val','test'))
+    report['test_used_for_checkpoint_selection']=False
+    report['training_weights_changed']=read(work/'training/result.json')['changed_tensors']>0
+    report['accuracy_accepted']=report['non_regression_passed'] and report['training_weights_changed']
+    write(out/'report.json',report);stamp(work,'evaluate',status='completed',accuracy_accepted=report['accuracy_accepted'])
+    print('INTEGER EVALUATION',report['accuracy_accepted'],flush=True)
+    return report
