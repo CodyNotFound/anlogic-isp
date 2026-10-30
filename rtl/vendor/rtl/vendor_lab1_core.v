@@ -70,6 +70,7 @@ module vendor_lab1_core (
 		
 	wire        	S_pll_lock;
     wire        	S_rst_n;
+    wire            S_rst_24m_n;
 	
 	wire [15:0] 	S_ae;
     wire [15:0] 	S_ag;
@@ -260,7 +261,7 @@ module vendor_lab1_core (
 	
 	
     wire S_reset_async_n=I_rst_n && S_pll_lock;
-    wire S_rst_24m_n,S_rst_100m_n,S_rst_mipi_n,S_rst_ddr_n;
+    wire S_rst_100m_n,S_rst_mipi_n,S_rst_ddr_n;
     reset_sync u_reset_sys(.clk(I_sys_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_n));
     reset_sync u_reset_24m(.clk(S_24m_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_24m_n));
     reset_sync u_reset_100m(.clk(S_100m_clk),.async_rst_n(S_reset_async_n),.rst_n(S_rst_100m_n));
