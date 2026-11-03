@@ -2,12 +2,45 @@
 import importlib.util,json,shutil,subprocess,sys
 from pathlib import Path
 import numpy as np
-from common import ROOT,CONTRACT,read,write,sha,stamp
+from common import ROOT,CONTRACT,MODEL_SHA,read,write,sha,stamp
 
 def helper(name,path):
     spec=importlib.util.spec_from_file_location(name,path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 
+def words(path):
+    return [int(v,16) for v in path.read_text().split()]
+
+
+def official_baseline(work):
+    """Rebuild the reference from this run's official model, never private ROMs."""
+    if sha(work/'upstream/yunet.onnx')!=MODEL_SHA:
+        raise ValueError('Official baseline model checksum mismatch')
+    reference=work/'scheduled_baseline'
+    subprocess.run([sys.executable,str(Path(__file__).parent/'schedule.py'),
+                    '--qdir',str(work/'quantized/baseline'),'--out',str(reference)],check=True)
+    report=read(reference/'schedule_report.json');contract=read(CONTRACT)
+    if (report['ops']!=contract['operations'] or
+            report['weight_bank_depth']!=contract['weight_bank_depth'] or
+            report['arena_peak_bytes']>65536):
+        raise ValueError('Official baseline exceeds the published RTL contract')
+    # This file describes public topology/scheduling, not trained parameters.
+    if words(reference/'program.hex')!=words(ROOT/'rtl/analytics/face_cnn/program.hex'):
+        raise ValueError('Official baseline schedule differs from the published RTL')
+    return reference
+
+
+def integer_delta(reference,candidate):
+    delta={}
+    for name in ['bias.hex','shift.hex']+[f'weights{i}.hex' for i in range(4)]:
+        a,b=words(reference/name),words(candidate/name)
+        if len(a)!=len(b):raise ValueError('Candidate parameter layout changed: '+name)
+        delta[name]=sum(x!=y for x,y in zip(a,b))
+    return dict(changed=any(delta.values()),entries=delta,reference='official_pretrained')
+
+
 def quantize(args):
+    if sha(args.work/'upstream/yunet.onnx')!=MODEL_SHA:
+        raise ValueError('Official baseline model checksum mismatch')
     script=Path(__file__).parent/'quantize.py'
     for tag,model in [('baseline',args.work/'upstream/yunet.onnx'),('candidate',args.work/'training/candidate.onnx')]:
         out=args.work/'quantized'/tag
@@ -15,40 +48,26 @@ def quantize(args):
                         '--out',str(out),'--scale-reference',str(CONTRACT)],check=True)
         net=read(out/'network.json');fixed=read(CONTRACT)
         if {k:net['scales'][v] for k,v in net['heads'].items()}!=fixed['head_scales']:raise ValueError('Decoder head scales changed')
-    reference=args.work/'scheduled_baseline'
-    subprocess.run([sys.executable,str(Path(__file__).parent/'schedule.py'),'--qdir',str(args.work/'quantized/baseline'),'--out',str(reference)],check=True)
-    names=['program.hex','bias.hex','shift.hex']+[f'weights{i}.hex' for i in range(4)]
-    deployment=ROOT/'assets/models/yunet/deployment.json'
-    fixed=read(deployment).get('official_baseline_word_sha256',{}) if deployment.exists() else {}
-    matches_production=True
-    for name in names:
-        original=[int(v,16) for v in (ROOT/'rtl/analytics/face_cnn'/name).read_text().split()]
-        actual=[int(v,16) for v in (reference/name).read_text().split()]
-        matches_production &= actual==original
-        if name in fixed:
-            import hashlib
-            digest=hashlib.sha256(','.join(map(str,actual)).encode('ascii')).hexdigest()
-            if digest!=fixed[name]:raise ValueError('Baseline does not reproduce official reference: '+name)
-        elif actual!=original:raise ValueError('Baseline does not reproduce production: '+name)
-    stamp(args.work,'quantize',status='passed',contract_sha256=sha(CONTRACT),baseline_matches_production=matches_production,baseline_matches_official_reference=True)
+    official_baseline(args.work)
+    stamp(args.work,'quantize',status='passed',contract_sha256=sha(CONTRACT),
+          baseline_model_sha256=MODEL_SHA,reference='official_pretrained')
+
 
 def export(args):
     from data import verify_sources
     verify_sources(args.work)
+    reference=official_baseline(args.work)
     work=args.work;package=work/'fpga';rom=package/'rtl/analytics/face_cnn';rom.mkdir(parents=True,exist_ok=True)
     stage=work/'scheduled';stage.mkdir(exist_ok=True)
     subprocess.run([sys.executable,str(Path(__file__).parent/'schedule.py'),'--qdir',str(work/'quantized/candidate'),'--out',str(stage)],check=True)
     report=read(stage/'schedule_report.json')
     if report['ops']!=55 or report['weight_bank_depth']!=12373 or report['arena_peak_bytes']>65536:raise ValueError('Production shape/memory contract changed')
     production=ROOT/'rtl/analytics/face_cnn'
-    def words(p):return [int(v,16) for v in p.read_text().split()]
-    if words(stage/'program.hex')!=words(production/'program.hex'):raise ValueError('Topology, scales or memory schedule changed')
+    if words(stage/'program.hex')!=words(reference/'program.hex'):raise ValueError('Topology, scales or memory schedule changed')
+    if (stage/'yunet_heads.vh').read_bytes()!=(reference/'yunet_heads.vh').read_bytes():
+        raise ValueError('Candidate detection-head addresses changed')
     for name in ['program.hex','bias.hex','shift.hex','yunet_heads.vh']+[f'weights{i}.hex' for i in range(4)]:shutil.copyfile(stage/name,rom/name)
-    delta={}
-    for name in ['bias.hex','shift.hex']+[f'weights{i}.hex' for i in range(4)]:
-        a,b=words(production/name),words(rom/name)
-        delta[name]=sum(x!=y for x,y in zip(a,b))
-    write(package/'integer_delta.json',dict(changed=any(delta.values()),entries=delta))
+    write(package/'integer_delta.json',integer_delta(reference,rom))
     for name in ['sigmoid.hex','offset.hex','size.hex']:shutil.copyfile(production/name,rom/name)
     for source in production.glob('*.v'):shutil.copyfile(source,rom/source.name)
     pack=helper('candidate_pack',ROOT/'scripts/cnn/pack_yunet_rom.py')
