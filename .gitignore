@@ -30,12 +30,3 @@ td_project/*_Runs/
 !.env.example
 .venv/
 venv/
-
-# Private fine-tuned deployment assets (kept outside public source).
-/assets/models/yunet/finetuned*.onnx
-/assets/models/yunet/deployment.json
-/rtl/analytics/face_cnn/weights*.hex
-/rtl/analytics/face_cnn/bias.hex*
-/rtl/analytics/face_cnn/shift.hex*
-/rtl/analytics/face_cnn/yunet_rom_unpack.vh
-/sim/cnn/data/network_reference/
